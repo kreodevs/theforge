@@ -88,3 +88,11 @@ test("resolveLlmMaxTokensForWorkshopTab — pestañas de documento", () => {
 test("isChatFallbackOn429Enabled — sin fallbacks", () => {
   assert.equal(isChatFallbackOn429Enabled(false), false);
 });
+
+test("resolveEmbeddingDimension — runtime BYOK/instancia", () => {
+  assert.equal(resolveEmbeddingDimension(3072), 3072);
+});
+
+test("isChatFallbackOn429Enabled — con fallbacks en proveedor activo", () => {
+  assert.equal(isChatFallbackOn429Enabled(true), true);
+});

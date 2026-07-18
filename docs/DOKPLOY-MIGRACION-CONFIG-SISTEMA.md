@@ -35,7 +35,7 @@ Estas variables **siguen en env**; no están en la pantalla Sistema (o no deben 
 | `WEB_DOMAIN` | OTP / autofill correo |
 | `JWT_SECRET`, `JWT_EXPIRES_IN` | Auth |
 | `SMTP_*` | OTP por correo |
-| `TOKEN_MASTER_KEYS`, `TOKEN_ACTIVE_KEY_VERSION` | Cifrado BYOK |
+| `TOKEN_MASTER_KEYS`, `TOKEN_ACTIVE_KEY_VERSION` | Cifrado en servidor de tokens guardados en UI (no es configuración de proveedor) |
 | `MCP_M2M_SECRET` | Auth MCP ↔ API |
 | `FALKORDB_URL` / `FALKORDB_SDD_URL` | Grafo SDD (si aplica) |
 
@@ -58,7 +58,7 @@ Estas variables **siguen en env**; no están en la pantalla Sistema (o no deben 
 | Variable | Motivo |
 |----------|--------|
 | `PRISMA_RESOLVE_ROLLED_BACK` | Desbloqueo migración Prisma |
-| `WIPE_BYOK_ON_START` | Rotación BYOK perdida (quitar tras un deploy) |
+| `WIPE_BYOK_ON_START` | Rotación de `TOKEN_MASTER_KEYS` perdida (quitar tras un deploy) |
 
 ---
 
@@ -79,10 +79,10 @@ Tras desplegar **v1.3.0**, copia estos valores desde Dokploy a la UI **antes** d
    - `TECH_DOCS_MCP_*` (URL default Context7, timeout, max librerías)  
    - `THEFORGE_LIST_PROJECTS_CACHE_MS`, `THEFORGE_CONTEXT_*`
 
-3. **LLM y LangGraph** — throughput y límites  
+3. **LLM y LangGraph** — throughput y límites de plataforma  
    - `LLM_MAX_TOKENS`, `LANGGRAPH_RECURSION_LIMIT`  
-   - `OPENAI_EMBEDDING_DIM`, `OPENROUTER_CHAT_FALLBACK_ON_429`  
-   - `AGENT_EVALUATOR_LEGACY`
+   - `AGENT_EVALUATOR_LEGACY`  
+   - Modelos, embeddings y fallback 429 → **Ajustes → Proveedores** (no env ni Sistema)
 
 4. **Colas BullMQ** — **requieren reinicio del worker** tras guardar  
    - `MDD_BULLMQ_CONCURRENCY`  
@@ -115,9 +115,7 @@ ARIADNE_BROWNFIELD_CONVERGE_AUTO
 ARIADNE_BROWNFIELD_CONVERGE_MODE
 ARIADNE_BROWNFIELD_CONVERGE_PERSIST
 LLM_MAX_TOKENS
-OPENROUTER_CHAT_FALLBACK_ON_429
 LANGGRAPH_RECURSION_LIMIT
-OPENAI_EMBEDDING_DIM
 AGENT_EVALUATOR_LEGACY
 MDD_BULLMQ_CONCURRENCY
 DELIVERABLES_BULLMQ_CONCURRENCY
@@ -157,7 +155,8 @@ No borres estas si las usas; la pantalla Sistema **no** las gestiona aún:
 - **`ARIADNE_MCP_URL`** — alias legacy; preferir `THEFORGE_MCP_URL` en UI
 - **`MCP_AUTH_TOKEN`**, **`MCP_X_M2M_TOKEN`** — auth hacia MCP externo
 - **`LLM_DEBUG`** — trazas LLM en consola
-- Modelos/claves OpenRouter — **BYOK por usuario** en Ajustes → Proveedores
+
+> **Proveedores IA (claves, modelos, embeddings, fallbacks):** solo **Ajustes → Proveedores** — nunca en env ni en Sistema.
 
 ---
 
@@ -206,7 +205,7 @@ Si algo falla tras borrar env:
 | Servicio | Rol | Env mínimo + notas |
 |----------|-----|-------------------|
 | **theforge-api** | `THEFORGE_RUNTIME_ROLE=http` | Bootstrap + tunables en UI |
-| **theforge-worker** | `THEFORGE_RUNTIME_ROLE=worker` | Mismo `DATABASE_URL`, `REDIS_URL`, BYOK; reiniciar tras cambiar concurrencia en UI |
+| **theforge-worker** | `THEFORGE_RUNTIME_ROLE=worker` | Mismo `DATABASE_URL`, `REDIS_URL`, cifrado `TOKEN_MASTER_KEYS`; reiniciar tras cambiar concurrencia en UI |
 | **theforge-mcp** | MCP server | `MCP_M2M_SECRET`, `THEFORGE_API_URL` |
 | **theforge-web** | Estáticos | Build con `VITE_API_URL`; sin tunables de plataforma |
 

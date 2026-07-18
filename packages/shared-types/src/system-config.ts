@@ -140,15 +140,6 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     { min: 1024, max: 1_000_000 },
   ),
   def(
-    "openrouter_chat_fallback_on_429",
-    "OPENROUTER_CHAT_FALLBACK_ON_429",
-    "boolean",
-    "1",
-    "OpenRouter — fallback en 429",
-    "Con chatModelFallbacks del usuario, intentar modelo alternativo tras 429.",
-    "llm",
-  ),
-  def(
     "langgraph_recursion_limit",
     "LANGGRAPH_RECURSION_LIMIT",
     "number",
@@ -157,16 +148,6 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "Pasos LangGraph por invocación (MDD Manager puede superar el default 25).",
     "llm",
     { min: 10, max: 500 },
-  ),
-  def(
-    "openai_embedding_dim",
-    "OPENAI_EMBEDDING_DIM",
-    "number",
-    "1536",
-    "Embeddings — dimensión",
-    "Fallback de servidor si no hay dimensión BYOK del usuario.",
-    "llm",
-    { min: 64, max: 8192 },
   ),
   def(
     "agent_evaluator_legacy",

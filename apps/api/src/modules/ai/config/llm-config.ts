@@ -2,7 +2,6 @@
  * Utilidades LLM globales (sin claves ni modelos desde env — BYOK por usuario).
  */
 import {
-  resolvePlatformConfigBoolean,
   resolvePlatformConfigNumber,
 } from "../../system-config/platform-config.runtime.js";
 
@@ -101,12 +100,11 @@ export function resolveLlmMaxTokensForWorkshopTab(
 }
 
 /**
- * Dimensión de embeddings: preferir runtime BYOK; env solo como fallback de servidor.
- * @deprecated Preferir `runtime.embeddingDimension` desde `resolveEmbeddingRuntime`.
+ * Dimensión de embeddings: runtime BYOK/instancia tenant (`embeddingDimension` en Ajustes → Proveedores).
  */
 export function resolveEmbeddingDimension(runtimeDim?: number | null): number {
   if (runtimeDim != null && runtimeDim > 0) return runtimeDim;
-  return resolvePlatformConfigNumber("openai_embedding_dim");
+  return 1536;
 }
 
 /**
@@ -124,8 +122,7 @@ export function getLlmProvidersSnapshot(): { id: string; chatConfigured: boolean
   return [];
 }
 
-/** Fallback 429 en cadena de modelos (cuando el usuario define chatModelFallbacks en extras). */
+/** Fallback 429 en cadena cuando el proveedor activo define `chatModelFallbacks` (Ajustes → Proveedores). */
 export function isChatFallbackOn429Enabled(hasFallbacks = true): boolean {
-  if (!hasFallbacks) return false;
-  return resolvePlatformConfigBoolean("openrouter_chat_fallback_on_429");
+  return hasFallbacks;
 }
