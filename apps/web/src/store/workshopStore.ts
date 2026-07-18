@@ -9,6 +9,9 @@ import type {
   TraceabilitySuggestFixResponse,
 } from "@theforge/shared-types";
 import {
+  buildUpstreamChangeSummaryForPipeline,
+} from "@theforge/shared-types";
+import {
   documentPersistFieldLabel,
   isChangelogOnlyDocument,
   validateDocumentForPersist,
@@ -59,7 +62,8 @@ import {
   workshopDeliverableStoreSlice,
   type WorkshopStageDeliverableField,
 } from "../utils/workshopStageDeliverables";
-import { appendAgentProgressDone, type AgentProgressItem } from "../utils/agentProgress";
+import { appendAgentProgressDone, agentProgressFromMddJobProgress, agentProgressFromMddJobSnapshot, mddJobProgressEventFields, type AgentProgressItem } from "../utils/agentProgress";
+import { primaryMddJob } from "../utils/projectGenerationGate";
 import {
   advanceAgentGovernanceProgressItems,
   completeAgentGovernanceProgressItems,
@@ -366,6 +370,9 @@ async function persistField(
       setState(patch);
       // Flush offline queue oportunistically
       flushOfflineQueue().catch(() => {});
+      if (fieldName === "dbgaContent" || fieldName === "phase0SummaryContent") {
+        void getState().fetchGenerationStatus(projectId);
+      }
       return { ok: true };
     }
 
@@ -719,7 +726,9 @@ function effectiveMddContentForSectionRegen(getState: () => {
   const fromStore = (mddContent ?? "").trim();
   if (fromStore.length >= 100) return fromStore;
   const st = project?.stages?.find((s) => s.id === activeStageId);
-  return (cleanDoc(st?.mddContent ?? null) ?? cleanDoc(project?.mddContent ?? null) ?? "").trim();
+  return (normalizeWorkshopDocumentForEditor(st?.mddContent ?? null) ??
+    normalizeWorkshopDocumentForEditor(project?.mddContent ?? null) ??
+    "").trim();
 }
 
 function workshopDeliverableStorePatch(
@@ -759,7 +768,7 @@ function workshopStateFromProjectStage(p: Project, stageId: string | null) {
       stages,
     },
     activeStageId: stageId,
-    mddContent: cleanDoc(flat.mddContent) ?? "",
+    mddContent: normalizeWorkshopDocumentForEditor(flat.mddContent) ?? "",
     documentTimestamps: buildWorkshopDocumentTimestampsMap(p, stageId),
     ...deliverablePatch,
   };
@@ -1119,6 +1128,11 @@ interface WorkshopState {
   clearDbgaContent: (projectId: string) => Promise<void>;
   generateBenchmark: (projectId: string, userIdea: string, urls?: string[]) => Promise<Project | null>;
   generateMddFromBenchmark: (projectId: string) => Promise<Project | null>;
+  /** Sincroniza §1–§7 afectadas por cambios upstream (mode upstream-sync en cola MDD). */
+  generateMddUpstreamSync: (
+    projectId: string,
+    opts?: { sections?: number[]; stageId?: string | null },
+  ) => Promise<Project | null>;
   clearMddJustGeneratedFromBenchmark: () => void;
   setAgentProgress: (progress: Array<{ agent: string; message: string }>) => void;
   setPhase0SummaryContent: (content: string | null) => void;
@@ -1551,7 +1565,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           workshopStages: stages,
           project: { ...nextProject, ...flat },
           activeStageId,
-          mddContent: cleanDoc(flat.mddContent) ?? "",
+          mddContent: normalizeWorkshopDocumentForEditor(flat.mddContent) ?? "",
           error: null,
         });
         const pid = projectId.trim();
@@ -1591,6 +1605,9 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         throw new Error(msg ?? "PATCH etapa falló");
       }
       await get().fetchProject(projectId.trim());
+      if ("brdContent" in body) {
+        void get().fetchGenerationStatus(projectId.trim());
+      }
       set({ error: null });
       return true;
     } catch (e) {
@@ -1644,6 +1661,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       if (!shouldApplyWorkshopUpdate(get, requestedId)) return status;
       const wasBusy = get().generationStatus?.busy === true;
       set({ generationStatus: status });
+      const mddJob = primaryMddJob(status);
+      if (
+        mddJob &&
+        (status.mddStreamActive || get().loadingReason === "mdd") &&
+        ((mddJob.progressSteps?.length ?? 0) > 0 || mddJob.progressActive)
+      ) {
+        set({ agentProgress: agentProgressFromMddJobSnapshot(mddJob) });
+      }
       if (status.busy) {
         if (generationStatusPollProjectId !== requestedId) {
           stopGenerationStatusPolling();
@@ -2274,13 +2299,19 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           requestProjectId,
           {
             onProgress: (p) => {
-              if (p?.agent && p?.message) {
-                set((s) => ({
-                  agentProgress: appendAgentProgressDone(s.agentProgress, {
-                    agent: p.agent!,
-                    message: p.message!,
-                  }),
-                }));
+              const synced = agentProgressFromMddJobProgress(p);
+              if (synced.length > 0) {
+                set({ agentProgress: synced });
+              } else {
+                const ev = mddJobProgressEventFields(p);
+                if (ev.agent && ev.message) {
+                  set((s) => ({
+                    agentProgress: appendAgentProgressDone(s.agentProgress, {
+                      agent: ev.agent!,
+                      message: ev.message!,
+                    }),
+                  }));
+                }
               }
             },
           },
@@ -2642,7 +2673,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                       // `done` con markdown corto (p. ej. placeholder) no debe vaciar borradores ya mostrados por eventos `draft`.
                       const current = get();
                       const flat = workshopFlatFromStage(current.project as Project, get().activeStageId);
-                      const serverMdd = (cleanDoc(flat.mddContent) ?? "").trim();
+                      const serverMdd = (normalizeWorkshopDocumentForEditor(flat.mddContent) ?? "").trim();
                       if (serverMdd.length < mddBeforeFetch.length) {
                         set({
                           mddContent: mddBeforeFetch,
@@ -3745,15 +3776,22 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         pid,
         {
           onProgress: (p) => {
-            if (p?.agent && p?.message) {
-              set((s) => ({
-                agentProgress: appendAgentProgressDone(s.agentProgress, {
-                  agent: p.agent!,
-                  message: p.message!,
-                }),
-              }));
+            const synced = agentProgressFromMddJobProgress(p);
+            if (synced.length > 0) {
+              set({ agentProgress: synced });
+            } else {
+              const ev = mddJobProgressEventFields(p);
+              if (ev.agent && ev.message) {
+                set((s) => ({
+                  agentProgress: appendAgentProgressDone(s.agentProgress, {
+                    agent: ev.agent!,
+                    message: ev.message!,
+                  }),
+                }));
+              }
             }
-            if (p?.phase === "persisted" || p?.phase === "draft") {
+            const ev = mddJobProgressEventFields(p);
+            if (ev.phase === "persisted" || ev.phase === "draft") {
               void get().fetchProject(pid);
             }
           },
@@ -3773,6 +3811,96 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         set({
           notice:
             `${friendly} La regeneración puede seguir en el servidor; recarga el proyecto en unos minutos para ver el MDD.`,
+          error: null,
+          loading: true,
+          loadingReason: "mdd",
+        });
+      } else {
+        set({
+          ...errorStateFromCaught(e),
+          loading: false,
+          loadingReason: null,
+          agentProgress: [],
+        });
+      }
+      void get().fetchGenerationStatus(pid);
+      return null;
+    }
+  },
+
+  generateMddUpstreamSync: async (projectId, opts) => {
+    if (!projectId?.trim()) return null;
+    const pid = projectId.trim();
+    const stageId = opts?.stageId ?? get().activeStageId ?? undefined;
+    const dbgaContent = (get().dbgaContent ?? get().project?.dbgaContent ?? "").trim();
+    const syncMeta = get().generationStatus?.mddUpstreamSync;
+    const changeSummary =
+      syncMeta?.changes?.length && syncMeta.recommendedSections
+        ? buildUpstreamChangeSummaryForPipeline({
+            hasBaseline: syncMeta.hasBaseline ?? false,
+            hasMdd: true,
+            baselineCapturedAt: null,
+            changedSources: syncMeta.changedSources ?? [],
+            changes: syncMeta.changes,
+            recommendedSections: syncMeta.recommendedSections,
+            expandedSections: syncMeta.expandedSections ?? opts?.sections ?? [],
+            canSync: syncMeta.canSync ?? true,
+            needsFullRegen: false,
+            pendingSync: syncMeta.pendingSync ?? true,
+          })
+        : undefined;
+
+    set({ loading: true, loadingReason: "mdd", error: null, agentProgress: [] });
+    void get().fetchGenerationStatus(pid);
+
+    try {
+      await enqueueAndPollMddJob(
+        {
+          mode: "upstream-sync",
+          projectId: pid,
+          dbgaContent: dbgaContent || undefined,
+          ...(stageId ? { stageId } : {}),
+          ...(opts?.sections?.length ? { upstreamSections: opts.sections } : {}),
+          ...(changeSummary ? { upstreamChangeSummary: changeSummary } : {}),
+        },
+        pid,
+        {
+          onProgress: (p) => {
+            const synced = agentProgressFromMddJobProgress(p);
+            if (synced.length > 0) {
+              set({ agentProgress: synced });
+            } else {
+              const ev = mddJobProgressEventFields(p);
+              if (ev.agent && ev.message) {
+                set((s) => ({
+                  agentProgress: appendAgentProgressDone(s.agentProgress, {
+                    agent: ev.agent!,
+                    message: ev.message!,
+                  }),
+                }));
+              }
+            }
+            const ev = mddJobProgressEventFields(p);
+            if (ev.phase === "persisted" || ev.phase === "draft") {
+              void get().fetchProject(pid);
+            }
+          },
+        },
+      );
+      set({ error: null });
+      const data = await get().fetchProject(pid);
+      await get().fetchEstimation(pid);
+      await get().fetchGenerationStatus(pid);
+      set({ loading: false, loadingReason: null, agentProgress: [] });
+      return data ?? get().project;
+    } catch (e) {
+      const status = await get().fetchGenerationStatus(pid);
+      const stillRunning = Boolean(status?.busy || status?.mddStreamActive);
+      const friendly = friendlyFetchError(e);
+      if (stillRunning) {
+        set({
+          notice:
+            `${friendly} La sincronización puede seguir en el servidor; recarga el proyecto en unos minutos.`,
           error: null,
           loading: true,
           loadingReason: "mdd",
@@ -4131,11 +4259,12 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     try {
       const jobStatus = await enqueueAndPollLegacyMdd(pid, stageId, {
         onProgress: (p) => {
-          if (p?.message) {
+          const ev = mddJobProgressEventFields(p);
+          if (ev.message) {
             set((s) => ({
               agentProgress: appendAgentProgressDone(s.agentProgress, {
                 agent: "MDD Legacy",
-                message: p.message!,
+                message: ev.message!,
               }),
             }));
           }

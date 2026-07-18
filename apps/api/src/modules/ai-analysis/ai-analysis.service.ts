@@ -19,6 +19,10 @@ import type { AuditorGaps } from "./estimation/estimation.types.js";
 import { stateToMarkdown, getAgentLabel } from "./state/state-to-markdown.js";
 import { getMddNodeProgressMessage } from "./utils/mdd-progress-messages.js";
 import {
+  buildMddStreamProgressEvent,
+  createMddNodeStartTracker,
+} from "./utils/mdd-stream-progress.util.js";
+import {
   extractContextSectionBody,
   extractSections2To5Content,
   logSection3Debug,
@@ -31,7 +35,7 @@ import { pickPrimaryStage } from "../projects/stage-helpers.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
 import { AgentSupervisorService } from "../agent-supervisor/agent-supervisor.service.js";
 import { EpisodicMemoryKind, type ComplexityLevel } from "@theforge/database";
-import { contentIncludesVisionBlock, type ChatImagePart, type MddDeliveryGateResult } from "@theforge/shared-types";
+import { contentIncludesVisionBlock, type ChatImagePart, type MddDeliveryGateResult, expandMddSectionsForSync, MDD_SECTION_TITLES } from "@theforge/shared-types";
 import { formatVisionContextBlock, mergeUserTextWithVisionBlock } from "../ai/utils/vision-context.util.js";
 import { markdownToMddStructured } from "./utils/mdd-markdown-to-structured.js";
 import { HumanMessage } from "@langchain/core/messages";
@@ -42,6 +46,7 @@ import { CONTEXT_SYNTHESIZER_PROMPT } from "./prompts/load-prompts.js";
 import { createMddIntegrationNode } from "./nodes/mdd-integration.node.js";
 import { createMddSecurityNode } from "./nodes/mdd-security.node.js";
 import { createMddSoftwareArchitectNode } from "./nodes/mdd-software-architect.node.js";
+import { createMddClarifierNode } from "./nodes/mdd-clarifier.node.js";
 import { getMddArchitectTools } from "./tools/tool-registry.js";
 import { contextSynthesizerComplexityAppendix } from "./utils/mdd-complexity-rigor.js";
 import { formatDbgaStreamError } from "./utils/dbga-stream-error.util.js";
@@ -73,6 +78,7 @@ import {
 import { mddStreamDeliveryGateFields } from "./utils/mdd-delivery-gate.util.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import type { MddJobData, MddJobProgress, MddJobResult } from "./mdd/mdd-queue.service.js";
+import { MddUpstreamSyncService } from "./mdd/mdd-upstream-sync.service.js";
 
 import type { EstimationComplexity, PrecisionBreakdown } from "./estimation/estimation.types.js";
 
@@ -97,7 +103,7 @@ async function* runRegenWithHeartbeat<T>(
 }
 
 export type StreamProgressEvent =
-  | { type: "progress"; agent: string; message: string }
+  | { type: "progress"; agent: string; message: string; phase?: "active" | "done" }
   | { type: "draft"; markdown: string; deliveryGate?: MddDeliveryGateResult }
   | { type: "blocked"; code: string; message: string }
   | {
@@ -201,6 +207,8 @@ export class AiAnalysisService {
     private readonly aiFactory: AIFactory,
     private readonly uiMcpClient: UiMcpClientService,
     private readonly uiMcp: UiMcpService,
+    @Inject(forwardRef(() => MddUpstreamSyncService))
+    private readonly mddUpstreamSync: MddUpstreamSyncService,
     @Optional() createDbgaGraphFn?: typeof createDbgaGraph,
   ) {
     this.createDbgaGraphFn = createDbgaGraphFn ?? createDbgaGraph;
@@ -569,6 +577,7 @@ export class AiAnalysisService {
     }
     const { opts: prepareOpts, gateRef: prepareGateRef } = createPrepareOptsWithGate({ preservedGovernance });
     const uiMcpFrontendLibraryLabel = await this.getUiMcpLibraryLabel();
+    const nodeStart = createMddNodeStartTracker();
     let graph: Awaited<ReturnType<typeof createMddGraph>>;
     try {
       const userId = await this.resolveUserId(projectId);
@@ -576,6 +585,7 @@ export class AiAnalysisService {
         theforge: this.theforge,
         nodeCache: this.nodeCacheService,
         uiMcpFrontendLibraryLabel,
+        onNodeStart: nodeStart.onNodeStart,
       });
     } catch (err) {
       const formatted = formatDbgaStreamError(err);
@@ -613,6 +623,10 @@ export class AiAnalysisService {
       });
 
       for await (const raw of stream) {
+        const pendingNode = nodeStart.takePendingNodeStart();
+        if (pendingNode) {
+          yield buildMddStreamProgressEvent(pendingNode, "active");
+        }
         const [mode, data] = Array.isArray(raw) ? (raw as [string, unknown]) : ["values", raw];
         if (mode === "updates" && data && typeof data === "object" && !Array.isArray(data)) {
           const dataRecord = data as Record<string, unknown>;
@@ -625,8 +639,7 @@ export class AiAnalysisService {
             if (draftLen) extra.push(`draft=${draftLen}`);
             if (scopeLen) extra.push(`scope=${scopeLen}`);
             auditTrail.push(`${nodeName}(${extra.join(" ")})`);
-            const label = nodeName === "auditor" ? getAgentLabel("auditor", "mdd") : getAgentLabel(nodeName);
-            yield { type: "progress", agent: label, message: getMddNodeProgressMessage(nodeName) };
+            yield buildMddStreamProgressEvent(nodeName, "done");
           }
         }
         if (mode === "values" && data && typeof data === "object") {
@@ -1431,6 +1444,7 @@ export class AiAnalysisService {
     mddContentFromClient?: string,
     stageId?: string | null,
     gapReasons?: string[],
+    upstreamContext?: { dbgaContent?: string; changeSummary?: string },
   ): AsyncGenerator<StreamMddManagerEvent> {
     const pid = projectId?.trim();
     if (!pid) {
@@ -1523,9 +1537,13 @@ export class AiAnalysisService {
 
       const structured = markdownToMddStructured(mddContent);
       const agentCtxRegen = await this.buildMddAgentContext(pid, regenEstimationStage ?? null);
-      let dbgaRegen = "(Regenerando sección desde documento actual.)";
+      let dbgaRegen = upstreamContext?.dbgaContent?.trim() || "(Regenerando sección desde documento actual.)";
       const pre = composeBrdPreamble(regenBrdContent);
       if (pre) dbgaRegen = pre + dbgaRegen;
+      const mergedGaps = [
+        ...(gapReasons ?? []),
+        ...(upstreamContext?.changeSummary?.trim() ? [upstreamContext.changeSummary.trim()] : []),
+      ];
       const state: MDDState = {
         ...defaultMDDState,
         dbgaContent: dbgaRegen,
@@ -1534,9 +1552,9 @@ export class AiAnalysisService {
         mddStructured: structured ?? undefined,
         mddDraft: mddContent,
         projectId: pid,
-        ...(gapReasons?.length
+        ...(mergedGaps.length
           ? {
-              auditorFeedback: `Gaps del auditor a corregir en esta regeneración:\n${gapReasons.map((g) => `- ${g}`).join("\n")}`,
+              auditorFeedback: `Gaps del auditor a corregir en esta regeneración:\n${mergedGaps.map((g) => `- ${g}`).join("\n")}`,
             }
           : {}),
         ...agentCtxRegen,
@@ -1638,6 +1656,141 @@ export class AiAnalysisService {
   }
 
   /**
+   * Sincroniza el MDD existente con cambios en DBGA/BRD/Benchmark regenerando solo las secciones indicadas.
+   */
+  async *streamMddUpstreamSync(
+    projectId: string,
+    sections: number[],
+    changeSummary: string,
+    dbgaContent: string,
+    stageId?: string | null,
+  ): AsyncGenerator<StreamMddManagerEvent> {
+    const pid = projectId?.trim();
+    if (!pid) {
+      yield { type: "error", message: "projectId es requerido" };
+      return;
+    }
+    const ordered = expandMddSectionsForSync(sections);
+    if (!ordered.length) {
+      yield { type: "error", message: "No hay secciones MDD para sincronizar." };
+      return;
+    }
+
+    let mddContent = "";
+    const project = await this.prisma.project.findUnique({
+      where: { id: pid },
+      include: { stages: { orderBy: { ordinal: "asc" } } },
+    });
+    const sid = stageId?.trim();
+    if (sid) {
+      mddContent = project?.stages?.find((s) => s.id === sid)?.mddContent?.trim() ?? "";
+    }
+    if (mddContent.length < 100) {
+      mddContent = (pickPrimaryStage(project?.stages ?? [])?.mddContent ?? "").trim();
+    }
+    if (mddContent.length < 100) {
+      yield { type: "error", message: "No hay MDD suficiente para sincronizar. Genera el MDD completo primero." };
+      return;
+    }
+
+    const brdContent = sid
+      ? (await this.prisma.stage.findUnique({ where: { id: sid }, select: { brdContent: true } }))?.brdContent ?? null
+      : null;
+    const upstreamCtx = { dbgaContent, changeSummary };
+    const gapLines = changeSummary.trim() ? [changeSummary.trim()] : [];
+
+    for (const section of ordered) {
+      const title = MDD_SECTION_TITLES[section] ?? `§${section}`;
+      yield {
+        type: "progress",
+        agent: getAgentLabel(section === 1 ? "clarifier" : section === 6 ? "security" : section === 7 ? "integration" : "software_architect"),
+        message: `Sincronizando ${title}…`,
+        phase: "active",
+      };
+
+      if (section === 1) {
+        try {
+          const regenUserId = await this.resolveUserId(pid);
+          const llm = await createDbgaLLM(this.aiFactory, regenUserId);
+          let dbgaEffective = dbgaContent.trim() || mddContent.slice(0, 4000);
+          const pre = composeBrdPreamble(brdContent);
+          if (pre) dbgaEffective = pre + dbgaEffective;
+          const clarifierNode = createMddClarifierNode(llm);
+          const agentCtx = await this.buildMddAgentContext(pid, sid ?? null);
+          const result = await clarifierNode({
+            ...defaultMDDState,
+            dbgaContent: dbgaEffective,
+            brdContent: (brdContent ?? "").trim() || undefined,
+            mddDraft: mddContent,
+            projectId: pid,
+            auditorFeedback: changeSummary.trim() || undefined,
+            ...agentCtx,
+          } as MDDStateType);
+          const scope = (result.clarifiedScope ?? result.mddDraft ?? "").trim();
+          const body =
+            scope && !scope.startsWith("#")
+              ? scope
+              : extractContextSectionBody(scope) || scope || "(Contexto actualizado desde upstream.)";
+          mddContent = replaceSection1BodyFromAnyHeading(mddContent, body);
+        } catch (err) {
+          yield {
+            type: "error",
+            message: `Error al sincronizar §1: ${err instanceof Error ? err.message : String(err)}`,
+          };
+          return;
+        }
+      } else {
+        let sectionMarkdown = "";
+        for await (const event of this.streamMddRegenerateSection(
+          pid,
+          section,
+          mddContent,
+          stageId,
+          gapLines,
+          upstreamCtx,
+        )) {
+          if (event.type === "progress") yield event;
+          if (event.type === "error") {
+            yield event;
+            return;
+          }
+          if (event.type === "done" && event.markdown?.trim()) {
+            sectionMarkdown = event.markdown;
+          }
+        }
+        if (!sectionMarkdown.trim()) {
+          yield { type: "error", message: `La sincronización de §${section} no devolvió contenido.` };
+          return;
+        }
+        mddContent = sectionMarkdown;
+      }
+
+      yield {
+        type: "progress",
+        agent: getAgentLabel("prepare_output"),
+        message: `${title} sincronizado`,
+        phase: "done",
+      };
+    }
+
+    const { opts: prepareOpts } = createPrepareOptsWithGate({
+      preservedGovernance: extractGovernanceSection(mddContent),
+    });
+    let markdown = await this.runPrepareMddForOutput(mddContent, prepareOpts);
+    markdown = await this.reviewMddConsistency(pid, markdown);
+    const estStage = sid || undefined;
+    const estOpts = { projectId: pid, stageId: estStage ?? null, complexity: "HIGH" as const };
+    const metrics = this.estimationService.calculateLiveMetrics(markdown, estOpts);
+    yield {
+      type: "done",
+      markdown,
+      precision: metrics.precision,
+      status: metrics.status,
+      precisionBreakdown: this.estimationService.getPrecisionBreakdown(markdown, estOpts),
+    };
+  }
+
+  /**
    * Obtiene las decisiones arquitectónicas (ADRs) guardadas en el grafo para un proyecto.
    */
   async getProjectDecisions(projectId: string) {
@@ -1713,12 +1866,17 @@ export class AiAnalysisService {
 
     const consume = async (events: AsyncGenerator<MddJobEvent>): Promise<MddJobResult> => {
       let finalMarkdown = "";
+      let result: MddJobResult | null = null;
       for await (const event of events) {
         if (options?.signal?.aborted) {
           throw new Error("Cancelado por el usuario");
         }
         if (event.type === "progress") {
-          onProgress({ agent: event.agent, message: event.message });
+          onProgress({
+            agent: event.agent,
+            message: event.message,
+            phase: event.phase,
+          });
         } else if (event.type === "draft" && event.markdown?.trim()) {
           await persistMarkdown(event.markdown, false);
           onProgress({ phase: "draft", mddLength: event.markdown.length });
@@ -1744,7 +1902,7 @@ export class AiAnalysisService {
           if (projectId?.trim()) {
             this.estimationService.clearLiveDraft(projectId.trim(), stageId ?? undefined);
           }
-          return {
+          result = {
             ok: true,
             mode,
             projectId,
@@ -1752,6 +1910,7 @@ export class AiAnalysisService {
             mddLength: finalMarkdown.length,
             outcome: "done",
           };
+          return result;
         } else if (event.type === "error") {
           throw new Error(event.message);
         } else if (event.type === "blocked") {
@@ -1772,10 +1931,18 @@ export class AiAnalysisService {
     };
 
     switch (mode) {
-      case "pipeline":
-        return consume(
+      case "pipeline": {
+        const jobResult = await consume(
           this.streamMddAnalysis(data.dbgaContent ?? "", projectId, stageId) as AsyncGenerator<MddJobEvent>,
         );
+        if (jobResult.ok && jobResult.outcome === "done") {
+          const docs = await this.mddUpstreamSync.loadUpstreamDocuments(projectId, stageId).catch(() => null);
+          if (docs?.stageId) {
+            await this.mddUpstreamSync.captureBaseline(projectId, docs.stageId).catch(() => undefined);
+          }
+        }
+        return jobResult;
+      }
       case "manager":
         return consume(
           this.streamMddAnalysisWithManager(
@@ -1802,6 +1969,35 @@ export class AiAnalysisService {
             data.gapReasons,
           ),
         );
+      }
+      case "upstream-sync": {
+        const analysis = await this.mddUpstreamSync.analyze(projectId, stageId);
+        const sections = this.mddUpstreamSync.normalizeSections(data.upstreamSections, analysis);
+        if (!sections.length) {
+          throw new Error("No hay secciones MDD para sincronizar desde upstream.");
+        }
+        const summary =
+          data.upstreamChangeSummary?.trim() || this.mddUpstreamSync.buildSyncSummary(analysis);
+        const docs = await this.mddUpstreamSync.loadUpstreamDocuments(projectId, stageId);
+        onProgress({ phase: "upstream-sync", message: `Sincronizando ${sections.length} sección(es)…` });
+        const jobResult = await consume(
+          this.streamMddUpstreamSync(
+            projectId,
+            sections,
+            summary,
+            data.dbgaContent ?? docs.dbgaContent,
+            stageId,
+          ),
+        );
+        if (jobResult.ok && jobResult.outcome === "done") {
+          const targetStage = stageId?.trim() || docs.stageId;
+          await this.mddUpstreamSync.captureBaseline(projectId, targetStage).catch((err) => {
+            this.logger.warn(
+              `[MDD upstream-sync] capture baseline failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          });
+        }
+        return jobResult;
       }
       default:
         throw new Error(`Modo MDD no soportado en job: ${mode}`);

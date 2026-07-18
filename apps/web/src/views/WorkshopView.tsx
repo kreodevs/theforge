@@ -89,6 +89,8 @@ import { MDD_JOB_MODE_LABELS } from "@theforge/shared-types";
 import type { ArtifactTypeDefinition, GenerationJobType } from "@theforge/shared-types";
 import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
+import MddUpstreamSyncBanner from "../components/MddUpstreamSyncBanner";
+import MddRegenerateDialog, { type MddRegenerateMode } from "../components/MddRegenerateDialog";
 import { AIProviderBanner } from "../components/AIProviderBanner";
 import { ModelsUnavailableDialog } from "../components/ModelsUnavailableDialog";
 import MddViewer from "../components/MddViewer";
@@ -378,8 +380,12 @@ export default function WorkshopView({
   const deliverablesReadOnly = stageDeliverableView?.readOnly === true;
   const patchWorkshopStage = useWorkshopStore((s) => s.patchWorkshopStage);
   const generateMddFromBenchmark = useWorkshopStore((s) => s.generateMddFromBenchmark);
+  const generateMddUpstreamSync = useWorkshopStore((s) => s.generateMddUpstreamSync);
   const persistMddContent = useWorkshopStore((s) => s.persistMddContent);
   const [mddPatternsWizardOpen, setMddPatternsWizardOpen] = useState(false);
+  const [mddRegenerateDialogOpen, setMddRegenerateDialogOpen] = useState(false);
+  const [mddRegenerateInitialMode, setMddRegenerateInitialMode] =
+    useState<MddRegenerateMode>("full");
   const [clearMddConfirmOpen, setClearMddConfirmOpen] = useState(false);
   const [mddPatternsWizardMode, setMddPatternsWizardMode] =
     useState<MddPatternsWizardMode>("initial");
@@ -772,6 +778,11 @@ export default function WorkshopView({
       void openPatternsWizardInitial();
       return;
     }
+    if (effectiveMddTrimmed.length > 0) {
+      setMddRegenerateInitialMode("full");
+      setMddRegenerateDialogOpen(true);
+      return;
+    }
     void generateMddFromBenchmark(projectId);
   }, [
     projectId,
@@ -782,6 +793,29 @@ export default function WorkshopView({
     generateMddFromBenchmark,
     openPatternsWizardInitial,
   ]);
+
+  const openMddSyncDialog = useCallback(() => {
+    setMddRegenerateInitialMode("upstream-sync");
+    setMddRegenerateDialogOpen(true);
+  }, []);
+
+  const handleMddRegenerateFull = useCallback(async () => {
+    if (!projectId?.trim()) return;
+    setMddRegenerateDialogOpen(false);
+    await generateMddFromBenchmark(projectId);
+  }, [projectId, generateMddFromBenchmark]);
+
+  const handleMddRegenerateSync = useCallback(
+    async (sections: number[]) => {
+      if (!projectId?.trim()) return;
+      setMddRegenerateDialogOpen(false);
+      await generateMddUpstreamSync(projectId, {
+        sections,
+        stageId: activeStageId,
+      });
+    },
+    [projectId, generateMddUpstreamSync, activeStageId],
+  );
 
   const openEditMddPatterns = useCallback(() => {
     setMddPatternsWizardMode("edit");
@@ -3161,6 +3195,13 @@ export default function WorkshopView({
       <div className="shrink-0">
         <AIProviderBanner onOpenSettings={onOpenSettings} />
         <ComplexityPendingBanner />
+        {!isLegacyProject ? (
+          <MddUpstreamSyncBanner
+            syncStatus={generationStatus?.mddUpstreamSync}
+            disabled={loading || generationStatus?.busy === true}
+            onOpenSyncDialog={openMddSyncDialog}
+          />
+        ) : null}
       </div>
 
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:flex lg:flex-row lg:items-stretch lg:min-h-0">
@@ -5852,6 +5893,15 @@ export default function WorkshopView({
           (mddPatternsWizardMode === "edit" && mddReviewing)
         }
         onConfirm={handleMddPatternsWizardConfirm}
+      />
+      <MddRegenerateDialog
+        open={mddRegenerateDialogOpen}
+        onOpenChange={setMddRegenerateDialogOpen}
+        syncStatus={generationStatus?.mddUpstreamSync}
+        initialMode={mddRegenerateInitialMode}
+        loading={loading && loadingReason === "mdd"}
+        onConfirmFull={handleMddRegenerateFull}
+        onConfirmSync={handleMddRegenerateSync}
       />
       <AemGenerateDialog
         open={aemGenerateDialogOpen}

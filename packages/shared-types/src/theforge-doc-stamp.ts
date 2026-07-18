@@ -102,18 +102,31 @@ export function peelTheforgeDocStamp(text: string): { stamp: string; body: strin
     body = body.slice(meta[0].length);
   }
 
-  const humanWithSep = body.match(HUMAN_HEADER_WITH_SEP_RE);
-  if (humanWithSep?.[0]) {
-    stamp += humanWithSep[0];
-    body = body.slice(humanWithSep[0].length);
-  } else {
-    const humanLine = body.match(HUMAN_BLOCKQUOTE_LINE_RE);
-    if (humanLine?.[0]) {
-      stamp += humanLine[0];
-      body = body.slice(humanLine[0].length);
-      body = body.replace(/^---\s*\n+/, "");
+  // Fragmento huérfano si el comentario HTML quedó truncado (`--> > 📅 …`).
+  if (body.startsWith("-->")) {
+    const orphan = body.match(/^-->\s*/);
+    if (orphan?.[0]) {
+      stamp += orphan[0];
+      body = body.slice(orphan[0].length);
     }
   }
+
+  const humanPatterns = [
+    HUMAN_HEADER_WITH_SEP_RE,
+    /^>\s*📅[^\n]*\n---\s*\n+/,
+    /^>\s*📅[^\n]*\s+---\s+/,
+    HUMAN_BLOCKQUOTE_LINE_RE,
+  ];
+  for (const re of humanPatterns) {
+    const human = body.match(re);
+    if (human?.[0]) {
+      stamp += human[0];
+      body = body.slice(human[0].length);
+      break;
+    }
+  }
+
+  body = body.replace(/^---\s*\n+/, "");
 
   return { stamp, body };
 }

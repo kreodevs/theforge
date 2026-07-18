@@ -114,7 +114,7 @@ export function WorkshopAgentProgressPanel({
                 <AiGenerativeDots />
               </span>
               <span className="min-w-0 pt-0.5 font-semibold leading-snug text-[color-mix(in_oklch,var(--primary)_88%,var(--foreground))]">
-                Siguiente paso…
+                Iniciando siguiente paso…
               </span>
             </li>
           ) : null}

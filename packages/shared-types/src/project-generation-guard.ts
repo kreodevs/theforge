@@ -1,4 +1,6 @@
 import type { ComplexityLevel } from "./project.js";
+import type { MddJobProgressStep } from "./mdd-job-progress.js";
+import type { MddUpstreamSyncAnalysis } from "./mdd-upstream-sync.js";
 import {
   DELIVERABLE_PROJECT_CONTENT_FIELD,
   DELIVERABLE_WAVES_BY_COMPLEXITY,
@@ -10,13 +12,14 @@ import {
 export const MIN_GENERATION_CONTENT_LEN = 48;
 
 /** Modos de job MDD en cola background (`theforge-mdd`). */
-export type MddJobMode = "pipeline" | "manager" | "section" | "legacy";
+export type MddJobMode = "pipeline" | "manager" | "section" | "legacy" | "upstream-sync";
 
 export const MDD_JOB_MODE_LABELS: Record<MddJobMode, string> = {
   pipeline: "MDD desde benchmark",
   manager: "MDD (Manager)",
   section: "Regeneración de sección MDD",
   legacy: "MDD legacy (codebase)",
+  "upstream-sync": "Sincronización MDD desde upstream",
 };
 
 export type MddJobSnapshot = {
@@ -26,6 +29,24 @@ export type MddJobSnapshot = {
   progressAgent?: string;
   progressMessage?: string;
   progressPhase?: string;
+  /** Pasos completados acumulados (no se pierden entre polls). */
+  progressSteps?: MddJobProgressStep[];
+  /** Paso en ejecución (presente continuo). */
+  progressActive?: MddJobProgressStep | null;
+};
+
+/** Estado de sincronización incremental MDD ← DBGA/BRD/Benchmark. */
+export type MddUpstreamSyncStatus = Pick<
+  MddUpstreamSyncAnalysis,
+  | "pendingSync"
+  | "changedSources"
+  | "recommendedSections"
+  | "expandedSections"
+  | "canSync"
+  | "needsFullRegen"
+  | "hasBaseline"
+> & {
+  changes: MddUpstreamSyncAnalysis["changes"];
 };
 
 /** Tipos de job de generación soportados por la cola BullMQ / in-memory. */
@@ -119,6 +140,8 @@ export type ProjectGenerationStatus = {
   activeJob: GenerationJobSnapshot | null;
   queuedJobs: GenerationJobSnapshot[];
   gates: Partial<Record<GenerationJobType, GenerationGateEntry>>;
+  /** Cambios upstream pendientes de reflejar en el MDD (si hay MDD y baseline). */
+  mddUpstreamSync?: MddUpstreamSyncStatus | null;
 };
 
 function substantial(content: string | null | undefined): boolean {

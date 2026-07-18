@@ -7,13 +7,24 @@ const MAX_CONSECUTIVE_POLL_NETWORK_ERRORS = 15;
 
 export type MddJobStatusResponse = {
   status: string;
-  progress?: {
-    agent?: string;
-    message?: string;
-    phase?: string;
-    mddLength?: number;
-    section?: number;
-  };
+  progress?:
+    | {
+        steps?: Array<{ agent: string; message: string }>;
+        active?: { agent: string; message: string } | null;
+        latest?: {
+          agent?: string;
+          message?: string;
+          phase?: string;
+          mddLength?: number;
+          section?: number;
+        };
+        agent?: string;
+        message?: string;
+        phase?: string;
+        mddLength?: number;
+        section?: number;
+      }
+    | number;
   result?: {
     ok?: boolean;
     outcome?: "done" | "interrupt";
