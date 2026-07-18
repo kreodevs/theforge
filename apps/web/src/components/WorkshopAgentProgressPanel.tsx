@@ -33,10 +33,17 @@ function StepIcon({ item }: { item: AgentProgressItem }) {
   );
 }
 
-function agentDisplayLabel(items: readonly AgentProgressItem[], index: number): string {
+function agentDisplayLabel(
+  items: readonly AgentProgressItem[],
+  index: number,
+  active: boolean,
+): string {
   const agent = items[index]?.agent ?? "";
+  if (!active) return agent;
   const priorSame = items.slice(0, index).filter((p) => p.agent === agent).length;
-  return priorSame === 0 ? agent : `${agent} (${priorSame + 1}ª pasada)`;
+  if (priorSame === 0) return agent;
+  // Solo el paso activo: indicar revisión sin numerar (evita «5ª pasada» alarmante).
+  return `${agent} (revisión)`;
 }
 
 function ProgressStepRow({
@@ -133,9 +140,9 @@ export function WorkshopAgentProgressPanel({
             const index = completedSteps.length - visibleCompleted.length + i;
             return (
               <ProgressStepRow
-                key={`done-${p.agent}-${index}`}
+                key={`done-${p.step ?? p.agent}-${index}-${p.message.slice(0, 24)}`}
                 item={p}
-                label={agentDisplayLabel(completedSteps, index)}
+                label={agentDisplayLabel(completedSteps, index, false)}
               />
             );
           })}
@@ -143,7 +150,7 @@ export function WorkshopAgentProgressPanel({
             <ProgressStepRow
               key={`active-${activeStep.agent}-${items.length - 1}`}
               item={activeStep}
-              label={agentDisplayLabel(items, items.indexOf(activeStep))}
+              label={agentDisplayLabel(items, items.indexOf(activeStep), true)}
             />
           ) : null}
           {loading && !activeStep ? (
