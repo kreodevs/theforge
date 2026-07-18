@@ -4,6 +4,24 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+### Added
+
+- **MDD jobs — visibilidad y cancelación:** `GET /projects/:id/generation-status` incluye `mddJobs[]` (jobId, mode, status, progreso). `DELETE /projects/:id/mdd-jobs/:jobId` cancela jobs en cola o aborta pipeline activo entre nodos LangGraph. Banner Workshop con detalle del job y botón «Cancelar MDD».
+- **Worker BullMQ dedicado:** proceso `worker.js` (`THEFORGE_RUNTIME_ROLE=worker`) y servicio `theforge-worker` en compose; la API (`http`) solo encola. Config `bullmq-runtime.config.ts` con concurrencia por cola (`MDD_BULLMQ_CONCURRENCY`, default 2).
+
+### Changed
+
+- **Producción:** `REDIS_URL` obligatorio (`NODE_ENV=production`); entrypoint, `main.ts` y `worker.ts` abortan si falta. Sin Redis queda fallback in-memory solo en desarrollo.
+- **Etiquetas MDD en progreso:** `getAgentLabel` y mensajes para nodos `diagram_injector`, `format_after_architect`, `cross_consistency_checker`, etc.
+- **`docker-compose.yml`:** `theforge-api` con `THEFORGE_RUNTIME_ROLE=http`; nuevo `theforge-worker` con rol `worker`.
+
+### Fixed
+
+- **Panel «Progreso del flujo» MDD:** deduplicación de pasos idénticos reemitidos por polling del job en background (evita decenas de filas `diagram_injector`).
+- **Poll MDD en Workshop:** reintentos de red (~30 s) antes de error fatal; aviso amarillo si el job sigue en servidor tras fallo de poll.
+- **Listas ordenadas partidas:** `repairSplitOrderedListItems` en `formatDocumentMarkdown` une marcadores `1.` en línea sola con el texto en la siguiente.
+- **Mermaid en viewer:** `<br>` → `<br/>` en SVG generado.
+
 ## [v1.2.1] — 2026-07-17
 
 > **Workshop — edición DBGA y covenant de delimitadores** — Pipeline de edición en chat endurecido, heurística «revisa gaps», avisos sin jerga `---FIN_*---` para el usuario y regla firmada para agentes.
