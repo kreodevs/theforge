@@ -113,6 +113,11 @@ function normalizedMddForPersistCompare(content: string | null | undefined): str
   return normalizeWorkshopDocumentForEditor(content) ?? "";
 }
 
+/** Texto del textarea MDD: sin stamp API (fechas solo en WorkshopDocumentStampBar). */
+function mddContentForEditor(content: string | null | undefined): string {
+  return normalizeWorkshopDocumentForEditor(content) ?? (content ?? "").trim();
+}
+
 function patchAgentProgressFromMddEvent(
   set: (partial: Partial<WorkshopState> | ((state: WorkshopState) => Partial<WorkshopState>)) => void,
   raw: unknown,
@@ -140,7 +145,7 @@ async function persistMddFromChatStream(
   const incoming = markdown.trim();
   if (incoming.length <= 80) return;
 
-  set({ mddContent: incoming });
+  set({ mddContent: mddContentForEditor(incoming) });
 
   if (mddStreamPersistDebounceTimer) clearTimeout(mddStreamPersistDebounceTimer);
   await new Promise<void>((resolve) => {
@@ -1457,7 +1462,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         : s.project,
     })),
   setSession: (s) => set({ session: s }),
-  setMddContent: (content) => set({ mddContent: content }),
+  setMddContent: (content) => set({ mddContent: mddContentForEditor(content) }),
   setLoading: (v) => set({ loading: v }),
   setSynced: (v) => set({ synced: v }),
   setError: (e) => set({ error: e }),
@@ -2351,7 +2356,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         fetchConformance(requestProjectId).catch(() => {});
         void get().fetchGenerationStatus(requestProjectId);
         set({
-          mddContent: merged,
+          mddContent: mddContentForEditor(merged),
           loading: false,
           loadingReason: null,
           notice: null,
@@ -2563,7 +2568,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     if (!shouldApplyWorkshopUpdate(get, requestProjectId)) continue;
                     const draftGate = deliveryGateFromStreamEvent(event as { deliveryGate?: MddDeliveryGateResult });
                     set({
-                      mddContent: event.markdown,
+                      mddContent: mddContentForEditor(event.markdown),
                       ...(draftGate ? { deliveryGate: draftGate } : {}),
                     });
                   } else if (event.type === "interrupt") {
@@ -2589,7 +2594,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                             "El chat indicó cambios pero el MDD no se actualizó. Revisa si hay un plan pendiente de aprobar, o usa /infraestructura o /seguridad para forzar la regeneración.",
                         });
                       }
-                      set({ mddContent: incoming });
+                      set({ mddContent: mddContentForEditor(incoming) });
                       if (!unchanged) {
                         await persistMddFromChatStream(get, set, incoming, requestProjectId);
                       }
@@ -2652,7 +2657,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     set({ managerThreadId: null, pendingPlanApproval: null });
                     const markdownOk = event.markdown.trim().length > 80;
                     const mddBeforeFetch = (get().mddContent ?? "").trim();
-                    if (markdownOk) set({ mddContent: event.markdown });
+                    if (markdownOk) set({ mddContent: mddContentForEditor(event.markdown) });
 
                     const precisionBreakdown = (event as any).precisionBreakdown;
                     const auditTrail = (event as any).auditTrail;
@@ -3072,7 +3077,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     }
   },
 
-  updateMddContent: (content) => set({ mddContent: content }),
+  updateMddContent: (content) => set({ mddContent: mddContentForEditor(content) }),
 
   setUxUiGuideContent: (content) => set({ uxUiGuideContent: content }),
   persistUxUiGuideContent: async (content) => {
@@ -4645,8 +4650,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   },
 
   revertMddContent: () => {
-    const { project } = get();
-    set({ mddContent: project?.mddContent ?? "" });
+    set({ mddContent: selectPersistedMddBaseline(get()) });
   },
 
   clearMddContentCompletely: async (projectId) => {
@@ -4701,7 +4705,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     try {
       await persistMddContent(content, { force: true });
       const saved = selectPersistedMddBaseline(get());
-      set({ mddContent: saved });
+      set({ mddContent: selectPersistedMddBaseline(get()) });
       await apiFetch(`${API_BASE}/ai-analysis/mdd/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

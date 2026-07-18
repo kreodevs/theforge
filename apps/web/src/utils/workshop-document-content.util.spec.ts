@@ -45,6 +45,15 @@ describe("workshop-document-content", () => {
     assert.equal(out?.trim(), body.trim());
     assert.doesNotMatch(out ?? "", /📅/);
   });
+
+  it("strips corrupted stamp glued before H1 (no false dirty / upstream sync)", () => {
+    const corrupted =
+      "Última modificación: 2026-07-18T05:06:06.701Z --> 📅 Creado: 18 de julio de 2026, 05:06:06 UTC · Última modificación: 18 de julio de 2026, 05:06:06 UTC --- # Master Design Document\n\n## 1. Contexto\n";
+    const body = "# Master Design Document\n\n## 1. Contexto\n";
+    const out = normalizeWorkshopDocumentForEditor(corrupted);
+    assert.equal(out?.trim(), body.trim());
+    assert.doesNotMatch(out ?? "", /📅|Última modificación:/);
+  });
 });
 
 describe("buildWorkshopDocumentTimestampsMap", () => {

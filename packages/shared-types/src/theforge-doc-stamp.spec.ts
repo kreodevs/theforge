@@ -77,6 +77,24 @@ describe("theforge-doc-stamp", () => {
     assert.ok(body.startsWith("# Specs"));
   });
 
+  it("peels truncated ISO close and glued stamp before H1", () => {
+    const raw =
+      "Última modificación: 2026-07-18T05:06:06.701Z --> 📅 Creado: 18 de julio de 2026, 05:06:06 UTC · Última modificación: 18 de julio de 2026, 05:06:06 UTC --- # Master Design Document\n\n## 1. Contexto\n";
+    const { stamp, body } = peelTheforgeDocStamp(raw);
+    assert.ok(stamp.includes("📅"));
+    assert.ok(body.startsWith("# Master Design Document"));
+    assert.doesNotMatch(body, /Última modificación:/);
+  });
+
+  it("peels current API stamp with Última modificación label", () => {
+    const raw =
+      "<!-- theforge-doc:created=2026-07-18T05:06:06.701Z|updated=2026-07-18T05:06:06.701Z -->\n" +
+      "> 📅 Creado: 18 de julio de 2026, 05:06:06 UTC · Última modificación: 18 de julio de 2026, 05:06:06 UTC\n\n" +
+      "---\n\n# Master Design Document\n";
+    const { body } = peelTheforgeDocStamp(raw);
+    assert.equal(body.trim(), "# Master Design Document");
+  });
+
   it("formatTheforgeDocTimestampsForDisplay accepts custom timezone", () => {
     const display = formatTheforgeDocTimestampsForDisplay(parseTheforgeDocTimestamps(STAMPED), {
       timeZone: "America/Mexico_City",

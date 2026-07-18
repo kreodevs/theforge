@@ -16,11 +16,42 @@
 const META_COMMENT_RE =
   /^<!--\s*theforge-doc:created=([^|]+)\|updated=([^|]+)\s*-->\s*\n?/;
 
+/** Cierre huérfano si falta `<!-- theforge-doc:created=…|updated=` (p. ej. tras formateo parcial). */
+const ORPHAN_COMMENT_CLOSE_RE =
+  /^[^\n]*(?:\|)?updated=[^\s>]+\s*-->\s*/;
+
+/** Línea humana truncada con ISO y `-->` sin comentario HTML completo. */
+const ORPHAN_HUMAN_ISO_CLOSE_RE =
+  /^[^\n]*\d{4}-\d{2}-\d{2}T[\d:.+-]+Z\s*-->\s*/;
+
 /** Human line (current Creado/… or legacy Generado/…) + optional `---` separator. */
 const HUMAN_HEADER_WITH_SEP_RE = /^>\s*📅[\s\S]*?\n\n---\n\n/;
 
 /** Blockquote stamp without `---` (regeneraciones que van directo al H1). */
 const HUMAN_BLOCKQUOTE_LINE_RE = /^>\s*📅[^\n]*\n+/;
+
+/** Línea humana sin `>` (stamp pegado al cuerpo). */
+const HUMAN_LINE_NO_BLOCKQUOTE_RE = /^📅[^\n]*(?:\n|$)/;
+
+/** `📅 … --- # Título` en una sola línea. */
+const HUMAN_GLUE_H1_RE = /^>?\s*📅[^\n]*\s+---\s+(?=#)/;
+
+function stripLeadingHorizontalRuleBeforeHeading(body: string): string {
+  return body.replace(/^---\s*(?=#{1,2}\s)/, "").trimStart();
+}
+
+/** Si quedó basura de stamp, recorta todo lo anterior al primer H1/H2. */
+export function stripStampResidueBeforeHeading(body: string): string {
+  if (!body.trim()) return body;
+  const header = body.match(/^#{1,2}\s+/m);
+  if (header?.index != null && header.index > 0) {
+    const prefix = body.slice(0, header.index);
+    if (/📅|theforge-doc:|<!--|\|updated=/.test(prefix)) {
+      return body.slice(header.index).trimStart();
+    }
+  }
+  return body;
+}
 
 const STAMP_LOCALE = "es-MX";
 
@@ -102,6 +133,18 @@ export function peelTheforgeDocStamp(text: string): { stamp: string; body: strin
     body = body.slice(meta[0].length);
   }
 
+  const orphanClose = body.match(ORPHAN_COMMENT_CLOSE_RE);
+  if (orphanClose?.[0]) {
+    stamp += orphanClose[0];
+    body = body.slice(orphanClose[0].length);
+  }
+
+  const orphanHumanIso = body.match(ORPHAN_HUMAN_ISO_CLOSE_RE);
+  if (orphanHumanIso?.[0]) {
+    stamp += orphanHumanIso[0];
+    body = body.slice(orphanHumanIso[0].length);
+  }
+
   // Fragmento huérfano si el comentario HTML quedó truncado (`--> > 📅 …`).
   if (body.startsWith("-->")) {
     const orphan = body.match(/^-->\s*/);
@@ -113,9 +156,11 @@ export function peelTheforgeDocStamp(text: string): { stamp: string; body: strin
 
   const humanPatterns = [
     HUMAN_HEADER_WITH_SEP_RE,
+    HUMAN_GLUE_H1_RE,
     /^>\s*📅[^\n]*\n---\s*\n+/,
     /^>\s*📅[^\n]*\s+---\s+/,
     HUMAN_BLOCKQUOTE_LINE_RE,
+    HUMAN_LINE_NO_BLOCKQUOTE_RE,
   ];
   for (const re of humanPatterns) {
     const human = body.match(re);
@@ -127,6 +172,8 @@ export function peelTheforgeDocStamp(text: string): { stamp: string; body: strin
   }
 
   body = body.replace(/^---\s*\n+/, "");
+  body = stripLeadingHorizontalRuleBeforeHeading(body);
+  body = stripStampResidueBeforeHeading(body);
 
   return { stamp, body };
 }

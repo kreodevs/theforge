@@ -2,6 +2,7 @@ import {
   formatTheforgeDocTimestampsForDisplay,
   parseTheforgeDocTimestamps,
   peelTheforgeDocStamp,
+  stripStampResidueBeforeHeading,
 } from "@theforge/shared-types";
 import {
   WORKSHOP_STAGE_DELIVERABLE_FIELDS,
@@ -97,6 +98,8 @@ export function cleanDocForWorkshop(text: string | null): string | null {
   let c = text.trim();
   if (!c) return null;
 
+  c = stripStampResidueBeforeHeading(c);
+
   if (c.startsWith("---")) {
     return cleanFences(c);
   }
@@ -107,6 +110,8 @@ export function cleanDocForWorkshop(text: string | null): string | null {
       const newlineHashIndex = c.indexOf("\n#");
       if (newlineHashIndex !== -1) {
         c = c.slice(newlineHashIndex + 1).trim();
+      } else if (/📅|theforge-doc:|<!--|\|updated=/.test(c.slice(0, firstHashIndex))) {
+        c = c.slice(firstHashIndex).trim();
       }
     }
   }
