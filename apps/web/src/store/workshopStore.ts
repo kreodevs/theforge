@@ -12,6 +12,7 @@ import {
   buildUpstreamChangeSummaryForPipeline,
   mddMarkdownNeedsStructuralRepair,
 } from "@theforge/shared-types";
+import { selectedPatternIdsFromMdd } from "@theforge/shared-types/mdd-governance-patterns";
 import {
   documentPersistFieldLabel,
   isChangelogOnlyDocument,
@@ -1857,12 +1858,15 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       const activeStageId = prev && stages.some((s) => s.id === prev) ? prev : pickDefaultStageId(stages);
       const focused = workshopStateFromProjectStage({ ...data, stages }, activeStageId);
       if (!shouldApplyWorkshopUpdate(get, requestedId)) return null;
-      const preserveMddLocal = get().mddPersisting;
+      const localMdd = get().mddContent ?? "";
+      const persistedMdd = selectPersistedMddBaseline(get());
+      const preserveMddLocal =
+        get().mddPersisting || !workshopDocumentBodiesEqual(localMdd, persistedMdd);
       set({
         project: focused.project,
         workshopStages: stages,
         activeStageId,
-        mddContent: preserveMddLocal ? get().mddContent : focused.mddContent,
+        mddContent: preserveMddLocal ? localMdd : focused.mddContent,
         documentTimestamps: focused.documentTimestamps,
         uxUiGuideContent: focused.uxUiGuideContent,
         dbgaContent: normalizeWorkshopDocumentForEditor(data.dbgaContent ?? null),
@@ -4579,18 +4583,22 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
   },
 
   persistMddContent: async (content, options) => {
+    const state = get();
+    if (!state.projectId || !state.project) return;
+
+    const baseline = normalizedMddForPersistCompare(selectPersistedMddBaseline(state));
+    const normalized = normalizedMddForPersistCompare(content);
+    if (!options?.force && normalized === baseline) {
+      set({ synced: true });
+      return;
+    }
+
+    set({ mddPersisting: true, synced: false, error: null, notice: null });
+
     return enqueueMddPersist(async () => {
       const { projectId, project, fetchEstimation } = get();
       if (!projectId || !project) return;
 
-      const baseline = normalizedMddForPersistCompare(selectPersistedMddBaseline(get()));
-      const normalized = normalizedMddForPersistCompare(content);
-      if (!options?.force && normalized === baseline) {
-        set({ synced: true });
-        return;
-      }
-
-      set({ mddPersisting: true, synced: false, error: null, notice: null });
       try {
         const stageId = get().activeStageId;
         const r = await apiFetch(`${API_BASE}/projects/${projectId}`, {
@@ -4730,9 +4738,19 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     const content = (mddContent ?? "").trim();
     const baseline = selectPersistedMddBaseline(get());
     if (workshopDocumentBodiesEqual(content, baseline)) return;
+    const patternIdsChanged = (() => {
+      const a = selectedPatternIdsFromMdd(content);
+      const b = selectedPatternIdsFromMdd(baseline);
+      if (a.size !== b.size) return true;
+      for (const id of a) if (!b.has(id)) return true;
+      return false;
+    })();
     set({ mddReviewing: true });
     try {
-      await persistMddContent(content, { force: true });
+      await persistMddContent(content, {
+        force: true,
+        ...(patternIdsChanged ? { allowGovernancePatternChange: true } : {}),
+      });
       const saved = selectPersistedMddBaseline(get());
       set({ mddContent: selectPersistedMddBaseline(get()) });
       await apiFetch(`${API_BASE}/ai-analysis/mdd/review`, {

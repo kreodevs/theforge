@@ -1,7 +1,7 @@
 /**
  * Selector de patrones de desarrollo (SSOT): primera generación o edición sin regenerar el MDD.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   buildGovernanceBodySelectedOnly,
@@ -122,14 +122,32 @@ export function MddPatternsWizardDialog({
     selectedPatternIdsFromMdd(initialMddContent ?? ""),
   );
   const [activeGroupId, setActiveGroupId] = useState<string>(() => groupTabs[0]?.id ?? "");
+  /** MDD base al abrir / terminar análisis; no sigue props mientras el usuario edita. */
+  const editBaselineMddRef = useRef("");
+  const prevAnalyzingRef = useRef(false);
+  const selectionSyncedRef = useRef(false);
 
   useEffect(() => {
-    if (!open || analyzing) return;
+    if (!open) {
+      prevAnalyzingRef.current = false;
+      selectionSyncedRef.current = false;
+      editBaselineMddRef.current = "";
+      return;
+    }
+    const analysisJustFinished = prevAnalyzingRef.current && !analyzing;
+    prevAnalyzingRef.current = analyzing;
+    if (analyzing) return;
+
+    const shouldSyncSelection = !selectionSyncedRef.current || analysisJustFinished;
+    if (!shouldSyncSelection) return;
+
+    selectionSyncedRef.current = true;
+    editBaselineMddRef.current = (initialMddContent ?? "").trim();
     if (preselectedIds && preselectedIds.size > 0) {
       setSelected(new Set(preselectedIds));
       return;
     }
-    setSelected(selectedPatternIdsFromMdd(initialMddContent ?? ""));
+    setSelected(selectedPatternIdsFromMdd(editBaselineMddRef.current));
   }, [open, analyzing, initialMddContent, preselectedIds]);
 
   useEffect(() => {
@@ -160,7 +178,10 @@ export function MddPatternsWizardDialog({
     const body = buildGovernanceBodySelectedOnly(selected);
     const markdown =
       mode === "edit"
-        ? updateMddGovernancePatterns((initialMddContent ?? "").trim(), selected)
+        ? updateMddGovernancePatterns(
+            editBaselineMddRef.current || (initialMddContent ?? "").trim(),
+            selected,
+          )
         : buildMddWithGovernanceSkeleton("Master Design Document", body);
     await onConfirm(markdown, selected);
   }, [mode, onConfirm, selected, initialMddContent]);

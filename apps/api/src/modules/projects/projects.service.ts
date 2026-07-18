@@ -1060,6 +1060,11 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       const skipPipelineForSeed =
         clearMddCompletely === true ||
         (mddGovernanceSeedOnly === true && !mddHasSubstantialBody(mddForPipeline));
+      const skipPipelineForPatternWizard =
+        allowGovernancePatternChange === true &&
+        clearMddCompletely !== true &&
+        mddGovernanceSeedOnly !== true &&
+        mddFormatOnly !== true;
       if (mddFormatOnly === true) {
         const formatted = prependDocumentTimestamps(prepareMddMarkdownForPersist(mddForPipeline ?? ""));
         await this.prisma.stage.update({
@@ -1072,14 +1077,21 @@ export class ProjectsService implements IOrchestratorProjectsPort {
           status: targetStage.status,
           precisionScore: targetStage.precisionScore,
         };
-      } else if (skipPipelineForSeed) {
+      } else if (skipPipelineForSeed || skipPipelineForPatternWizard) {
+        const formatted = skipPipelineForPatternWizard
+          ? prependDocumentTimestamps(prepareMddMarkdownForPersist(mddForPipeline ?? ""))
+          : prependDocumentTimestamps(mddForPipeline);
         await this.prisma.stage.update({
           where: { id: targetStage.id },
-          data: { mddContent: prependDocumentTimestamps(mddForPipeline), documentAst: parsedDocumentAst === null ? Prisma.JsonNull : (parsedDocumentAst as Prisma.InputJsonValue), documentVersion: parsedDocumentVersion },
+          data: {
+            mddContent: formatted,
+            documentAst: parsedDocumentAst === null ? Prisma.JsonNull : (parsedDocumentAst as Prisma.InputJsonValue),
+            documentVersion: parsedDocumentVersion,
+          },
         });
-        await this.changeLog.log(id, "mddContent", mddForPipeline);
+        await this.changeLog.log(id, "mddContent", formatted);
         pipelineResult = {
-          sanitizedMdd: mddForPipeline,
+          sanitizedMdd: formatted,
           status: targetStage.status,
           precisionScore: targetStage.precisionScore,
         };

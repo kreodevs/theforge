@@ -844,7 +844,6 @@ export default function WorkshopView({
       setMddPatternsWizardOpen(false);
       const mode = mddPatternsWizardMode;
       if (mode === "edit") {
-        setMddContent(markdown);
         await persistMddContent(markdown, {
           force: true,
           allowGovernancePatternChange: true,
@@ -858,7 +857,6 @@ export default function WorkshopView({
         }
         return;
       }
-      setMddContent(markdown);
       await persistMddContent(markdown, {
         force: true,
         allowGovernancePatternChange: true,
@@ -878,7 +876,6 @@ export default function WorkshopView({
     },
     [
       mddPatternsWizardMode,
-      setMddContent,
       persistMddContent,
       generateMddFromBenchmark,
       projectId,
