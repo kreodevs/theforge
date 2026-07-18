@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, Loader2, RefreshCw, RotateCcw, Save, SlidersHorizontal } from "lucide-react";
 import type { SystemConfigCategory, SystemConfigSnapshot } from "@theforge/shared-types";
+import { UnderlineTabs, type UnderlineTabItem } from "./ui/UnderlineTabs";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input } from "./ui";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -20,14 +21,81 @@ const CATEGORY_ORDER: SystemConfigCategory[] = [
   "debug",
 ];
 
+const CATEGORY_SHORT_LABELS: Partial<Record<SystemConfigCategory, string>> = {
+  integrations: "Integ.",
+  llm: "LLM",
+  queues: "Colas",
+  mcp: "MCP",
+  legacy: "Legacy",
+  debug: "Debug",
+};
+
+type SystemConfigSettingRow = SystemConfigSnapshot["settings"][number];
+
 function isTruthy(value: string): boolean {
   const v = value.trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "on";
 }
 
+function SystemConfigSettingField({
+  setting,
+  value,
+  changed,
+  onChange,
+}: {
+  setting: SystemConfigSettingRow;
+  value: string;
+  changed: boolean;
+  onChange: (key: string, value: string) => void;
+}) {
+  return (
+    <div
+      className="grid gap-2 border-b border-[var(--border)] pb-5 last:border-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] sm:gap-4"
+    >
+      <div className="min-w-0 space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="font-medium text-[var(--foreground)]">{setting.label}</p>
+          <Badge variant="outline">{SOURCE_LABELS[setting.source]}</Badge>
+          {setting.restartRequired ? <Badge variant="secondary">Reinicio worker</Badge> : null}
+        </div>
+        <p className="text-sm text-[var(--foreground-muted)]">{setting.description}</p>
+        <p className="font-mono text-xs text-[var(--foreground-muted)]">
+          {setting.envKey} · default: {setting.defaultValue || "∅"}
+        </p>
+      </div>
+
+      <div className="min-w-0">
+        {setting.type === "boolean" ? (
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-[var(--border)]"
+              checked={isTruthy(value)}
+              onChange={(e) => onChange(setting.key, e.target.checked ? "1" : "0")}
+            />
+            {isTruthy(value) ? "Activado" : "Desactivado"}
+          </label>
+        ) : (
+          <Input
+            type={setting.type === "secret" ? "password" : setting.type === "number" ? "number" : "text"}
+            value={value}
+            placeholder={setting.defaultValue || setting.envKey}
+            min={setting.min}
+            max={setting.max}
+            autoComplete={setting.type === "secret" ? "off" : undefined}
+            onChange={(e) => onChange(setting.key, e.target.value)}
+            className={cn(changed && "ring-1 ring-[var(--primary)]")}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function SystemConfigCard() {
   const [snapshot, setSnapshot] = useState<SystemConfigSnapshot | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [activeCategory, setActiveCategory] = useState<SystemConfigCategory>("integrations");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -69,6 +137,26 @@ export function SystemConfigCard() {
     }));
   }, [snapshot]);
 
+  const categoryTabs = useMemo((): UnderlineTabItem<SystemConfigCategory>[] => {
+    return categories.map(({ id, label }) => ({
+      id,
+      label,
+      shortLabel: CATEGORY_SHORT_LABELS[id] ?? label,
+    }));
+  }, [categories]);
+
+  const activeCategoryData = useMemo(
+    () => categories.find((c) => c.id === activeCategory) ?? categories[0] ?? null,
+    [activeCategory, categories],
+  );
+
+  useEffect(() => {
+    if (categories.length === 0) return;
+    if (!categories.some((c) => c.id === activeCategory)) {
+      setActiveCategory(categories[0]!.id);
+    }
+  }, [activeCategory, categories]);
+
   const changedKeys = useMemo(() => {
     if (!snapshot) return [];
     return snapshot.settings
@@ -104,6 +192,10 @@ export function SystemConfigCard() {
   const handleResetDraft = () => {
     if (!snapshot) return;
     setDraft(Object.fromEntries(snapshot.settings.map((s) => [s.key, s.value])));
+  };
+
+  const handleDraftChange = (key: string, value: string) => {
+    setDraft((prev) => ({ ...prev, [key]: value }));
   };
 
   if (loading) {
@@ -173,72 +265,34 @@ export function SystemConfigCard() {
         </CardContent>
       </Card>
 
-      {categories.map((category) => (
-        <Card key={category.id}>
+      {categoryTabs.length > 0 ? (
+        <UnderlineTabs
+          tabs={categoryTabs}
+          value={activeCategoryData?.id ?? categoryTabs[0]!.id}
+          onValueChange={setActiveCategory}
+          ariaLabel="Categorías de configuración del sistema"
+          idPrefix="system-config"
+        />
+      ) : null}
+
+      {activeCategoryData ? (
+        <Card>
           <CardHeader>
-            <CardTitle className="text-lg">{category.label}</CardTitle>
+            <CardTitle className="text-lg">{activeCategoryData.label}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
-            {category.settings.map((setting) => (
-              <div
+            {activeCategoryData.settings.map((setting) => (
+              <SystemConfigSettingField
                 key={setting.key}
-                className="grid gap-2 border-b border-[var(--border)] pb-5 last:border-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] sm:gap-4"
-              >
-                <div className="min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium text-[var(--foreground)]">{setting.label}</p>
-                    <Badge variant="outline">{SOURCE_LABELS[setting.source]}</Badge>
-                    {setting.restartRequired ? (
-                      <Badge variant="secondary">Reinicio worker</Badge>
-                    ) : null}
-                  </div>
-                  <p className="text-sm text-[var(--foreground-muted)]">{setting.description}</p>
-                  <p className="font-mono text-xs text-[var(--foreground-muted)]">
-                    {setting.envKey} · default: {setting.defaultValue || "∅"}
-                  </p>
-                </div>
-
-                <div className="min-w-0">
-                  {setting.type === "boolean" ? (
-                    <label className="flex cursor-pointer items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-[var(--border)]"
-                        checked={isTruthy(draft[setting.key] ?? "")}
-                        onChange={(e) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            [setting.key]: e.target.checked ? "1" : "0",
-                          }))
-                        }
-                      />
-                      {isTruthy(draft[setting.key] ?? "") ? "Activado" : "Desactivado"}
-                    </label>
-                  ) : (
-                    <Input
-                      type={setting.type === "secret" ? "password" : setting.type === "number" ? "number" : "text"}
-                      value={draft[setting.key] ?? ""}
-                      placeholder={setting.defaultValue || setting.envKey}
-                      min={setting.min}
-                      max={setting.max}
-                      autoComplete={setting.type === "secret" ? "off" : undefined}
-                      onChange={(e) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          [setting.key]: e.target.value,
-                        }))
-                      }
-                      className={cn(
-                        changedKeys.includes(setting.key) && "ring-1 ring-[var(--primary)]",
-                      )}
-                    />
-                  )}
-                </div>
-              </div>
+                setting={setting}
+                value={draft[setting.key] ?? ""}
+                changed={changedKeys.includes(setting.key)}
+                onChange={handleDraftChange}
+              />
             ))}
           </CardContent>
         </Card>
-      ))}
+      ) : null}
     </div>
   );
 }
