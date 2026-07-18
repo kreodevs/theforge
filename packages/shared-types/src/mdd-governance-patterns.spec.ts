@@ -16,6 +16,7 @@ import {
   stripGovernanceSection,
   updateMddGovernancePatterns,
   enforceMddGovernancePatternsOnPersist,
+  serverWouldDropGovernancePatterns,
 } from "./mdd-governance-patterns.js";
 
 describe("mdd-governance-patterns", () => {
@@ -95,6 +96,13 @@ describe("mdd-governance-patterns", () => {
     );
     assert.equal(patternsReverted, false);
     assert.ok(parseActivePatternsFromMdd(markdown).some((p) => p.label.includes("CQRS")));
+  });
+
+  it("serverWouldDropGovernancePatterns detecta respuesta sin patrones enviados", () => {
+    const base = buildMddWithGovernanceSkeleton();
+    const withPat = updateMddGovernancePatterns(base, new Set([optsId("Singleton")]));
+    assert.equal(serverWouldDropGovernancePatterns(withPat, base), true);
+    assert.equal(serverWouldDropGovernancePatterns(withPat, withPat), false);
   });
 
   it("preserva gobernanza al preparar salida con §1 sustancial", () => {

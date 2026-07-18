@@ -333,6 +333,28 @@ function patternIdSetsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boo
   return true;
 }
 
+/** true si la selección [X] difiere entre dos borradores MDD. */
+export function governancePatternSelectionDiffers(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  return !patternIdSetsEqual(
+    selectedPatternIdsFromMdd(a ?? ""),
+    selectedPatternIdsFromMdd(b ?? ""),
+  );
+}
+
+/** true si `received` omitiría algún patrón [X] presente en `sent`. */
+export function serverWouldDropGovernancePatterns(sent: string, received: string): boolean {
+  const sentIds = selectedPatternIdsFromMdd(sent);
+  const recvIds = selectedPatternIdsFromMdd(received);
+  if (sentIds.size === 0) return false;
+  for (const id of sentIds) {
+    if (!recvIds.has(id)) return true;
+  }
+  return false;
+}
+
 export type EnforceMddGovernancePatternsResult = {
   markdown: string;
   /** true si se ignoraron cambios manuales en la sección inmutable de patrones. */

@@ -12,7 +12,10 @@ import {
   buildUpstreamChangeSummaryForPipeline,
   mddMarkdownNeedsStructuralRepair,
 } from "@theforge/shared-types";
-import { selectedPatternIdsFromMdd } from "@theforge/shared-types/mdd-governance-patterns";
+import {
+  governancePatternSelectionDiffers,
+  serverWouldDropGovernancePatterns,
+} from "@theforge/shared-types/mdd-governance-patterns";
 import {
   documentPersistFieldLabel,
   isChangelogOnlyDocument,
@@ -86,6 +89,7 @@ import {
   resolveOrchestratorDocUnchangedError,
 } from "../utils/orchestratorDocGuard";
 import {
+  isSsotPatternsNotice,
   isWorkshopConnectionError,
   SSOT_PATTERNS_RESTORED_NOTICE,
 } from "../utils/workshopSyncStatus";
@@ -1860,13 +1864,16 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       if (!shouldApplyWorkshopUpdate(get, requestedId)) return null;
       const localMdd = get().mddContent ?? "";
       const persistedMdd = selectPersistedMddBaseline(get());
+      const serverMdd = focused.mddContent ?? "";
       const preserveMddLocal =
-        get().mddPersisting || !workshopDocumentBodiesEqual(localMdd, persistedMdd);
+        get().mddPersisting ||
+        !workshopDocumentBodiesEqual(localMdd, persistedMdd) ||
+        serverWouldDropGovernancePatterns(localMdd, serverMdd);
       set({
         project: focused.project,
         workshopStages: stages,
         activeStageId,
-        mddContent: preserveMddLocal ? localMdd : focused.mddContent,
+        mddContent: preserveMddLocal ? localMdd : serverMdd,
         documentTimestamps: focused.documentTimestamps,
         uxUiGuideContent: focused.uxUiGuideContent,
         dbgaContent: normalizeWorkshopDocumentForEditor(data.dbgaContent ?? null),
@@ -4616,8 +4623,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         if (r.ok) {
           const data = (await r.json()) as Project & { mddGovernancePatternsReverted?: boolean };
           const packed = projectWithUxAfterStream(data, data.uxUiGuideContent, get().activeStageId);
-          const savedContent = packed?.mddContent ?? data.mddContent ?? content;
+          let savedContent = packed?.mddContent ?? data.mddContent ?? content;
           const patternsReverted = data.mddGovernancePatternsReverted === true;
+          if (
+            options?.allowGovernancePatternChange &&
+            (patternsReverted || serverWouldDropGovernancePatterns(content, savedContent))
+          ) {
+            savedContent = content;
+          }
           const nextProjectRaw = packed?.project ?? data;
           const stateNow = get();
           const localFields = Object.fromEntries(
@@ -4738,25 +4751,21 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     const content = (mddContent ?? "").trim();
     const baseline = selectPersistedMddBaseline(get());
     if (workshopDocumentBodiesEqual(content, baseline)) return;
-    const patternIdsChanged = (() => {
-      const a = selectedPatternIdsFromMdd(content);
-      const b = selectedPatternIdsFromMdd(baseline);
-      if (a.size !== b.size) return true;
-      for (const id of a) if (!b.has(id)) return true;
-      return false;
-    })();
     set({ mddReviewing: true });
     try {
       await persistMddContent(content, {
         force: true,
-        ...(patternIdsChanged ? { allowGovernancePatternChange: true } : {}),
+        ...(governancePatternSelectionDiffers(content, baseline)
+          ? { allowGovernancePatternChange: true }
+          : {}),
       });
-      const saved = selectPersistedMddBaseline(get());
-      set({ mddContent: selectPersistedMddBaseline(get()) });
+      const stateAfterPersist = get();
+      if (stateAfterPersist.error && !isSsotPatternsNotice(stateAfterPersist.error)) return;
+      const saved = selectPersistedMddBaseline(get()) || content;
       await apiFetch(`${API_BASE}/ai-analysis/mdd/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: projectId.trim(), mddContent: saved || content }),
+        body: JSON.stringify({ projectId: projectId.trim(), mddContent: saved }),
       });
       fetchEstimation(projectId).catch(() => { });
     } finally {
