@@ -255,6 +255,13 @@ describe("normalizeMermaidDiagramBody — entrecomilla <br/> y especiales", () =
     assert.match(out, /C\["Registrar en failed_request_logs<br\/>failure_type: autorización"\]/);
     assert.match(out, /E\{"Token MCP expirado\?<br\/>pat_expires_at < now"\}/);
   });
+
+  it("normaliza <br> suelto a <br/>", () => {
+    const body = `flowchart TD
+    A["Portal<br>checkout"]`;
+    const out = normalizeMermaidDiagramBody(body);
+    assert.match(out, /Portal<br\/>checkout/);
+  });
 });
 
 describe("normalizeMermaidDiagramBody — no trunca etiquetas legítimas largas", () => {

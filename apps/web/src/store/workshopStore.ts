@@ -200,14 +200,15 @@ function streamErrorPatch(event: { message?: string; code?: string }) {
 }
 
 function errorStateFromCaught(e: unknown) {
+  const message = friendlyFetchError(e);
   if (e instanceof Error) {
     const code =
       "code" in e && typeof (e as { code?: string }).code === "string"
         ? (e as { code?: string }).code
         : undefined;
-    return streamErrorPatch({ message: e.message, code });
+    return streamErrorPatch({ message, code });
   }
-  return streamErrorPatch({ message: String(e) });
+  return streamErrorPatch({ message });
 }
 
 function pickEvaluatorCritique(data: Record<string, unknown>): string | null {
@@ -3736,12 +3737,25 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       set({ loading: false, loadingReason: null, agentProgress: [] });
       return data ?? get().project;
     } catch (e) {
-      set({
-        ...errorStateFromCaught(e),
-        loading: false,
-        loadingReason: null,
-        agentProgress: [],
-      });
+      const status = await get().fetchGenerationStatus(pid);
+      const stillRunning = Boolean(status?.busy || status?.mddStreamActive);
+      const friendly = friendlyFetchError(e);
+      if (stillRunning) {
+        set({
+          notice:
+            `${friendly} La regeneración puede seguir en el servidor; recarga el proyecto en unos minutos para ver el MDD.`,
+          error: null,
+          loading: true,
+          loadingReason: "mdd",
+        });
+      } else {
+        set({
+          ...errorStateFromCaught(e),
+          loading: false,
+          loadingReason: null,
+          agentProgress: [],
+        });
+      }
       void get().fetchGenerationStatus(pid);
       return null;
     }

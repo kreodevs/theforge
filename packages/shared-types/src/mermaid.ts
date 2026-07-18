@@ -2312,6 +2312,8 @@ export function normalizeMermaidDiagramBody(raw: string): string {
 
     // Replace literal `\n` with space (Mermaid uses `<br/>` for line breaks)
     line = line.replace(/\\n/g, " ");
+    // Normaliza `<br>` / `<br >` suelto (SVG inválido) → `<br/>`; no toca `<br/>`.
+    line = line.replace(/<br\s*>/gi, "<br/>");
 
     if (isFlowchart || (!isErDiagram && !isSequence && !isClassDiagram && !isStateDiagram)) {
       // Quote node labels with special chars / <br/>: `A[x<br/>y: z]` → `A["x<br/>y: z"]`

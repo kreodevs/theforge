@@ -1,7 +1,9 @@
-import { apiFetch, API_BASE } from "./apiClient";
+import { apiFetch, API_BASE, fetchWithRetry } from "./apiClient";
 
 const POLL_MAX_ATTEMPTS = 10_800;
 const POLL_INTERVAL_MS = 2_000;
+/** Tras N fallos de red seguidos al hacer poll, avisamos (≈30 s con intervalo 2 s). */
+const MAX_CONSECUTIVE_POLL_NETWORK_ERRORS = 15;
 
 export type MddJobStatusResponse = {
   status: string;
@@ -40,21 +42,35 @@ export async function pollMddJob(
   options?: PollMddJobOptions,
 ): Promise<MddJobStatusResponse> {
   const pollUrl = `${API_BASE}/projects/${projectId}/mdd-jobs/${jobId}`;
+  let consecutiveNetworkErrors = 0;
   for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
     if (options?.signal?.aborted) throw new Error("Cancelado por el usuario");
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-    const pr = await apiFetch(pollUrl);
-    if (!pr.ok) {
-      if (pr.status === 404) throw new Error("Job MDD no encontrado");
-      continue;
-    }
-    const status = (await pr.json()) as MddJobStatusResponse;
-    if (status.progress && options?.onProgress) {
-      options.onProgress(status.progress);
-    }
-    if (status.status === "completed") return status;
-    if (status.status === "failed") {
-      throw new Error(status.error ?? "Error al generar MDD en background");
+    try {
+      const pr = await fetchWithRetry(pollUrl, undefined, 2);
+      consecutiveNetworkErrors = 0;
+      if (!pr.ok) {
+        if (pr.status === 404) throw new Error("Job MDD no encontrado");
+        continue;
+      }
+      const status = (await pr.json()) as MddJobStatusResponse;
+      if (status.progress && options?.onProgress) {
+        options.onProgress(status.progress);
+      }
+      if (status.status === "completed") return status;
+      if (status.status === "failed") {
+        throw new Error(status.error ?? "Error al generar MDD en background");
+      }
+    } catch (e) {
+      if (e instanceof Error && (e.message.includes("Job MDD no encontrado") || e.message.includes("Error al generar MDD"))) {
+        throw e;
+      }
+      consecutiveNetworkErrors += 1;
+      if (consecutiveNetworkErrors >= MAX_CONSECUTIVE_POLL_NETWORK_ERRORS) {
+        throw new Error(
+          "Error de conexión con el servidor. La regeneración puede seguir en background; recarga el proyecto en unos minutos.",
+        );
+      }
     }
   }
   throw new Error(
@@ -70,7 +86,7 @@ export async function enqueueAndPollMddJob(
   projectId: string,
   options?: PollMddJobOptions,
 ): Promise<MddJobStatusResponse> {
-  const r = await apiFetch(`${API_BASE}/ai-analysis/mdd/jobs`, {
+  const r = await fetchWithRetry(`${API_BASE}/ai-analysis/mdd/jobs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
