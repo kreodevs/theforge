@@ -27,6 +27,7 @@ import {
   hasDuplicateDbgaBlocks,
 } from "./deduplicate-dbga-document.js";
 import {
+  peelDocumentBodyForPersist,
   peelTheforgeDocStamp,
   reattachTheforgeDocStamp,
 } from "./theforge-doc-stamp.js";
@@ -37,9 +38,13 @@ export function formatDocumentMarkdown(text: string): string {
   if (hasDuplicateDbgaBlocks(trimmed)) {
     trimmed = deduplicateDbgaDocument(trimmed);
   }
-  // Date stamp sits before H1/H2 — peel so preamble trim does not delete it.
-  const { stamp: docStamp, body: withoutStamp } = peelTheforgeDocStamp(trimmed);
-  trimmed = withoutStamp.trim();
+  // Quitar stamp corrupto y despegar `--- ##` inline antes del resto del pipeline.
+  const initialPeel = peelTheforgeDocStamp(trimmed);
+  const docStamp = initialPeel.stamp.includes("theforge-doc:created=")
+    && !/\s---\s+#{1,6}\s/.test(initialPeel.stamp)
+    ? initialPeel.stamp
+    : trimmed.match(/^<!--\s*theforge-doc:created=[^>]+\s*-->\s*\n?/)?.[0] ?? "";
+  trimmed = peelDocumentBodyForPersist(trimmed);
 
   const hadOuterMarkdownFence =
     /^```(?:markdown|md)?\s*\n/i.test(trimmed) && /\n```\s*$/i.test(trimmed);

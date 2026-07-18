@@ -241,6 +241,18 @@ export function peelDocumentBodyForPersist(text: string): string {
   return body.trim();
 }
 
+/** Stamp pegado al cuerpo o headings `--- ##` en la misma línea (zona de fechas / §1–§2). */
+export function mddMarkdownNeedsStructuralRepair(text: string | null | undefined): boolean {
+  const raw = (text ?? "").trim();
+  if (!raw) return false;
+  if (/[^\n\r]---\s+#{1,6}\s/.test(raw)) return true;
+  if (/^#{1,2}\s[^\n]*---\s+#{1,6}\s/m.test(raw)) return true;
+  if (STAMP_RESIDUE_MARKERS_RE.test(raw.slice(0, 2000))) {
+    return peelDocumentBodyForPersist(raw) !== raw;
+  }
+  return false;
+}
+
 export function reattachTheforgeDocStamp(stamp: string, body: string): string {
   if (!stamp) return body;
   if (!body) return stamp.replace(/\n+$/, "\n");

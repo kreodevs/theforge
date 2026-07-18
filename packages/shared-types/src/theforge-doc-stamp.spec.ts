@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { formatDocumentMarkdown } from "./format-document-markdown.js";
 import {
   formatTheforgeDocTimestampsForDisplay,
+  mddMarkdownNeedsStructuralRepair,
   parseTheforgeDocTimestamps,
   peelDocumentBodyForPersist,
   peelTheforgeDocStamp,
@@ -129,6 +130,18 @@ describe("theforge-doc-stamp", () => {
     assert.match(body, /^# Master Design Document/);
     assert.match(body, /## 3\. Modelo/);
     assert.doesNotMatch(body, /📅/);
+  });
+
+  it("mddMarkdownNeedsStructuralRepair detects inline sections in stamp zone", () => {
+    const raw =
+      "Última modificación: 2026-07-18T06:43:07.391Z --> 📅 Creado: 18 de julio de 2026, 06:43:07 UTC --- # Master Design Document --- ## 1. Contexto --- ## 2. Stack\n\n## 3. Modelo";
+    assert.equal(mddMarkdownNeedsStructuralRepair(raw), true);
+    assert.equal(
+      mddMarkdownNeedsStructuralRepair(
+        "# Master Design Document\n\n---\n\n## 1. Contexto\n\n## 3. Modelo",
+      ),
+      false,
+    );
   });
 
   it("formatDocumentMarkdown preserves stamp ISO and human header", () => {

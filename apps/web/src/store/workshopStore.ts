@@ -10,6 +10,7 @@ import type {
 } from "@theforge/shared-types";
 import {
   buildUpstreamChangeSummaryForPipeline,
+  mddMarkdownNeedsStructuralRepair,
 } from "@theforge/shared-types";
 import {
   documentPersistFieldLabel,
@@ -107,6 +108,13 @@ export const selectPersistedMddBaseline = (s: WorkshopState): string => {
   const raw = st?.mddContent ?? s.project?.mddContent ?? null;
   return normalizeWorkshopDocumentForEditor(raw) ?? "";
 };
+
+/** Markdown MDD en BD sin normalizar (incluye stamp API si existe). */
+function selectRawMddFromStage(s: WorkshopState): string {
+  const stages = s.workshopStages.length > 0 ? s.workshopStages : (s.project?.stages ?? []);
+  const st = stages.find((x) => x.id === s.activeStageId);
+  return String(st?.mddContent ?? s.project?.mddContent ?? "").trim();
+}
 
 /** Comparación estable para evitar PATCH cuando el markdown ya coincide con el baseline persistido. */
 function normalizedMddForPersistCompare(content: string | null | undefined): string {
@@ -2188,17 +2196,28 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       case "mdd": {
         const source = effectiveMddContentForSectionRegen(get);
         if (!source) return { ok: false, message: "No hay MDD para formatear." };
-        const before = normalizedMddForPersistCompare(source);
+        const rawFromDb = selectRawMddFromStage(get());
+        const repairInput = rawFromDb.length >= source.length ? rawFromDb : source;
         const formatted =
-          normalizeWorkshopDocumentForEditor(fmt(source)) ?? fmt(source);
+          normalizeWorkshopDocumentForEditor(fmt(repairInput)) ?? fmt(repairInput);
+        const needsStructuralRepair =
+          mddMarkdownNeedsStructuralRepair(repairInput) ||
+          mddMarkdownNeedsStructuralRepair(rawFromDb) ||
+          mddMarkdownNeedsStructuralRepair(source);
+        const before = normalizedMddForPersistCompare(source);
         const after = normalizedMddForPersistCompare(formatted);
-        if (after === before) {
+        if (!needsStructuralRepair && after === before) {
           return { ok: true, message: "MDD: ya estaba bien formateado (sin cambios)." };
         }
         set({ mddContent: formatted });
         await get().persistMddContent(formatted, { force: true, mddFormatOnly: true });
         set({ mddContent: selectPersistedMddBaseline(get()) });
-        return { ok: true, message: "MDD formateado (headings, fences, tablas y Mermaid). Revisa el panel." };
+        return {
+          ok: true,
+          message: needsStructuralRepair
+            ? "MDD reparado (stamp y secciones despegadas). Revisa el panel."
+            : "MDD formateado (headings, fences, tablas y Mermaid). Revisa el panel.",
+        };
       }
       case "spec": {
         const raw = (get().specContent ?? project?.specContent ?? "").trim();
