@@ -62,7 +62,7 @@ import {
   workshopDeliverableStoreSlice,
   type WorkshopStageDeliverableField,
 } from "../utils/workshopStageDeliverables";
-import { appendAgentProgressDone, agentProgressFromMddJobProgress, agentProgressFromMddJobSnapshot, mddJobProgressEventFields, type AgentProgressItem } from "../utils/agentProgress";
+import { mddJobProgressEventFields, mergeAgentProgressFromMddEvent, type AgentProgressItem } from "../utils/agentProgress";
 import { primaryMddJob } from "../utils/projectGenerationGate";
 import {
   advanceAgentGovernanceProgressItems,
@@ -113,7 +113,15 @@ function normalizedMddForPersistCompare(content: string | null | undefined): str
   return normalizeWorkshopDocumentForEditor(content) ?? "";
 }
 
-let mddPersistQueue: Promise<void> = Promise.resolve();
+function patchAgentProgressFromMddEvent(
+  set: (partial: Partial<WorkshopState> | ((state: WorkshopState) => Partial<WorkshopState>)) => void,
+  raw: unknown,
+): void {
+  set((s) => ({
+    agentProgress: mergeAgentProgressFromMddEvent(s.agentProgress, raw),
+  }));
+}
+
 let mddStreamPersistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 function enqueueMddPersist(task: () => Promise<void>): Promise<void> {
@@ -1662,10 +1670,17 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       const mddJob = primaryMddJob(status);
       if (
         mddJob &&
-        (status.mddStreamActive || get().loadingReason === "mdd") &&
+        (status.mddStreamActive ||
+          get().loadingReason === "mdd" ||
+          get().loadingReason === "mdd-section") &&
         ((mddJob.progressSteps?.length ?? 0) > 0 || mddJob.progressActive)
       ) {
-        set({ agentProgress: agentProgressFromMddJobSnapshot(mddJob) });
+        set((s) => ({
+          agentProgress: mergeAgentProgressFromMddEvent(s.agentProgress, {
+            steps: mddJob.progressSteps ?? [],
+            active: mddJob.progressActive ?? null,
+          }),
+        }));
       }
       if (status.busy) {
         if (generationStatusPollProjectId !== requestedId) {
@@ -2298,20 +2313,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           requestProjectId,
           {
             onProgress: (p) => {
-              const synced = agentProgressFromMddJobProgress(p);
-              if (synced.length > 0) {
-                set({ agentProgress: synced });
-              } else {
-                const ev = mddJobProgressEventFields(p);
-                if (ev.agent && ev.message) {
-                  set((s) => ({
-                    agentProgress: appendAgentProgressDone(s.agentProgress, {
-                      agent: ev.agent!,
-                      message: ev.message!,
-                    }),
-                  }));
-                }
-              }
+              patchAgentProgressFromMddEvent(set, p);
             },
           },
         );
@@ -2551,7 +2553,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     set((s) => {
                       if ((s.projectId ?? s.project?.id ?? "").trim() !== requestProjectId) return s;
                       return {
-                        agentProgress: appendAgentProgressDone(s.agentProgress, {
+                        agentProgress: mergeAgentProgressFromMddEvent(s.agentProgress, {
                           agent: event.agent!,
                           message: event.message!,
                         }),
@@ -3706,7 +3708,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                 };
                 if (ev.type === "progress" && ev.agent != null && ev.message != null) {
                   set((s) => ({
-                    agentProgress: appendAgentProgressDone(s.agentProgress, {
+                    agentProgress: mergeAgentProgressFromMddEvent(s.agentProgress, {
                       agent: ev.agent!,
                       message: ev.message!,
                     }),
@@ -3775,20 +3777,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         pid,
         {
           onProgress: (p) => {
-            const synced = agentProgressFromMddJobProgress(p);
-            if (synced.length > 0) {
-              set({ agentProgress: synced });
-            } else {
-              const ev = mddJobProgressEventFields(p);
-              if (ev.agent && ev.message) {
-                set((s) => ({
-                  agentProgress: appendAgentProgressDone(s.agentProgress, {
-                    agent: ev.agent!,
-                    message: ev.message!,
-                  }),
-                }));
-              }
-            }
+            patchAgentProgressFromMddEvent(set, p);
             const ev = mddJobProgressEventFields(p);
             if (ev.phase === "persisted" || ev.phase === "draft") {
               void get().fetchProject(pid);
@@ -3865,20 +3854,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         pid,
         {
           onProgress: (p) => {
-            const synced = agentProgressFromMddJobProgress(p);
-            if (synced.length > 0) {
-              set({ agentProgress: synced });
-            } else {
-              const ev = mddJobProgressEventFields(p);
-              if (ev.agent && ev.message) {
-                set((s) => ({
-                  agentProgress: appendAgentProgressDone(s.agentProgress, {
-                    agent: ev.agent!,
-                    message: ev.message!,
-                  }),
-                }));
-              }
-            }
+            patchAgentProgressFromMddEvent(set, p);
             const ev = mddJobProgressEventFields(p);
             if (ev.phase === "persisted" || ev.phase === "draft") {
               void get().fetchProject(pid);
@@ -4260,12 +4236,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         onProgress: (p) => {
           const ev = mddJobProgressEventFields(p);
           if (ev.message) {
-            set((s) => ({
-              agentProgress: appendAgentProgressDone(s.agentProgress, {
-                agent: "MDD Legacy",
-                message: ev.message!,
-              }),
-            }));
+            patchAgentProgressFromMddEvent(set, {
+              agent: "MDD Legacy",
+              message: ev.message,
+            });
           }
         },
       });

@@ -519,7 +519,8 @@ export default function ChatContainer({
   const agentProgress = useWorkshopStore((s) => s.agentProgress);
   const pendingPlanApproval = useWorkshopStore((s) => s.pendingPlanApproval);
   const isBenchmarkStreaming = activeTab === "benchmark" && loading && loadingReason === "benchmark";
-  const isMddStreaming = loading && loadingReason === "mdd";
+  const isMddStreaming =
+    loading && (loadingReason === "mdd" || loadingReason === "mdd-section");
   const showAgentProgress =
     isBenchmarkStreaming ||
     isMddStreaming ||
@@ -1246,7 +1247,7 @@ export default function ChatContainer({
               />
             )}
 
-            {loading && !isLegacyLongRun && (
+            {loading && !isLegacyLongRun && !showAgentProgress && (
               <div className="flex justify-start">
                 <AiGenerationChatBubble label="Generando…" />
               </div>

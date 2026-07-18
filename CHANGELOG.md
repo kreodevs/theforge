@@ -4,6 +4,10 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+## [v1.2.2] — 2026-07-17
+
+> **Workshop MDD — progreso unificado y portabilidad Notion** — Panel de avance estable en chat, detección correcta de cambios sin guardar, export/import de proyecto y jobs MDD en background.
+
 ### Added
 
 - **Portabilidad de proyecto (formato Notion):** export/import ZIP Markdown & CSV a nivel proyecto — páginas `.md` por documento, carpetas por etapa, `Integración/Handoff items.csv`, `Integración/Trazas integración.csv`, `Etapas.csv`, `index.html` y metadatos en `_theforge/`. API: `GET /projects/:id/export/notion`, `POST /projects/import/notion`, `POST /projects/import/notion/pair` (restaura vínculo NEW↔LEGACY y matriz de trazas). UI: export en configuración del proyecto; import e import pareja en el dashboard.
@@ -11,19 +15,24 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 - **Change pack Ariadne → etapa LEGACY:** `POST /theforge/create-stage-from-ariadne-change-pack` y MCP `create_stage_from_ariadne_change_pack` (pack v1, `recommendedNextTools` para MDD/entregables).
 - **MDD jobs — visibilidad y cancelación:** `GET /projects/:id/generation-status` incluye `mddJobs[]` (jobId, mode, status, progreso). `DELETE /projects/:id/mdd-jobs/:jobId` cancela jobs en cola o aborta pipeline activo entre nodos LangGraph. Banner Workshop con detalle del job y botón «Cancelar MDD».
 - **Worker BullMQ dedicado:** proceso `worker.js` (`THEFORGE_RUNTIME_ROLE=worker`) y servicio `theforge-worker` en compose; la API (`http`) solo encola. Config `bullmq-runtime.config.ts` con concurrencia por cola (`MDD_BULLMQ_CONCURRENCY`, default 2).
+- **MDD upstream sync:** banner «Sincronizar MDD» cuando Fase 0 / BRD / Benchmark cambian; regeneración parcial por secciones afectadas; baseline por etapa en BD.
 
 ### Changed
 
 - **Producción:** `REDIS_URL` obligatorio (`NODE_ENV=production`); entrypoint, `main.ts` y `worker.ts` abortan si falta. Sin Redis queda fallback in-memory solo en desarrollo.
 - **Etiquetas MDD en progreso:** `getAgentLabel` y mensajes para nodos `diagram_injector`, `format_after_architect`, `cross_consistency_checker`, etc.
 - **`docker-compose.yml`:** `theforge-api` con `THEFORGE_RUNTIME_ROLE=http`; nuevo `theforge-worker` con rol `worker`.
+- **Progreso MDD en chat:** un solo panel «Progreso del flujo» (sin burbuja «Generando…» duplicada); regeneración §N incluida; historial colapsado tras 6 pasos; agentes repetidos etiquetados «2ª pasada».
 
 ### Fixed
 
+- **MDD «cambios sin guardar» falsos:** baseline alineado con `normalizeWorkshopDocumentForEditor` y `workshopDocumentBodiesEqual` tras refresh o `/formatear`.
+- **Progreso MDD stream ↔ poll:** `mergeAgentProgressFromMddEvent` fusiona eventos NDJSON y snapshot del job sin acortar la lista visible al cambiar de fuente.
 - **Panel «Progreso del flujo» MDD:** deduplicación de pasos idénticos reemitidos por polling del job en background (evita decenas de filas `diagram_injector`).
 - **Poll MDD en Workshop:** reintentos de red (~30 s) antes de error fatal; aviso amarillo si el job sigue en servidor tras fallo de poll.
 - **Listas ordenadas partidas:** `repairSplitOrderedListItems` en `formatDocumentMarkdown` une marcadores `1.` en línea sola con el texto en la siguiente.
 - **Mermaid en viewer:** `<br>` → `<br/>` en SVG generado.
+- **Stamp MDD en editor:** el panel MDD quita cabecera API al cargar (paridad con DBGA/Spec).
 
 ## [v1.2.1] — 2026-07-17
 
