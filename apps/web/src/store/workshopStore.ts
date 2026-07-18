@@ -47,6 +47,7 @@ import {
   workshopMddEditorBaseline,
   type WorkshopDocumentTimestamps,
 } from "../utils/workshop-document-content.util";
+import { resolveMddFetchMerge } from "../utils/workshop-mdd-sync.util";
 import {
   parseApiErrorPayloadFromResponse,
   parseErrorMessageFromResponse,
@@ -111,6 +112,14 @@ export const selectWorkshopAgentsBusy = (s: WorkshopState) => isWorkshopAgentsBu
 
 /** MDD persistido en BD para la etapa activa (baseline del aviso «sin guardar»). */
 export const selectPersistedMddBaseline = (s: WorkshopState): string => s.mddPersistedBaseline;
+
+/** Aviso «sin guardar»: compara editor vs último baseline persistido (no workshopStages). */
+export function isMddEditorDirty(s: WorkshopState): boolean {
+  return (
+    !s.mddPersisting &&
+    !workshopDocumentBodiesEqual(s.mddContent, s.mddPersistedBaseline)
+  );
+}
 
 /** Markdown MDD en BD sin normalizar (incluye stamp API si existe). */
 function selectRawMddFromStage(s: WorkshopState): string {
@@ -1664,6 +1673,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           project: { ...nextProject, ...flat },
           activeStageId,
           mddContent: normalizeWorkshopDocumentForEditor(flat.mddContent) ?? "",
+          mddPersistedBaseline: normalizeWorkshopDocumentForEditor(flat.mddContent) ?? "",
           error: null,
         });
         const pid = projectId.trim();
@@ -1941,49 +1951,34 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       const localMdd = get().mddContent ?? "";
       const persistedMdd = selectPersistedMddBaseline(get());
       const serverMdd = focused.mddContent ?? "";
-      const serverDropsPatterns = serverWouldDropGovernancePatterns(localMdd, serverMdd);
       const sameProjectLoaded =
         get().project?.id === requestedId && workshopScopeProjectId(get) === requestedId;
-      const localHasMdd = localMdd.trim().length > 0;
-      const hasUnsavedEditorChanges =
-        sameProjectLoaded &&
-        !get().mddPersisting &&
-        !workshopDocumentBodiesEqual(localMdd, persistedMdd);
-      const serverDiffersFromLocal = !workshopDocumentBodiesEqual(localMdd, serverMdd);
-      const localMatchesPersisted = workshopDocumentBodiesEqual(localMdd, persistedMdd);
-      const preserveSavedLocalOverStaleServer =
-        sameProjectLoaded &&
-        localHasMdd &&
-        localMatchesPersisted &&
-        serverDiffersFromLocal;
-      const preserveMddLocal =
-        get().mddPersisting ||
-        serverDropsPatterns ||
-        (hasUnsavedEditorChanges && serverDiffersFromLocal) ||
-        preserveSavedLocalOverStaleServer;
+      const { nextMddContent, updatePersistedBaseline } = resolveMddFetchMerge({
+        switchingProject,
+        sameProjectLoaded,
+        mddPersisting: get().mddPersisting,
+        localMdd,
+        persistedMdd,
+        serverMdd,
+      });
       let nextStages = stages;
       let nextProject: typeof focused.project = focused.project;
-      let nextMddContent = preserveMddLocal ? localMdd : serverMdd;
       if (activeStageId) {
-        const mddToApply = preserveMddLocal ? localMdd : serverMdd;
         const patched = patchWorkshopMddStagesWithEditorContent(
           focused.project,
           stages,
           activeStageId,
-          mddToApply,
+          nextMddContent,
         );
         nextStages = patched.stages;
         nextProject = patched.project;
-        nextMddContent = mddToApply;
       }
       set({
         project: nextProject,
         workshopStages: nextStages,
         activeStageId,
         mddContent: nextMddContent,
-        ...(preserveMddLocal && hasUnsavedEditorChanges
-          ? {}
-          : { mddPersistedBaseline: nextMddContent }),
+        ...(updatePersistedBaseline ? { mddPersistedBaseline: nextMddContent } : {}),
         documentTimestamps: focused.documentTimestamps,
         uxUiGuideContent: focused.uxUiGuideContent,
         dbgaContent: normalizeWorkshopDocumentForEditor(data.dbgaContent ?? null),
@@ -2498,8 +2493,28 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         await fetchEstimation(requestProjectId, merged).catch(() => {});
         fetchConformance(requestProjectId).catch(() => {});
         void get().fetchGenerationStatus(requestProjectId);
+        const editorMerged = mddContentForEditor(merged);
+        const stateAfterFetch = get();
+        const mddPatch =
+          stateAfterFetch.project != null
+            ? applyMddEditorBaselineToWorkshop(
+                stateAfterFetch.project,
+                stateAfterFetch.workshopStages,
+                stateAfterFetch.activeStageId,
+                editorMerged,
+              )
+            : {
+                mddContent: editorMerged,
+                mddPersistedBaseline: editorMerged,
+                workshopStages: stateAfterFetch.workshopStages,
+                project: stateAfterFetch.project,
+              };
         set({
-          mddContent: mddContentForEditor(merged),
+          ...(stateAfterFetch.project != null
+            ? { project: mddPatch.project, workshopStages: mddPatch.workshopStages }
+            : {}),
+          mddContent: mddPatch.mddContent,
+          mddPersistedBaseline: mddPatch.mddPersistedBaseline,
           loading: false,
           loadingReason: null,
           notice: null,
@@ -4720,10 +4735,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     const state = get();
     if (!state.projectId || !state.project) return;
 
-    const baseline = normalizedMddForPersistCompare(selectPersistedMddBaseline(state));
-    const normalized = normalizedMddForPersistCompare(content);
-    if (!options?.force && normalized === baseline) {
-      set({ synced: true, mddPersistedBaseline: normalized });
+    const baseline = selectPersistedMddBaseline(state);
+    if (!options?.force && workshopDocumentBodiesEqual(content, baseline)) {
+      const normalized = normalizedMddForPersistCompare(content);
+      set({ synced: true, mddContent: normalized, mddPersistedBaseline: normalized });
       return;
     }
 

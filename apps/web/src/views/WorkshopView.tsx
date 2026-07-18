@@ -76,12 +76,11 @@ import {
   parseAgentGovernanceScaffold,
 } from "@theforge/shared-types";
 import {
-  selectPersistedMddBaseline,
+  isMddEditorDirty,
   selectWorkshopAgentsBusy,
   useWorkshopStore,
   type Status,
 } from "../store/workshopStore";
-import { workshopDocumentBodiesEqual } from "../utils/workshop-document-content.util";
 import { WORKSHOP_EXIT_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
 import { stageWorkflowStatusLabel } from "@/utils/stageWorkflowStatusLabel";
 import { apiFetch, API_BASE, getOfflineQueue } from "../utils/apiClient";
@@ -687,7 +686,7 @@ export default function WorkshopView({
   const fetchAdrs = useWorkshopStore((s) => s.fetchAdrs);
   const suggestGovernancePatterns = useWorkshopStore((s) => s.suggestGovernancePatterns);
   const recordGovernancePatternAdrs = useWorkshopStore((s) => s.recordGovernancePatternAdrs);
-  const persistedMddBaseline = useWorkshopStore(selectPersistedMddBaseline);
+  const mddDirty = useWorkshopStore(isMddEditorDirty);
   const sendMessage = useWorkshopStore((s) => s.sendMessage);
   const setMddContent = useWorkshopStore((s) => s.setMddContent);
   const revertMddContent = useWorkshopStore((s) => s.revertMddContent);
@@ -2708,8 +2707,6 @@ export default function WorkshopView({
     project?.uiScreensContent,
   ]);
 
-  const mddDirty =
-    !mddPersisting && !workshopDocumentBodiesEqual(mddContent, persistedMddBaseline);
   const uxUiGuideDirty = (uxUiGuideContent ?? "") !== (project?.uxUiGuideContent ?? "");
 
   if (error && !project) {
