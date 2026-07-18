@@ -4,10 +4,9 @@ import { GraphMemoryService } from "../ai-analysis/graph-memory/graph-memory.ser
 import { markdownToMddStructured } from "../ai-analysis/utils/mdd-markdown-to-structured.js";
 import { SemaphoreService, type SemaphoreEvaluationInput } from "./semaphore.service.js";
 import { prepareMddForOutput } from "../ai-analysis/utils/mdd-prepare-output.js";
-import { prepareMddMarkdownForPersist } from "../ai-analysis/utils/mdd-sanitize.js";
 import { validateMddForDelivery } from "../ai-analysis/utils/mdd-delivery-gate.util.js";
 import { normalizeMddContent } from "./mdd-markdown-parser.js";
-import { preRenderMddSanity, sanitizeMermaidInDraft, sanitizeSection4TablesInDraft } from "./mdd-pre-render.js";
+import { preRenderMddSanity } from "./mdd-pre-render.js";
 
 export type MddUpdatePipelineResult =
   | { ok: true; sanitizedMdd: string; status: Status; precisionScore: number }
@@ -46,9 +45,7 @@ export class MddUpdatePipelineService {
         message: gate.blockers.join("; "),
       };
     }
-    const tableFixed = sanitizeSection4TablesInDraft(prepared);
-    const preSanitized = sanitizeMermaidInDraft(tableFixed);
-    const sanity = preRenderMddSanity(preSanitized);
+    const sanity = preRenderMddSanity(prepared);
     if (!sanity.ok) {
       return {
         ok: false,
@@ -56,7 +53,7 @@ export class MddUpdatePipelineService {
         message: sanity.message ?? "Error de validación del MDD",
       };
     }
-    const sanitizedMdd = prepareMddMarkdownForPersist(sanitizeMermaidInDraft(preSanitized));
+    const sanitizedMdd = prepared;
     const normalized = normalizeMddContent(sanitizedMdd);
     const contentForSemaphore = JSON.stringify(normalized);
 

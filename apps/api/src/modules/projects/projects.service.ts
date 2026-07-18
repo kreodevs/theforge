@@ -2820,7 +2820,7 @@ name: ${JSON.stringify(name)}
 
     if (!options?.finalize) {
       const prepared = await prepareMddForOutput(mddForPipeline);
-      const stored = prependDocumentTimestamps(prepareMddMarkdownForPersist(prepared));
+      const stored = prependDocumentTimestamps(prepared);
       await this.prisma.stage.update({
         where: { id: targetStage.id },
         data: { mddContent: stored },

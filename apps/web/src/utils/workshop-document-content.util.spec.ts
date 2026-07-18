@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { formatDocumentMarkdown } from "@theforge/shared-types";
 import {
   normalizeWorkshopDocumentForEditor,
   workshopDocumentBodiesEqual,
@@ -11,10 +12,10 @@ const STAMP =
   "---\n\n";
 
 describe("workshop-document-content", () => {
-  it("normalize strips stamp and keeps body", () => {
+  it("normalize strips stamp and applies formatDocumentMarkdown", () => {
     const body = "# Domain Benchmark\n\nContenido.";
     const out = normalizeWorkshopDocumentForEditor(STAMP + body);
-    assert.equal(out, body);
+    assert.equal(out, formatDocumentMarkdown(body));
   });
 
   it("bodies equal when only stamp timestamps differ", () => {

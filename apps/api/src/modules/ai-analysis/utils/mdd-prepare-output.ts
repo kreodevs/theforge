@@ -19,6 +19,7 @@ import {
   sanitizeContextSection,
   applyPreDeliveryGateFixes,
   detectCrossConsistencyIssues,
+  prepareMddMarkdownForPersist,
 } from "./mdd-sanitize.js";
 import {
   enrichMddWithUiUxDesignIntent,
@@ -218,6 +219,7 @@ export async function prepareMddForOutput(
       );
     }
   }
+  finalMarkdown = prepareMddMarkdownForPersist(finalMarkdown);
   const deliveryGate = validateMddForDelivery(finalMarkdown, {
     brdMarkdown: options?.brdMarkdown,
     dbgaMarkdown: options?.dbgaMarkdown,

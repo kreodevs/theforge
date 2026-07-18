@@ -1,4 +1,5 @@
 import {
+  formatDocumentMarkdown,
   formatTheforgeDocTimestampsForDisplay,
   parseTheforgeDocTimestamps,
   peelTheforgeDocStamp,
@@ -120,8 +121,8 @@ export function cleanDocForWorkshop(text: string | null): string | null {
 }
 
 /**
- * Texto mostrado/editado en Workshop: quita stamp API y aplica `cleanDocForWorkshop`.
- * Alinea store local y `project.*` para auto-guardado.
+ * Texto mostrado/editado en Workshop: quita stamp API, limpia residuos y aplica
+ * `formatDocumentMarkdown` (misma pasada determinista que `MddViewer` y persist API).
  */
 export function normalizeWorkshopDocumentForEditor(
   text: string | null | undefined,
@@ -130,7 +131,9 @@ export function normalizeWorkshopDocumentForEditor(
   const trimmed = text.trim();
   if (!trimmed) return null;
   const { body } = peelTheforgeDocStamp(trimmed);
-  return cleanDocForWorkshop(body);
+  const cleaned = cleanDocForWorkshop(body);
+  if (!cleaned) return null;
+  return formatDocumentMarkdown(cleaned);
 }
 
 /** Comparación estable para auto-guardado (ignora cabecera Creado/Última regeneración). */
