@@ -1954,15 +1954,20 @@ export class AiAnalysisService {
           this.streamMddAnalysis(data.dbgaContent ?? "", projectId, stageId) as AsyncGenerator<MddJobEvent>,
         );
         if (jobResult.ok && jobResult.outcome === "done") {
-          const docs = await this.mddUpstreamSync.loadUpstreamDocuments(projectId, stageId).catch(() => null);
+          const docs = await this.mddUpstreamSync.loadUpstreamDocuments(projectId, stageId).catch((err) => {
+            this.logger.warn(`[MDD pipeline] loadUpstreamDocuments for baseline failed: ${err instanceof Error ? err.message : String(err)}`);
+            return null;
+          });
           if (docs?.stageId) {
-            await this.mddUpstreamSync.captureBaseline(projectId, docs.stageId).catch(() => undefined);
+            await this.mddUpstreamSync.captureBaseline(projectId, docs.stageId).catch((err) => {
+              this.logger.warn(`[MDD pipeline] capture baseline failed: ${err instanceof Error ? err.message : String(err)}`);
+            });
           }
         }
         return jobResult;
       }
-      case "manager":
-        return consume(
+      case "manager": {
+        const jobResult = await consume(
           this.streamMddAnalysisWithManager(
             data.dbgaContent ?? "",
             projectId,
@@ -1971,6 +1976,19 @@ export class AiAnalysisService {
             stageId,
           ),
         );
+        if (jobResult.ok && jobResult.outcome === "done") {
+          const docs = await this.mddUpstreamSync.loadUpstreamDocuments(projectId, stageId).catch((err) => {
+            this.logger.warn(`[MDD manager] loadUpstreamDocuments for baseline failed: ${err instanceof Error ? err.message : String(err)}`);
+            return null;
+          });
+          if (docs?.stageId) {
+            await this.mddUpstreamSync.captureBaseline(projectId, docs.stageId).catch((err) => {
+              this.logger.warn(`[MDD manager] capture baseline failed: ${err instanceof Error ? err.message : String(err)}`);
+            });
+          }
+        }
+        return jobResult;
+      }
       case "section": {
         const rawSection = data.section;
         if (rawSection == null || !Number.isInteger(rawSection) || rawSection < 1 || rawSection > 7) {
@@ -1978,7 +1996,7 @@ export class AiAnalysisService {
         }
         const section = rawSection;
         onProgress({ phase: "section", section, message: `Regenerando §${section}…` });
-        return consume(
+        const jobResult = await consume(
           this.streamMddRegenerateSection(
             projectId,
             section,
@@ -1987,6 +2005,18 @@ export class AiAnalysisService {
             data.gapReasons,
           ),
         );
+        if (jobResult.ok && jobResult.outcome === "done") {
+          const docs = await this.mddUpstreamSync.loadUpstreamDocuments(projectId, stageId).catch((err) => {
+            this.logger.warn(`[MDD section] loadUpstreamDocuments for baseline failed: ${err instanceof Error ? err.message : String(err)}`);
+            return null;
+          });
+          if (docs?.stageId) {
+            await this.mddUpstreamSync.captureBaseline(projectId, docs.stageId).catch((err) => {
+              this.logger.warn(`[MDD section] capture baseline failed: ${err instanceof Error ? err.message : String(err)}`);
+            });
+          }
+        }
+        return jobResult;
       }
       case "upstream-sync": {
         const analysis = await this.mddUpstreamSync.analyze(projectId, stageId);

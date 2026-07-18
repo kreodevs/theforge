@@ -135,21 +135,13 @@ export function analyzeMddUpstreamChanges(input: {
       hasBaseline: false,
       hasMdd: true,
       baselineCapturedAt: null,
-      changedSources: ["dbga", "brd", "benchmark"],
-      changes: [
-        {
-          source: "dbga",
-          label: MDD_UPSTREAM_SOURCE_LABELS.dbga,
-          summary: "Sin baseline previo: se asume alineación pendiente con Fase 0.",
-          linesAdded: 0,
-          linesRemoved: 0,
-        },
-      ],
-      recommendedSections: [1, 2, 3, 4, 5, 6, 7],
-      expandedSections: expandMddSectionsForSync([1, 2, 3, 4, 5, 6, 7]),
-      canSync: true,
+      changedSources: [],
+      changes: [],
+      recommendedSections: [],
+      expandedSections: [],
+      canSync: false,
       needsFullRegen: false,
-      pendingSync: true,
+      pendingSync: false,
     };
   }
 
