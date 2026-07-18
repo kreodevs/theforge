@@ -29,11 +29,11 @@ test("resolveEmbeddingDimension — default 1536", () => {
   }
 });
 
-test("llmMaxTokens — default 32K (salida; no confundir con ventana de contexto)", () => {
+test("llmMaxTokens — default 128K (salida; no confundir con ventana de contexto)", () => {
   const prev = process.env.LLM_MAX_TOKENS;
   delete process.env.LLM_MAX_TOKENS;
   try {
-    assert.equal(llmMaxTokens(), 32_768);
+    assert.equal(llmMaxTokens(), 131_072);
   } finally {
     if (prev !== undefined) process.env.LLM_MAX_TOKENS = prev;
   }
@@ -55,11 +55,12 @@ test("resolveLlmMaxTokensForPurpose — perfiles por tarea", () => {
   delete process.env.LLM_MAX_TOKENS;
   try {
     assert.equal(resolveLlmMaxTokensForPurpose("chat"), 8_192);
-    assert.equal(resolveLlmMaxTokensForPurpose("document"), 32_768);
+    assert.equal(resolveLlmMaxTokensForPurpose("document"), 65_536);
     assert.equal(resolveLlmMaxTokensForPurpose("uxGuide"), 16_384);
     assert.equal(resolveLlmMaxTokensForPurpose("langgraph"), 16_384);
     assert.equal(resolveLlmMaxTokensForPurpose("auditor"), 8_192);
-    assert.equal(resolveLlmMaxTokensForPurpose("tasksPlanner"), 32_768);
+    assert.equal(resolveLlmMaxTokensForPurpose("tasksPlanner"), 81_920);
+    assert.equal(resolveLlmMaxTokensForPurpose("tasksDoc"), 131_072);
   } finally {
     if (prev !== undefined) process.env.LLM_MAX_TOKENS = prev;
   }
@@ -77,8 +78,9 @@ test("resolveLlmMaxTokensForPurpose — techo global desde env", () => {
 });
 
 test("resolveLlmMaxTokensForWorkshopTab — pestañas de documento", () => {
-  assert.equal(resolveLlmMaxTokensForWorkshopTab("mdd"), 32_768);
+  assert.equal(resolveLlmMaxTokensForWorkshopTab("mdd"), 65_536);
   assert.equal(resolveLlmMaxTokensForWorkshopTab("ux-ui-guide"), 16_384);
+  assert.equal(resolveLlmMaxTokensForWorkshopTab("tasks"), 131_072);
   assert.equal(resolveLlmMaxTokensForWorkshopTab(undefined), 8_192);
   assert.equal(resolveLlmMaxTokensForWorkshopTab("mdd", { welcomeBrief: true }), 2_048);
 });

@@ -10,9 +10,9 @@ export const OPENROUTER_DEFAULT_VISION_MODEL = "openai/gpt-4o";
 
 /**
  * Tope de tokens de **salida** (`max_tokens` en la API), no ventana de contexto.
- * Default 32K: techo global (`LLM_MAX_TOKENS`); los perfiles por tarea nunca lo superan.
+ * Default 128K: techo global (`LLM_MAX_TOKENS`); los perfiles por tarea nunca lo superan.
  */
-export const LLM_MAX_TOKENS_DEFAULT = 65_536;
+export const LLM_MAX_TOKENS_DEFAULT = 131_072;
 
 /** Perfiles de salida por tipo de tarea (siempre acotados por `llmMaxTokens()`). */
 export const LLM_OUTPUT_TOKEN_PROFILES = {
@@ -29,7 +29,9 @@ export const LLM_OUTPUT_TOKEN_PROFILES = {
   /** Auditor MDD / cross-consistency. */
   auditor: 8_192,
   /** Tasks Planner JSON (plan grande en proyectos HIGH). */
-  tasksPlanner: 65_536,
+  tasksPlanner: 81_920,
+  /** Tasks documento markdown completo (Workshop tab). */
+  tasksDoc: 131_072,
   /** parseChecklist y salidas JSON cortas. */
   checklist: 4_096,
 } as const;
@@ -87,6 +89,9 @@ export function resolveLlmMaxTokensForWorkshopTab(
   const tab = activeTab?.trim();
   if (tab === "ux-ui-guide") {
     return resolveLlmMaxTokensForPurpose("uxGuide");
+  }
+  if (tab === "tasks") {
+    return resolveLlmMaxTokensForPurpose("tasksDoc");
   }
   if (tab && WORKSHOP_DOCUMENT_TABS.has(tab)) {
     return resolveLlmMaxTokensForPurpose("document");
