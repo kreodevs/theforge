@@ -154,6 +154,38 @@ function patchWorkshopMddStagesWithEditorContent(
   };
 }
 
+/** Resuelve etapas para parchear MDD: no usar `[]` del API si ya hay etapas locales. */
+function resolveWorkshopStagesList(
+  projectStages: WorkshopStage[] | undefined,
+  fallback: WorkshopStage[],
+): WorkshopStage[] {
+  if (projectStages?.length) return projectStages;
+  return fallback;
+}
+
+/** Tras persist/fetch: alinea editor, workshopStages y project.mddContent al mismo baseline. */
+function applyMddEditorBaselineToWorkshop(
+  project: Project,
+  workshopStages: WorkshopStage[],
+  stageId: string | null | undefined,
+  editorBaseline: string,
+) {
+  const stages = resolveWorkshopStagesList(project.stages, workshopStages);
+  const patched = patchWorkshopMddStagesWithEditorContent(
+    project,
+    stages,
+    stageId,
+    editorBaseline,
+  );
+  const focused = workshopStateFromProjectStage(patched.project, stageId ?? null);
+  const alignedStages = patched.stages.length > 0 ? patched.stages : stages;
+  return {
+    project: { ...focused.project, stages: alignedStages, mddContent: editorBaseline },
+    workshopStages: alignedStages,
+    mddContent: editorBaseline,
+  };
+}
+
 function patchAgentProgressFromMddEvent(
   set: (partial: Partial<WorkshopState> | ((state: WorkshopState) => Partial<WorkshopState>)) => void,
   raw: unknown,
@@ -424,6 +456,9 @@ async function persistField(
       }
       if (shouldApplyPersistedFieldContent(localNow, localAtSaveStart, cleaned) || patternsReverted) {
         (patch as Record<string, unknown>)[fieldName] = serverCleaned;
+      }
+      if (fieldName === "mddContent" && alignedProject.stages?.length) {
+        patch.workshopStages = alignedProject.stages;
       }
       setState(patch);
       // Flush offline queue oportunistically
@@ -1902,35 +1937,26 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       const hasUnsavedEditorChanges =
         !get().mddPersisting && !workshopDocumentBodiesEqual(localMdd, persistedMdd);
       const serverDiffersFromLocal = !workshopDocumentBodiesEqual(localMdd, serverMdd);
+      const localMatchesPersisted = workshopDocumentBodiesEqual(localMdd, persistedMdd);
       const preserveMddLocal =
         get().mddPersisting ||
         serverDropsPatterns ||
-        (hasUnsavedEditorChanges && serverDiffersFromLocal);
+        (hasUnsavedEditorChanges && serverDiffersFromLocal) ||
+        (localMatchesPersisted && serverDiffersFromLocal);
       let nextStages = stages;
       let nextProject: typeof focused.project = focused.project;
       let nextMddContent = preserveMddLocal ? localMdd : serverMdd;
       if (activeStageId) {
-        if (preserveMddLocal && serverDropsPatterns) {
-          const patched = patchWorkshopMddStagesWithEditorContent(
-            focused.project,
-            stages,
-            activeStageId,
-            localMdd,
-          );
-          nextStages = patched.stages;
-          nextProject = patched.project;
-          nextMddContent = localMdd;
-        } else if (!preserveMddLocal) {
-          const patched = patchWorkshopMddStagesWithEditorContent(
-            focused.project,
-            stages,
-            activeStageId,
-            serverMdd,
-          );
-          nextStages = patched.stages;
-          nextProject = patched.project;
-          nextMddContent = serverMdd;
-        }
+        const mddToApply = preserveMddLocal ? localMdd : serverMdd;
+        const patched = patchWorkshopMddStagesWithEditorContent(
+          focused.project,
+          stages,
+          activeStageId,
+          mddToApply,
+        );
+        nextStages = patched.stages;
+        nextProject = patched.project;
+        nextMddContent = mddToApply;
       }
       set({
         project: nextProject,
@@ -4740,17 +4766,17 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           ) as unknown as Project;
           const editorBaseline = workshopMddEditorBaseline(savedContent);
           const nextTimestamps = extractWorkshopDocumentTimestamps(savedContent);
-          const patched = patchWorkshopMddStagesWithEditorContent(
+          const aligned = applyMddEditorBaselineToWorkshop(
             nextProject as Project,
-            (nextProject as Project).stages ?? get().workshopStages,
+            get().workshopStages,
             stageId,
             editorBaseline,
           );
           set({
-            project: patched.project,
-            workshopStages: patched.stages.length > 0 ? patched.stages : get().workshopStages,
+            project: aligned.project,
+            workshopStages: aligned.workshopStages,
             activeStageId: packed?.activeStageId ?? get().activeStageId,
-            mddContent: editorBaseline,
+            mddContent: aligned.mddContent,
             ...(nextTimestamps
               ? {
                   documentTimestamps: {
