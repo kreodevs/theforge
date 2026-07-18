@@ -17,6 +17,7 @@ Punto de entrada para humanos y agentes. **Arquitectura y producto (NotebookLM):
 | Planes de implementación (índice) | [plans/README.md](plans/README.md) |
 | Cliente HTTP The Forge ↔ MCP AriadneSpecs | [notebooklm/integracion-theforge/README.md](notebooklm/integracion-theforge/README.md) |
 | Despliegue Coolify (override compose) | [DEPLOY-COOLIFY.md](DEPLOY-COOLIFY.md) |
+| Migración env → Ajustes → Sistema (Dokploy v1.3.0+) | [DOKPLOY-MIGRACION-CONFIG-SISTEMA.md](DOKPLOY-MIGRACION-CONFIG-SISTEMA.md) |
 | Histórico / roadmaps no prioritarios | [archive/README.md](archive/README.md) |
 
 ## Raíz del monorepo (no están en `docs/`)

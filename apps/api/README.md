@@ -16,7 +16,7 @@ Env: `DATABASE_URL` y claves en `.env.example` (OpenRouter). **Auth multi-usuari
 
 **Concurrencia:** configurable en **Ajustes → Sistema** (o env legacy): MDD (default 2, max 8), entregables (default 2), legacy entregables (default 1). Ver `modules/system-config/`.
 
-**Configuración de plataforma:** tunables operativos (LLM, MCP, Hermes, flags legacy, debug) en `GET/PATCH /admin/system-config` + tabla `AppConfig`. Prioridad: BD → env → default.
+**Configuración de plataforma:** tunables operativos (LLM, MCP, Hermes, flags legacy, debug) en `GET/PATCH /admin/system-config` + tabla `AppConfig`. Prioridad: BD → env → default. Migración Dokploy: [`docs/DOKPLOY-MIGRACION-CONFIG-SISTEMA.md`](../../docs/DOKPLOY-MIGRACION-CONFIG-SISTEMA.md).
 
 **SSRF (scrape):** `url-ssrf-guard.ts` — resolución DNS y `ip-range-check`; usado en `scrape-cheerio.tool.ts` y `ScraperService`. Proyectos **legacy** + MCP: `THEFORGE_MCP_URL`, tokens MCP; pipeline evidencia-primero y topes en variables `LEGACY_*` (ver raíz `.env.example` y `docs/notebooklm/LEGACY-EVIDENCE-CONTEXT.md`).
 
