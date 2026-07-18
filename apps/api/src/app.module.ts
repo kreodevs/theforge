@@ -35,6 +35,7 @@ import { UiMcpModule } from "./modules/ui-mcp/ui-mcp.module.js";
 import { TechnologyDocsMcpModule } from "./modules/technology-docs-mcp/technology-docs-mcp.module.js";
 import { PluginModule } from "./plugins/plugin.module.js";
 import { PluginsApiModule } from "./modules/plugins/plugins.module.js";
+import { SystemConfigModule } from "./modules/system-config/system-config.module.js";
 
 @Module({
   controllers: [HealthController],
@@ -43,6 +44,7 @@ import { PluginsApiModule } from "./modules/plugins/plugins.module.js";
       isGlobal: true,
       envFilePath: [join(__dirname, "../../.env"), join(__dirname, "../../../.env"), ".env"],
     }),
+    SystemConfigModule,
     CryptoModule,
     AuthModule,
     PrismaModule,

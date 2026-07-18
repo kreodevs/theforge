@@ -35,6 +35,7 @@ import {
   tasksToIssuesBodySchema,
 } from "@theforge/shared-types";
 import { SddIntegrationService } from "./sdd-integration.service.js";
+import { isHermesPlatformConfigured } from "../system-config/platform-config.runtime.js";
 import { PlanValidationService } from "./plan-validation.service.js";
 import { ProjectNotionPortabilityService } from "./project-notion-portability.service.js";
 
@@ -232,11 +233,10 @@ export class ProjectsController {
     return status;
   }
 
-  /** Indica si Hermes Agent está configurado (env vars presentes). */
+  /** Indica si Hermes Agent está configurado (Ajustes → Sistema o env). */
   @Get("hermes-status")
   hermesStatus() {
-    const configured = !!(process.env.HERMES_WEBHOOK_URL?.trim() && process.env.HERMES_API_KEY?.trim());
-    return { configured };
+    return { configured: isHermesPlatformConfigured() };
   }
 
   @Get(":id/generation-status")

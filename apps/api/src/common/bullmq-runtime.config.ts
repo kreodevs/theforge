@@ -3,8 +3,9 @@
  *
  * - `THEFORGE_RUNTIME_ROLE=all|http|worker` — `http`: solo encola; `worker`: solo consume; `all`: dev monolito.
  * - `REDIS_URL` obligatorio si `NODE_ENV=production`.
- * - Concurrencia por cola vía env (defaults conservadores).
+ * - Concurrencia por cola vía catálogo de plataforma (Ajustes → Sistema) o env legacy.
  */
+import { resolvePlatformConfigNumber } from "../modules/system-config/platform-config.runtime.js";
 export type TheForgeRuntimeRole = "all" | "http" | "worker";
 
 const MDD_CONCURRENCY_MIN = 1;
@@ -66,30 +67,39 @@ function parseBoundedInt(
 
 /** Jobs MDD concurrentes por worker (cada job = pipeline LangGraph pesado). Default 2. */
 export function resolveMddWorkerConcurrency(env: NodeJS.ProcessEnv = process.env): number {
-  return parseBoundedInt(
-    env.MDD_BULLMQ_CONCURRENCY,
-    2,
-    MDD_CONCURRENCY_MIN,
-    MDD_CONCURRENCY_MAX,
-  );
+  if (env.MDD_BULLMQ_CONCURRENCY?.trim()) {
+    return parseBoundedInt(
+      env.MDD_BULLMQ_CONCURRENCY,
+      2,
+      MDD_CONCURRENCY_MIN,
+      MDD_CONCURRENCY_MAX,
+    );
+  }
+  return resolvePlatformConfigNumber("mdd_bullmq_concurrency");
 }
 
 export function resolveDeliverablesWorkerConcurrency(env: NodeJS.ProcessEnv = process.env): number {
-  return parseBoundedInt(
-    env.DELIVERABLES_BULLMQ_CONCURRENCY,
-    2,
-    DELIVERABLES_CONCURRENCY_MIN,
-    DELIVERABLES_CONCURRENCY_MAX,
-  );
+  if (env.DELIVERABLES_BULLMQ_CONCURRENCY?.trim()) {
+    return parseBoundedInt(
+      env.DELIVERABLES_BULLMQ_CONCURRENCY,
+      2,
+      DELIVERABLES_CONCURRENCY_MIN,
+      DELIVERABLES_CONCURRENCY_MAX,
+    );
+  }
+  return resolvePlatformConfigNumber("deliverables_bullmq_concurrency");
 }
 
 export function resolveLegacyDeliverablesWorkerConcurrency(
   env: NodeJS.ProcessEnv = process.env,
 ): number {
-  return parseBoundedInt(
-    env.LEGACY_DELIVERABLES_BULLMQ_CONCURRENCY,
-    1,
-    LEGACY_CONCURRENCY_MIN,
-    LEGACY_CONCURRENCY_MAX,
-  );
+  if (env.LEGACY_DELIVERABLES_BULLMQ_CONCURRENCY?.trim()) {
+    return parseBoundedInt(
+      env.LEGACY_DELIVERABLES_BULLMQ_CONCURRENCY,
+      1,
+      LEGACY_CONCURRENCY_MIN,
+      LEGACY_CONCURRENCY_MAX,
+    );
+  }
+  return resolvePlatformConfigNumber("legacy_deliverables_bullmq_concurrency");
 }

@@ -4,6 +4,21 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+## [v1.3.0] — 2026-07-18
+
+> **Configuración de plataforma en UI** — Tunables operativos migrados de `.env` a Ajustes → Sistema con defaults y persistencia en `AppConfig`.
+
+### Added
+
+- **Catálogo `system-config` (`@theforge/shared-types`):** allowlist de ~40 claves (integraciones, LLM, BullMQ, MCP, legacy, debug) con tipo, default, categoría y metadatos.
+- **API `SystemConfigModule`:** `GET/PATCH /admin/system-config` (solo `super_admin`); resolución runtime **BD → env → default** vía `platform-config.runtime.ts`.
+- **Web — pestaña Sistema:** `SystemConfigCard` en Ajustes (visible solo para `super_admin`); badges de origen (default/env/guardado) y aviso de reinicio para concurrencia BullMQ.
+
+### Changed
+
+- **Runtime API:** LLM (`llm_max_tokens`, embeddings, fallback 429), LangGraph recursion, concurrencia BullMQ, timeouts MCP, Hermes, brownfield Ariadne, caché contexto TheForge y evaluador legacy leen el catálogo de plataforma.
+- **`.env.example`:** recortado a bootstrap (DB, Redis, JWT, SMTP, BYOK, MCP M2M, build); tunables documentados como override opcional o vía UI.
+
 ## [v1.2.2] — 2026-07-17
 
 > **Workshop MDD — progreso unificado y portabilidad Notion** — Panel de avance estable en chat, detección correcta de cambios sin guardar, export/import de proyecto y jobs MDD en background.

@@ -50,6 +50,14 @@ class ApiClient {
     });
   }
 
+  patch(url: string, body?: unknown) {
+    return request(url, {
+      method: "PATCH",
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  }
+
   delete(url: string) {
     return request(url, { method: "DELETE" });
   }
