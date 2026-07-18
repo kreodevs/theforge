@@ -1,5 +1,11 @@
 /**
  * Plan de Tasks determinista cuando el Tasks Planner LLM no devuelve JSON válido.
+ * Genera un plan completo que escala con la complejidad del proyecto:
+ * - Blueprint phases → tasks por fase
+ * - API endpoints → tasks por endpoint
+ * - Entidades MDD §3 → tasks por entidad
+ * - Pantallas → tasks por ruta
+ * - Infraestructura → tasks por servicio detectado
  */
 
 import type { DomainInventory, TasksGenerationPlan, TasksPlanItem } from "@theforge/shared-types";
@@ -16,6 +22,7 @@ export type HeuristicTasksPlanInput = {
   uiScreensMarkdown?: string | null;
   inventory?: DomainInventory | null;
   hasUxTeam?: boolean;
+  blueprintMarkdown?: string | null;
 };
 
 function nextTaskId(counter: { n: number }): string {
@@ -32,12 +39,42 @@ function filterPlannerRoutes(routes: string[]): string[] {
   );
 }
 
-/** Construye un plan mínimo trazable desde API + pantallas + MDD §3. */
+/** Extract phase/roadmap headings from blueprint markdown. */
+function extractBlueprintPhases(blueprint: string): string[] {
+  const phaseRegex = /^##\s+(?:(?:Fase|Phase|Roadmap|Milestone|Sprint|Hitos|Etapa)\s+(\d+)[^\n]*)/gim;
+  const phases: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = phaseRegex.exec(blueprint)) !== null) {
+    phases.push(m[0]!.replace(/^##\s+/, "").trim());
+  }
+  return phases;
+}
+
+/** Construye un plan que escala con la complejidad del proyecto. */
 export function buildHeuristicTasksPlan(input: HeuristicTasksPlanInput): TasksGenerationPlan {
   const counter = { n: 0 };
   const items: TasksPlanItem[] = [];
   const sections = new Set<string>(["Backend", "Infra", "QA"]);
 
+  // --- Blueprint phases → tasks por fase ---
+  const blueprint = (input.blueprintMarkdown ?? "").trim();
+  const phases = extractBlueprintPhases(blueprint);
+  if (phases.length > 1) {
+    for (const phase of phases) {
+      items.push({
+        id: nextTaskId(counter),
+        title: `Implementar ${phase}`,
+        layer: "Backend",
+        mddRefs: [],
+        storyRefs: [],
+        upstreamRefs: [`blueprint:${phase}`],
+        dependsOn: items.length > 0 ? [items[items.length - 1]!.id] : [],
+        targetFilesHint: [],
+      });
+    }
+  }
+
+  // --- API endpoints → tasks por endpoint ---
   const endpoints = extractHttpEndpointsFromMarkdown(input.apiContractsMarkdown ?? "");
   for (const ep of endpoints) {
     items.push({
@@ -54,11 +91,12 @@ export function buildHeuristicTasksPlan(input: HeuristicTasksPlanInput): TasksGe
     });
   }
 
+  // --- Entidades MDD §3 → tasks por entidad (solo si no hay endpoints) ---
   const mddEntities = extractEntities(
     extractSectionByNumber(input.mddMarkdown ?? "", 3) || input.mddMarkdown || "",
   );
-  if (items.length === 0 && mddEntities.size > 0) {
-    for (const entity of [...mddEntities].slice(0, 20)) {
+  if (endpoints.length === 0 && mddEntities.size > 0) {
+    for (const entity of [...mddEntities].slice(0, 30)) {
       items.push({
         id: nextTaskId(counter),
         title: `Modelo y persistencia ${entity} (MDD §3)`,
@@ -72,7 +110,8 @@ export function buildHeuristicTasksPlan(input: HeuristicTasksPlanInput): TasksGe
     }
   }
 
-  for (const cap of input.inventory?.capabilities.filter((c) => !c.isAuthRelated).slice(0, 8) ?? []) {
+  // --- Capabilidades del inventario → tasks por capacidad ---
+  for (const cap of input.inventory?.capabilities.filter((c) => !c.isAuthRelated).slice(0, 15) ?? []) {
     if (items.some((i) => i.title.toLowerCase().includes(cap.title.toLowerCase().slice(0, 24)))) continue;
     items.push({
       id: nextTaskId(counter),
@@ -86,10 +125,11 @@ export function buildHeuristicTasksPlan(input: HeuristicTasksPlanInput): TasksGe
     });
   }
 
+  // --- Pantallas → tasks por ruta ---
   const routes = filterPlannerRoutes(extractPantallaRoutes(input.uiScreensMarkdown ?? ""));
   if (routes.length > 0 || input.hasUxTeam) {
     sections.add("Frontend");
-    for (const route of routes.slice(0, 30)) {
+    for (const route of routes.slice(0, 50)) {
       items.push({
         id: nextTaskId(counter),
         title: `Implementar pantalla ${route}`,
@@ -103,19 +143,37 @@ export function buildHeuristicTasksPlan(input: HeuristicTasksPlanInput): TasksGe
     }
   }
 
-  if (/docker|dokploy|redis|rabbitmq/i.test(input.mddMarkdown ?? "")) {
-    items.push({
-      id: nextTaskId(counter),
-      title: "Configurar infraestructura y despliegue (MDD §7)",
-      layer: "Infra",
-      mddRefs: ["§7 Infraestructura"],
-      storyRefs: [],
-      upstreamRefs: ["mdd:§7"],
-      dependsOn: items.length > 0 ? [items[0]!.id] : [],
-      targetFilesHint: ["Dockerfile", "docker-compose.yml"],
-    });
+  // --- Infraestructura → tasks por servicio detectado ---
+  const mddText = input.mddMarkdown ?? "";
+  const infraServices: Array<{ pattern: RegExp; label: string }> = [
+    { pattern: /docker|dockerfile|docker-compose/i, label: "Docker/Dockerfile" },
+    { pattern: /dokploy/i, label: "Dokploy" },
+    { pattern: /redis/i, label: "Redis" },
+    { pattern: /rabbitmq|rabbit/i, label: "RabbitMQ" },
+    { pattern: /postgres|postgresql/i, label: "PostgreSQL" },
+    { pattern: /mysql|mariadb/i, label: "MySQL/MariaDB" },
+    { pattern: /mongo|mongodb/i, label: "MongoDB" },
+    { pattern: /nginx/i, label: "Nginx" },
+    { pattern: /traefik/i, label: "Traefik" },
+    { pattern: /kubernetes|k8s|helm/i, label: "Kubernetes" },
+  ];
+  for (const svc of infraServices) {
+    if (svc.pattern.test(mddText) || svc.pattern.test(blueprint)) {
+      if (items.some((i) => i.title.toLowerCase().includes(svc.label.toLowerCase()))) continue;
+      items.push({
+        id: nextTaskId(counter),
+        title: `Configurar ${svc.label} (MDD §7)`,
+        layer: "Infra",
+        mddRefs: ["§7 Infraestructura"],
+        storyRefs: [],
+        upstreamRefs: [`mdd:§7:${svc.label}`],
+        dependsOn: items.length > 0 ? [items[0]!.id] : [],
+        targetFilesHint: [`docker-compose.yml`, `${svc.label.toLowerCase()}/`],
+      });
+    }
   }
 
+  // --- QA/E2E ---
   items.push({
     id: nextTaskId(counter),
     title: "Smoke tests E2E del MVP",
@@ -127,6 +185,7 @@ export function buildHeuristicTasksPlan(input: HeuristicTasksPlanInput): TasksGe
     targetFilesHint: ["apps/api/test/"],
   });
 
+  // --- Fallback si no se generó nada ---
   if (items.length === 0) {
     items.push({
       id: nextTaskId(counter),

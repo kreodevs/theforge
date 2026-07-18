@@ -184,21 +184,23 @@ export class TasksGenerationPipelineService {
 
   private buildPlannerContext(input: TasksPipelineInput): string {
     const parts: string[] = [
-      "Genera el plan JSON de Tasks según el system prompt.",
+      "Genera el plan JSON de Tasks según el system prompt. " +
+      "Cada fase/roadmap del blueprint debe generar al menos una sección de tasks con ítems por hito.",
       "\n\nMDD:\n---\n" + input.mddMarkdown.trim().slice(0, 40_000) + "\n---",
     ];
     const append = (label: string, content?: string | null, cap = 10_000) => {
       const t = (content ?? "").trim();
       if (t.length > 0) parts.push(`\n\n${label}:\n---\n` + t.slice(0, cap) + "\n---");
     };
-    append("Blueprint", input.blueprintMarkdown, 20_000);
+    // Blueprint gets 40K chars — ForgeOps and similar projects have 8 phases across 17 sections
+    append("Blueprint", input.blueprintMarkdown, 40_000);
     append("Spec", input.taskOpts.specContent, 15_000);
     append("Use Cases", input.taskOpts.useCasesContent, 10_000);
     append("User Stories", input.taskOpts.userStoriesContent, 10_000);
     append("API Contracts", input.taskOpts.apiContractsContent, 20_000);
     append("Logic Flows", input.taskOpts.logicFlowsContent, 12_000);
     append("Infra", input.taskOpts.infraContent, 10_000);
-    append("Architecture", input.taskOpts.architectureContent, 8_000);
+    append("Architecture", input.taskOpts.architectureContent, 12_000);
     if (input.hasUxTeam) {
       append("UX Guide", input.taskOpts.uxUiGuideContent, 8_000);
     }
@@ -237,8 +239,7 @@ export class TasksGenerationPipelineService {
         maxTokensPurpose: "tasksPlanner",
       });
       if (parsed) {
-        this.logger.log(`[Tasks pipeline] planner OK (${label}, ${parsed.items.length} items)`);
-        return {
+        const plan: TasksGenerationPlan = {
           sections: parsed.sections ?? [],
           items: parsed.items.map((item) => ({
             ...item,
@@ -249,6 +250,9 @@ export class TasksGenerationPipelineService {
             targetFilesHint: item.targetFilesHint ?? [],
           })),
         };
+        this.validatePlanCompleteness(plan, input);
+        this.logger.log(`[Tasks pipeline] planner OK (${label}, ${plan.items.length} items)`);
+        return plan;
       }
       this.logger.warn(`[Tasks pipeline] planner JSON failed (${label})`);
     }
@@ -259,11 +263,46 @@ export class TasksGenerationPipelineService {
       uiScreensMarkdown: input.taskOpts.uiScreensContent,
       inventory: input.inventory,
       hasUxTeam: input.hasUxTeam,
+      blueprintMarkdown: input.blueprintMarkdown,
     });
     this.logger.warn(
       `[Tasks pipeline] planner heuristic fallback (${heuristic.items.length} items) — revisa auditorChatModel o upstream`,
     );
     return heuristic;
+  }
+
+  /**
+   * Valida que el plan cubra todas las fases/roadmap del blueprint.
+   * Si el blueprint tiene 8 fases pero el plan solo cubre 3, logea un warning
+   * para que el repair loop pueda corregir la cobertura.
+   */
+  private validatePlanCompleteness(plan: TasksGenerationPlan, input: TasksPipelineInput): void {
+    const blueprint = (input.blueprintMarkdown ?? "").trim();
+    if (blueprint.length < 200) return; // No hay blueprint significativo
+
+    // Extract phase/roadmap headings from blueprint (## Fase N, ## Phase N, ## Roadmap N, ## Milestone N, ## Sprint N, ## Hitos)
+    const phaseRegex = /^##\s+(?:(?:Fase|Phase|Roadmap|Milestone|Sprint|Hitos|Etapa)\s+\d+[^#\n]*)/gim;
+    const phaseMatches = [...blueprint.matchAll(phaseRegex)];
+
+    if (phaseMatches.length <= 1) return; // No hay múltiples fases detectables
+
+    const phaseCount = phaseMatches.length;
+    const planItemCount = plan.items.length;
+
+    // Heuristic: each phase should generate at least 2-3 tasks
+    const minExpectedTasks = phaseCount * 2;
+    if (planItemCount < minExpectedTasks) {
+      this.logger.warn(
+        `[Tasks pipeline] plan incompleto: blueprint tiene ${phaseCount} fases (~${phaseMatches.map((m) => m[0]?.trim()).join(", ")}) ` +
+        `pero plan solo tiene ${planItemCount} items (mínimo esperado: ${minExpectedTasks}). ` +
+        `El repair loop intentará completar la cobertura.`,
+      );
+    }
+
+    // Log phase headings for traceability
+    this.logger.log(
+      `[Tasks pipeline] blueprint phases detectadas: ${phaseMatches.map((m) => m[0]?.trim()).join(" | ")}`,
+    );
   }
 
   private buildAuditorUpstreamContext(input: TasksPipelineInput, tasksMarkdown: string): string {
