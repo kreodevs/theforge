@@ -74,7 +74,7 @@ export function validateMddForDelivery(
 
   if (mddHasDuplicateSectionHeadings(trimmed)) {
     const dupIssue =
-      "MDD repite headings de §5, §6 o §7 (secciones duplicadas por acumulación del pipeline).";
+      "MDD repite headings canónicos §1–§7 (secciones duplicadas por acumulación del pipeline).";
     warnings.push(dupIssue);
   }
 

@@ -149,9 +149,9 @@ export function synthesizeDeterministicAuditorGaps(
 
   if (mddHasDuplicateSectionHeadings(repairedDraft)) {
     critical_gaps.push({
-      sections: ["Sección 5", "Sección 6", "Sección 7"],
-      issue: "Headings de §5/§6/§7 duplicados en el borrador",
-      fix: "Ejecutar deduplicateAndReorderMddSections o regenerar §5–§7 desde cero.",
+      sections: ["Secciones 1–7"],
+      issue: "Headings canónicos §1–§7 duplicados en el borrador",
+      fix: "Ejecutar deduplicateAndReorderMddSections o regenerar las secciones afectadas desde cero.",
     });
   }
 

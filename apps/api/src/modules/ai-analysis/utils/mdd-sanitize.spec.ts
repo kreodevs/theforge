@@ -829,6 +829,49 @@ Tabla users → DataTable.
     assert.ok(out.includes("DataTable"));
     assert.strictEqual((out.match(/^##\s+5\./gm) ?? []).length, 1);
   });
+
+  it("deduplica §4 repetida aunque §5–§7 sean únicas (cola grande de contratos)", () => {
+    const section4 =
+      "## 4. Contratos de API\n\n| POST | /api/test | test | JWT |\n\n#### POST /api/test\n\n```json\n{\"ok\": true}\n```\n\n";
+    const corrupted = `# Master Design Document
+
+## 1. Contexto
+
+ForgeOps.
+
+## 2. Arquitectura y Stack
+
+NestJS.
+
+## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE tenants (id UUID PRIMARY KEY);
+\`\`\`
+
+${section4.repeat(4)}
+## 5. Lógica y Edge Cases
+
+Reglas.
+
+## 6. Seguridad
+
+JWT.
+
+## 7. Infraestructura
+
+Docker.
+
+## UI/UX Design Intent
+
+Ver pantallas.md.
+`;
+    assert.ok(mddHasDuplicateSectionHeadings(corrupted));
+    const out = finalizeMddDeliverable(corrupted);
+    assert.strictEqual((out.match(/^##\s+4\./gm) ?? []).length, 1);
+    assert.strictEqual(mddHasDuplicateSectionHeadings(out), false);
+    assert.ok(out.includes("## UI/UX Design Intent"));
+  });
 });
 
 describe("stripTrailingDuplicateMddSections / deduplicate anti-bucle", () => {

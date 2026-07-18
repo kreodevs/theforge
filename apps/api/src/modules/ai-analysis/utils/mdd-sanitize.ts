@@ -2861,9 +2861,13 @@ function fixGluedSection6Heading(draft: string): string {
   return out.replace(/\n{3,}/g, "\n\n");
 }
 
-/** Cuenta ocurrencias de un heading H2 de sección principal (§5–§7). */
-function countMddSectionH2Occurrences(draft: string, section: 5 | 6 | 7): number {
-  const patterns: Record<5 | 6 | 7, RegExp> = {
+/** Cuenta ocurrencias de un heading H2 de sección canónica (§1–§7). */
+function countMddSectionH2Occurrences(draft: string, section: 1 | 2 | 3 | 4 | 5 | 6 | 7): number {
+  const patterns: Record<1 | 2 | 3 | 4 | 5 | 6 | 7, RegExp> = {
+    1: /^##\s+1\.\s*Contexto/im,
+    2: /^##\s+2\.\s*Arquitectura\s+y\s*Stack/im,
+    3: /^##\s+3\.\s*Modelo\s+(?:de\s+)?datos/im,
+    4: /^##\s+4\.\s*Contratos\s+de\s+API/im,
     5: /^##\s+5\.\s*Lógica\s+y\s*Edge\s+Cases/im,
     6: /^##\s+(?:6\.\s+)?Seguridad/im,
     7: /^##\s+(?:7\.\s+)?(?:Infraestructura|Integraci[oó]n)/im,
@@ -2871,15 +2875,14 @@ function countMddSectionH2Occurrences(draft: string, section: 5 | 6 | 7): number
   return (draft.match(new RegExp(patterns[section].source, "gm")) ?? []).length;
 }
 
-/** True si el borrador repite headings de §5, §6 o §7 (señal de corrupción por acumulación). */
+/** True si el borrador repite algún heading canónico §1–§7 (corrupción por acumulación del pipeline). */
 export function mddHasDuplicateSectionHeadings(draft: string): boolean {
   const trimmed = (draft ?? "").trim();
   if (!trimmed) return false;
-  return (
-    countMddSectionH2Occurrences(trimmed, 5) > 1 ||
-    countMddSectionH2Occurrences(trimmed, 6) > 1 ||
-    countMddSectionH2Occurrences(trimmed, 7) > 1
-  );
+  for (const section of [1, 2, 3, 4, 5, 6, 7] as const) {
+    if (countMddSectionH2Occurrences(trimmed, section) > 1) return true;
+  }
+  return false;
 }
 
 /**
@@ -4370,24 +4373,20 @@ export function normalizeMddFormat(draft: string): string {
 }
 
 /**
- * Pasada final antes de entregar al usuario: sin directivas mesh ni colas duplicadas §5–§7.
+ * Pasada final antes de entregar al usuario: sin directivas mesh; deduplica y reordena §1–§7.
  * Preserva bloques añadidos tras §7 (p. ej. UI/UX) salvo que sean repetición de secciones núcleo.
  */
 export function finalizeMddDeliverable(draft: string): string {
   let out = sanitizeMddAtPersist(stripMeshDirectivesFromDraft(draft));
-  if (!mddHasDuplicateSectionHeadings(out)) return out;
 
   const uiUxRe = /\n##\s+UI\/UX\s+Design\s+Intent\b[\s\S]*$/i;
   const uiUxMatch = out.match(uiUxRe);
   const uiUxSuffix = uiUxMatch?.[0]?.trim() ?? "";
   const core = uiUxSuffix ? out.slice(0, out.length - uiUxMatch![0].length).trim() : out;
 
-  let fixedCore = stripTrailingDuplicateMddSections(core);
+  let fixedCore = deduplicateAndReorderMddSections(stripTrailingDuplicateMddSections(core));
   if (mddHasDuplicateSectionHeadings(fixedCore)) {
-    fixedCore = deduplicateAndReorderMddSections(fixedCore);
-  }
-  if (mddHasDuplicateSectionHeadings(fixedCore)) {
-    fixedCore = stripTrailingDuplicateMddSections(fixedCore);
+    fixedCore = deduplicateAndReorderMddSections(stripTrailingDuplicateMddSections(fixedCore));
   }
 
   out = uiUxSuffix ? `${fixedCore}\n\n${uiUxSuffix}` : fixedCore;
