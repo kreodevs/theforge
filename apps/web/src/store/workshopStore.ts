@@ -137,11 +137,11 @@ function mddContentForEditor(content: string | null | undefined): string {
 /** Alinea etapa activa y `project.mddContent` con el texto del editor MDD. */
 function patchWorkshopMddStagesWithEditorContent(
   project: Project,
-  stages: Project["stages"],
+  stages: WorkshopStage[],
   stageId: string | null | undefined,
   editorContent: string,
-): { project: Project; stages: NonNullable<Project["stages"]> } {
-  const nextStages = (stages ?? []).map((s) =>
+): { project: Project & { stages: WorkshopStage[] }; stages: WorkshopStage[] } {
+  const nextStages = stages.map((s) =>
     stageId && s.id === stageId ? { ...s, mddContent: editorContent } : s,
   );
   const stageMdd =
@@ -1907,7 +1907,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         serverDropsPatterns ||
         (hasUnsavedEditorChanges && serverDiffersFromLocal);
       let nextStages = stages;
-      let nextProject = focused.project;
+      let nextProject: typeof focused.project = focused.project;
       let nextMddContent = preserveMddLocal ? localMdd : serverMdd;
       if (activeStageId) {
         if (preserveMddLocal && serverDropsPatterns) {
