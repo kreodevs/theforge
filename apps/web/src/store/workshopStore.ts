@@ -44,6 +44,7 @@ import {
   extractWorkshopDocumentTimestamps,
   normalizeWorkshopDocumentForEditor,
   workshopDocumentBodiesEqual,
+  workshopMddEditorBaseline,
   type WorkshopDocumentTimestamps,
 } from "../utils/workshop-document-content.util";
 import {
@@ -113,7 +114,7 @@ export const selectPersistedMddBaseline = (s: WorkshopState): string => {
   const stages = s.workshopStages.length > 0 ? s.workshopStages : (s.project?.stages ?? []);
   const st = stages.find((x) => x.id === s.activeStageId);
   const raw = st?.mddContent ?? s.project?.mddContent ?? null;
-  return normalizeWorkshopDocumentForEditor(raw) ?? "";
+  return workshopMddEditorBaseline(raw);
 };
 
 /** Markdown MDD en BD sin normalizar (incluye stamp API si existe). */
@@ -130,7 +131,27 @@ function normalizedMddForPersistCompare(content: string | null | undefined): str
 
 /** Texto del textarea MDD: sin stamp API (fechas solo en WorkshopDocumentStampBar). */
 function mddContentForEditor(content: string | null | undefined): string {
-  return normalizeWorkshopDocumentForEditor(content) ?? (content ?? "").trim();
+  return workshopMddEditorBaseline(content);
+}
+
+/** Alinea etapa activa y `project.mddContent` con el texto del editor MDD. */
+function patchWorkshopMddStagesWithEditorContent(
+  project: Project,
+  stages: Project["stages"],
+  stageId: string | null | undefined,
+  editorContent: string,
+): { project: Project; stages: NonNullable<Project["stages"]> } {
+  const nextStages = (stages ?? []).map((s) =>
+    stageId && s.id === stageId ? { ...s, mddContent: editorContent } : s,
+  );
+  const stageMdd =
+    stageId && nextStages.length
+      ? (nextStages.find((s) => s.id === stageId)?.mddContent ?? editorContent)
+      : editorContent;
+  return {
+    project: { ...project, stages: nextStages, mddContent: stageMdd },
+    stages: nextStages,
+  };
 }
 
 function patchAgentProgressFromMddEvent(
@@ -1878,27 +1899,44 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       const persistedMdd = selectPersistedMddBaseline(get());
       const serverMdd = focused.mddContent ?? "";
       const serverDropsPatterns = serverWouldDropGovernancePatterns(localMdd, serverMdd);
+      const hasUnsavedEditorChanges =
+        !get().mddPersisting && !workshopDocumentBodiesEqual(localMdd, persistedMdd);
+      const serverDiffersFromLocal = !workshopDocumentBodiesEqual(localMdd, serverMdd);
       const preserveMddLocal =
         get().mddPersisting ||
-        !workshopDocumentBodiesEqual(localMdd, persistedMdd) ||
-        serverDropsPatterns;
+        serverDropsPatterns ||
+        (hasUnsavedEditorChanges && serverDiffersFromLocal);
       let nextStages = stages;
       let nextProject = focused.project;
-      if (preserveMddLocal && serverDropsPatterns && activeStageId) {
-        nextStages = stages.map((s) =>
-          s.id === activeStageId ? { ...s, mddContent: localMdd } : s,
-        );
-        nextProject = {
-          ...focused.project,
-          stages: nextStages,
-          mddContent: nextStages.find((s) => s.id === activeStageId)?.mddContent ?? focused.project.mddContent,
-        };
+      let nextMddContent = preserveMddLocal ? localMdd : serverMdd;
+      if (activeStageId) {
+        if (preserveMddLocal && serverDropsPatterns) {
+          const patched = patchWorkshopMddStagesWithEditorContent(
+            focused.project,
+            stages,
+            activeStageId,
+            localMdd,
+          );
+          nextStages = patched.stages;
+          nextProject = patched.project;
+          nextMddContent = localMdd;
+        } else if (!preserveMddLocal) {
+          const patched = patchWorkshopMddStagesWithEditorContent(
+            focused.project,
+            stages,
+            activeStageId,
+            serverMdd,
+          );
+          nextStages = patched.stages;
+          nextProject = patched.project;
+          nextMddContent = serverMdd;
+        }
       }
       set({
         project: nextProject,
         workshopStages: nextStages,
         activeStageId,
-        mddContent: preserveMddLocal ? localMdd : serverMdd,
+        mddContent: nextMddContent,
         documentTimestamps: focused.documentTimestamps,
         uxUiGuideContent: focused.uxUiGuideContent,
         dbgaContent: normalizeWorkshopDocumentForEditor(data.dbgaContent ?? null),
@@ -4675,9 +4713,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           const packed = projectWithUxAfterStream(data, data.uxUiGuideContent, get().activeStageId);
           let savedContent = packed?.mddContent ?? data.mddContent ?? content;
           const patternsReverted = data.mddGovernancePatternsReverted === true;
+          const sentPatternCount = selectedPatternIdsFromMdd(content).size;
           if (
-            selectedPatternIdsFromMdd(content).size > 0 &&
-            (patternsReverted || serverWouldDropGovernancePatterns(content, savedContent))
+            sentPatternCount > 0 &&
+            (patternsReverted || serverWouldDropGovernancePatterns(content, savedContent)) &&
+            selectedPatternIdsFromMdd(savedContent).size === 0
           ) {
             savedContent = content;
           }
@@ -4698,22 +4738,17 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
               localFields,
             },
           ) as unknown as Project;
-          const editorBaseline =
-            normalizeWorkshopDocumentForEditor(savedContent) ??
-            cleanDoc(savedContent) ??
-            savedContent ??
-            "";
+          const editorBaseline = workshopMddEditorBaseline(savedContent);
           const nextTimestamps = extractWorkshopDocumentTimestamps(savedContent);
-          (nextProject as Project).mddContent = editorBaseline;
-          if (stageId && nextProject.stages?.length) {
-            nextProject.stages = nextProject.stages.map((s) =>
-              s.id === stageId ? { ...s, mddContent: editorBaseline } : s,
-            );
-          }
-          const nextStages = nextProject.stages ?? get().workshopStages;
+          const patched = patchWorkshopMddStagesWithEditorContent(
+            nextProject as Project,
+            (nextProject as Project).stages ?? get().workshopStages,
+            stageId,
+            editorBaseline,
+          );
           set({
-            project: nextProject,
-            workshopStages: nextStages.length > 0 ? nextStages : get().workshopStages,
+            project: patched.project,
+            workshopStages: patched.stages.length > 0 ? patched.stages : get().workshopStages,
             activeStageId: packed?.activeStageId ?? get().activeStageId,
             mddContent: editorBaseline,
             ...(nextTimestamps

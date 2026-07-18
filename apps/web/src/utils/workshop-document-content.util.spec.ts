@@ -4,6 +4,7 @@ import { formatDocumentMarkdown } from "@theforge/shared-types";
 import {
   normalizeWorkshopDocumentForEditor,
   workshopDocumentBodiesEqual,
+  workshopMddEditorBaseline,
 } from "./workshop-document-content.util.js";
 
 const STAMP =
@@ -38,6 +39,14 @@ describe("workshop-document-content", () => {
   it("local editor text equals stamped server baseline", () => {
     const body = "# Fase 0\n\nTexto.";
     assert.equal(workshopDocumentBodiesEqual(body, STAMP + body), true);
+  });
+
+  it("workshopMddEditorBaseline es idempotente", () => {
+    const body = "# MDD\n\n## 1. Contexto\n\nTexto.";
+    const once = workshopMddEditorBaseline(body);
+    const twice = workshopMddEditorBaseline(once);
+    assert.equal(once, twice);
+    assert.equal(workshopDocumentBodiesEqual(once, twice), true);
   });
 
   it("MDD editor strips stamp like other deliverables", () => {

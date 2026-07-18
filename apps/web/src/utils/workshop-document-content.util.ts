@@ -139,6 +139,13 @@ export function normalizeWorkshopDocumentForEditor(
   return formatDocumentMarkdown(cleaned);
 }
 
+/** Baseline MDD en el editor (una pasada de normalización). */
+export function workshopMddEditorBaseline(
+  text: string | null | undefined,
+): string {
+  return normalizeWorkshopDocumentForEditor(text) ?? (text ?? "").trim();
+}
+
 /** Comparación estable para auto-guardado (ignora cabecera Creado/Última regeneración). */
 export function workshopDocumentBodiesEqual(
   a: string | null | undefined,
