@@ -79,4 +79,14 @@ describe("document-date-header", () => {
       true,
     );
   });
+
+  it("re-stamp cleans corrupted glued stamp before H1", () => {
+    const corrupted =
+      "Última modificación: 2026-07-18T06:25:57.540Z --> 📅 Creado: 18 de julio de 2026, 06:25:57 UTC · Última modificación: 18 de julio de 2026, 06:25:57 UTC --- # Master Design Document --- ## 1. Contexto\n\nTexto.";
+    const out = prependDocumentTimestamps(corrupted, later);
+    assert.ok(out.startsWith("<!-- theforge-doc:created="));
+    assert.ok(out.includes("> 📅 Creado:"));
+    assert.match(out, /---\n\n# Master Design Document\n\n---\n\n## 1\. Contexto/);
+    assert.doesNotMatch(out, /Última modificación: 2026-07-18T06:25:57/);
+  });
 });

@@ -2188,8 +2188,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       case "mdd": {
         const source = effectiveMddContentForSectionRegen(get);
         if (!source) return { ok: false, message: "No hay MDD para formatear." };
-        const formatted = fmt(source);
-        if (formatted === source) {
+        const before = normalizedMddForPersistCompare(source);
+        const formatted =
+          normalizeWorkshopDocumentForEditor(fmt(source)) ?? fmt(source);
+        const after = normalizedMddForPersistCompare(formatted);
+        if (after === before) {
           return { ok: true, message: "MDD: ya estaba bien formateado (sin cambios)." };
         }
         set({ mddContent: formatted });

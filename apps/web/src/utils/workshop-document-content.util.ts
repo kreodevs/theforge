@@ -44,7 +44,9 @@ export function extractWorkshopDocumentTimestamps(
   raw: string | null | undefined,
 ): WorkshopDocumentTimestamps | null {
   if (!raw?.trim()) return null;
-  return formatTheforgeDocTimestampsForDisplay(parseTheforgeDocTimestamps(raw), {
+  const { stamp } = peelTheforgeDocStamp(raw);
+  const metaSource = stamp.includes("theforge-doc:") ? stamp : raw;
+  return formatTheforgeDocTimestampsForDisplay(parseTheforgeDocTimestamps(metaSource), {
     timeZone: resolveWorkshopDisplayTimeZone(),
   });
 }

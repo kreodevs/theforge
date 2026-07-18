@@ -86,6 +86,14 @@ describe("theforge-doc-stamp", () => {
     assert.doesNotMatch(body, /Última modificación:/);
   });
 
+  it("repairInlineHorizontalRuleSectionBreaks splits glued section headings", () => {
+    const raw =
+      "# Master Design Document --- ## 1. Contexto --- ## 2. Arquitectura y Stack\n\nTexto.";
+    const { body } = peelTheforgeDocStamp(raw);
+    assert.match(body, /^# Master Design Document\n\n---\n\n## 1\. Contexto/);
+    assert.match(body, /## 2\. Arquitectura y Stack/);
+  });
+
   it("peels current API stamp with Última modificación label", () => {
     const raw =
       "<!-- theforge-doc:created=2026-07-18T05:06:06.701Z|updated=2026-07-18T05:06:06.701Z -->\n" +

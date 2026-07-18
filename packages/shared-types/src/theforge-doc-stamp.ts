@@ -33,11 +33,30 @@ const HUMAN_BLOCKQUOTE_LINE_RE = /^>\s*📅[^\n]*\n+/;
 /** Línea humana sin `>` (stamp pegado al cuerpo). */
 const HUMAN_LINE_NO_BLOCKQUOTE_RE = /^📅[^\n]*(?:\n|$)/;
 
-/** `📅 … --- # Título` en una sola línea. */
-const HUMAN_GLUE_H1_RE = /^>?\s*📅[^\n]*\s+---\s+(?=#)/;
+/** `📅 … --- # Título` en una sola línea (no confundir con `--- ##`). */
+const HUMAN_GLUE_H1_RE = /^>?\s*📅[^\n]*?\s+---\s+#(?!\#)/;
 
 function stripLeadingHorizontalRuleBeforeHeading(body: string): string {
   return body.replace(/^---\s*(?=#{1,2}\s)/, "").trimStart();
+}
+
+/**
+ * Convierte `--- ## Sección` pegado en línea (stamp o LLM) en saltos reales de bloque.
+ * Típico tras corrupción: `# MDD --- ## 1. Contexto --- ## 2. Stack`.
+ */
+export function repairInlineHorizontalRuleSectionBreaks(text: string): string {
+  if (!text?.trim()) return text;
+  let out = text.replace(/\s+---\s+(#{1,6}\s)/g, "\n\n---\n\n$1");
+  out = out.replace(/(#{1,6}\s[^\n]+)\s+---\s+(#{1,6}\s)/g, "$1\n\n---\n\n$2");
+  return out;
+}
+
+/** Título suelto (`Master Design Document`) antes de `---` + H2 → H1. */
+function promoteBareDocumentTitleBeforeH2(body: string): string {
+  return body.replace(
+    /^([^\n#][^\n]{2,160}?)\n\n---\n\n(##\s)/m,
+    (_m, title: string, h2: string) => `# ${title.trim()}\n\n---\n\n${h2}`,
+  );
 }
 
 /** Si quedó basura de stamp, recorta todo lo anterior al primer H1/H2. */
@@ -174,8 +193,23 @@ export function peelTheforgeDocStamp(text: string): { stamp: string; body: strin
   body = body.replace(/^---\s*\n+/, "");
   body = stripLeadingHorizontalRuleBeforeHeading(body);
   body = stripStampResidueBeforeHeading(body);
+  body = repairInlineHorizontalRuleSectionBreaks(body);
+  body = promoteBareDocumentTitleBeforeH2(body);
+  body = body.trimStart();
 
   return { stamp, body };
+}
+
+/** Quita stamp(s) corruptos o duplicados hasta dejar solo el cuerpo del documento. */
+export function peelDocumentBodyForPersist(text: string): string {
+  let body = (text ?? "").trim();
+  if (!body) return body;
+  for (let i = 0; i < 4; i++) {
+    const next = peelTheforgeDocStamp(body).body.trim();
+    if (!next || next === body) break;
+    body = next;
+  }
+  return body;
 }
 
 export function reattachTheforgeDocStamp(stamp: string, body: string): string {
