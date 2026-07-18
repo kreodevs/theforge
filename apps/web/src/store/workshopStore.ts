@@ -105,14 +105,12 @@ export const selectPersistedMddBaseline = (s: WorkshopState): string => {
   const stages = s.workshopStages.length > 0 ? s.workshopStages : (s.project?.stages ?? []);
   const st = stages.find((x) => x.id === s.activeStageId);
   const raw = st?.mddContent ?? s.project?.mddContent ?? null;
-  return cleanDoc(raw) ?? raw ?? "";
+  return normalizeWorkshopDocumentForEditor(raw) ?? "";
 };
 
 /** Comparación estable para evitar PATCH cuando el markdown ya coincide con el baseline persistido. */
 function normalizedMddForPersistCompare(content: string | null | undefined): string {
-  const raw = (content ?? "").trim();
-  if (!raw) return "";
-  return cleanDoc(raw) ?? raw;
+  return normalizeWorkshopDocumentForEditor(content) ?? "";
 }
 
 let mddPersistQueue: Promise<void> = Promise.resolve();
@@ -2175,6 +2173,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         }
         set({ mddContent: formatted });
         await get().persistMddContent(formatted, { force: true, mddFormatOnly: true });
+        set({ mddContent: selectPersistedMddBaseline(get()) });
         return { ok: true, message: "MDD formateado (headings, fences, tablas y Mermaid). Revisa el panel." };
       }
       case "spec": {
@@ -4629,12 +4628,23 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
               localFields,
             },
           ) as unknown as Project;
+          const editorBaseline =
+            normalizeWorkshopDocumentForEditor(savedContent) ??
+            cleanDoc(savedContent) ??
+            savedContent ??
+            "";
+          (nextProject as Project).mddContent = editorBaseline;
+          if (stageId && nextProject.stages?.length) {
+            nextProject.stages = nextProject.stages.map((s) =>
+              s.id === stageId ? { ...s, mddContent: editorBaseline } : s,
+            );
+          }
           const nextStages = nextProject.stages ?? get().workshopStages;
           set({
             project: nextProject,
             workshopStages: nextStages.length > 0 ? nextStages : get().workshopStages,
             activeStageId: packed?.activeStageId ?? get().activeStageId,
-            mddContent: savedContent,
+            mddContent: editorBaseline,
             synced: true,
             error: null,
             notice: patternsReverted ? SSOT_PATTERNS_RESTORED_NOTICE : null,
@@ -4712,7 +4722,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     if (!projectId?.trim() || !project) return;
     const content = (mddContent ?? "").trim();
     const baseline = selectPersistedMddBaseline(get());
-    if (content === baseline) return;
+    if (workshopDocumentBodiesEqual(content, baseline)) return;
     set({ mddReviewing: true });
     try {
       await persistMddContent(content, { force: true });
