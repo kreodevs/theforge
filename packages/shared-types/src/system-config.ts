@@ -56,25 +56,6 @@ function def(
 
 export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
   def(
-    "hermes_webhook_url",
-    "HERMES_WEBHOOK_URL",
-    "string",
-    "",
-    "Hermes — URL del webhook",
-    "URL del proxy Hermes Agent para el botón «Lanzar a Hermes».",
-    "integrations",
-  ),
-  def(
-    "hermes_api_key",
-    "HERMES_API_KEY",
-    "secret",
-    "",
-    "Hermes — API key",
-    "Bearer token del proxy Hermes.",
-    "integrations",
-    { secret: true },
-  ),
-  def(
     "theforge_mcp_url",
     "THEFORGE_MCP_URL",
     "string",

@@ -4,6 +4,10 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+### Removed
+
+- **Integración Hermes Agent:** eliminados webhook (`HERMES_*`), endpoints `GET /projects/hermes-status` y `POST /projects/:id/launch-hermes`, botón «Lanzar a Hermes» en Workshop y claves en Ajustes → Sistema. Handoff sigue vía export ZIP / repo-handoff / MCP.
+
 ## [v1.3.0] — 2026-07-18
 
 > **Configuración de plataforma en UI** — Tunables operativos migrados de `.env` a Ajustes → Sistema con defaults y persistencia en `AppConfig`.

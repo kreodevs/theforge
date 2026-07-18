@@ -45,7 +45,6 @@ import {
   type SddAgentGovernanceAnalyzeSlice,
   type SpecKitBundleFile,
   type TheforgeProjectJson,
-  type MddDeliveryGateResult,
 } from "@theforge/shared-types";
 import { pickPrimaryStage } from "./stage-helpers.js";
 
@@ -84,20 +83,6 @@ export interface HandoffFileWithHash {
   content: string;
   size: number;
   sha256: string;
-}
-
-export interface HermesHandoffPayload {
-  format: "spec-kit-compatible";
-  featureDir: string;
-  layout: "spec-kit-primary";
-  implementReadme: string;
-  governancePresent: boolean;
-  pathMap: DocumentPathEntry[];
-  files: HandoffFileWithHash[];
-  governanceFiles: HandoffFileWithHash[];
-  cliFallback: string;
-  /** Resumen del gate MDD al exportar (desde .theforge-project.json). */
-  deliveryGate?: MddDeliveryGateResult;
 }
 
 /** MDD or fallback for LOW/MEDIUM without full MDD. */
@@ -446,7 +431,7 @@ export function buildSpecKitFilesForProject(
   });
 }
 
-/** Single source of truth for repo-handoff, agent-governance-export, Hermes. */
+/** Single source of truth for repo-handoff and agent-governance-export. */
 export function buildUnifiedHandoff(
   project: ProjectWithStages,
   consumptionGuideContent: string | null,
@@ -641,29 +626,4 @@ export function toHandoffFilesWithHash(
     size: f.content.length,
     sha256: hashHandoffContent(f.content),
   }));
-}
-
-export function buildHermesHandoffPayload(
-  unified: UnifiedHandoff,
-  project?: ProjectWithStages,
-): HermesHandoffPayload {
-  const governanceFiles = unified.agentGovernance?.files ?? [];
-  const deliveryGate =
-    project != null
-      ? buildTheforgeProjectJson(project).deliveryGate
-      : undefined;
-  return {
-    format: "spec-kit-compatible",
-    featureDir: unified.featureDir,
-    layout: unified.layout,
-    implementReadme:
-      "Lee IMPLEMENT.md, .specify/memory/constitution.md y tasks en specs/. " +
-      "Instala agent-governance según INSTALACION.md si aplica.",
-    governancePresent: unified.governancePresent,
-    pathMap: unified.pathMap,
-    files: toHandoffFilesWithHash(unified.specKitFiles),
-    governanceFiles: toHandoffFilesWithHash(governanceFiles),
-    cliFallback: `node scripts/theforge-export.mjs --project <id> --out ./handoff`,
-    ...(deliveryGate ? { deliveryGate } : {}),
-  };
 }

@@ -65,10 +65,6 @@ import {
   extractSection,
 } from "../engine/conformance.service.js";
 import { AiService } from "../ai/ai.service.js";
-import {
-  isHermesPlatformConfigured,
-  resolvePlatformConfigByKey,
-} from "../system-config/platform-config.runtime.js";
 import { DiscoveryService } from "../ai/discovery.service.js";
 import { ScraperService } from "../scraper/scraper.service.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
@@ -162,8 +158,7 @@ import {
   seedActiveStageDeliverables,
 } from "./stage-deliverable-persist.util.js";
 import { pickDeliverableFieldsFromSource, type ProjectDeliverableSource } from "@theforge/shared-types";
-import { SddIntegrationService } from "./sdd-integration.service.js";
-import { reconcileExportScaffold, buildUnifiedHandoff, buildAgentGovernanceInput, synthesizeExportGovernanceScaffold } from "./handoff-export.util.js";
+import { reconcileExportScaffold, buildAgentGovernanceInput, synthesizeExportGovernanceScaffold } from "./handoff-export.util.js";
 import { DocumentationGapService } from "../documentation-gap/documentation-gap.service.js";
 import { UiScreensService } from "../ui-mcp/ui-screens.service.js";
 import {
@@ -191,7 +186,6 @@ import {
 import { computeDocAccuracy } from "../engine/cascade-accuracy.util.js";
 import { ResolveChangeToFilesService } from "../legacy-flow/resolve-change-to-files.service.js";
 import { PlanValidationService } from "./plan-validation.service.js";
-import { loadConsumptionGuideMarkdown } from "./consumption-guide.util.js";
 import {
   buildProjectCloneCreateInput,
   resolveCloneProjectOptions,
@@ -265,7 +259,6 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly graphMemory: GraphMemoryService,
     private readonly changeLog: ChangeLogService,
     private readonly projectIntegration: ProjectIntegrationService,
-    private readonly sddIntegration: SddIntegrationService,
     private readonly uiMcpClient: UiMcpClientService,
     private readonly uiMcp: UiMcpService,
     @Inject(forwardRef(() => DocumentationGapService))
@@ -3775,80 +3768,5 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
       data: { brdContent: prependDocumentTimestamps(brd) },
     });
     return { brdContent: brd, stageId: stage.id };
-  }
-
-  /** Notifica a Hermes Agent que el proyecto está listo para desarrollo via webhook proxy. */
-  async launchHermes(projectId: string) {
-    const project = await this.findOne(projectId);
-    if (!project) throw new NotFoundException("Proyecto no encontrado");
-
-    if (!isHermesPlatformConfigured()) {
-      throw new BadRequestException(
-        "Hermes no está configurado (Ajustes → Sistema o variables HERMES_*)",
-      );
-    }
-
-    const webhookUrl = resolvePlatformConfigByKey("hermes_webhook_url").trim();
-    const apiKey = resolvePlatformConfigByKey("hermes_api_key").trim();
-
-    const stages = (project as { stages?: StageWithEst[] }).stages ?? [];
-    const projectWithStages = { ...(project as Project), stages };
-    const primaryStage = pickPrimaryStage(stages);
-    const unified = buildUnifiedHandoff(
-      projectWithStages,
-      loadConsumptionGuideMarkdown(
-        specKitFeatureDir(primaryStage?.ordinal ?? 1, project.name),
-      ),
-    );
-    const sddBundle = this.sddIntegration.buildHermesSddPayload(projectWithStages);
-
-    const payload = {
-      event_type: "project.ready",
-      project: {
-        id: project.id,
-        name: project.name,
-        type: project.projectType,
-        sessionId: null as string | null,
-      },
-      sddBundle,
-      implementHandoff: {
-        readme: "IMPLEMENT.md",
-        consumptionGuide: "THEFORGE-DOC-CONSUMPTION-GUIDE.md",
-        layout: unified.layout,
-        pathMap: unified.pathMap,
-        governancePresent: unified.governancePresent,
-        specKitLayout: sddBundle.featureDir,
-        fileHashes: sddBundle.files.map((f) => ({ path: f.path, sha256: f.sha256, size: f.size })),
-        cliFallback: sddBundle.cliFallback,
-      },
-    };
-
-    // Buscar la sesión activa más reciente para incluir sessionId
-    try {
-      const lastSession = await this.prisma.session.findFirst({
-        where: { projectId: project.id },
-        orderBy: { updatedAt: "desc" },
-        select: { id: true },
-      });
-      if (lastSession) payload.project.sessionId = lastSession.id;
-    } catch {
-      // sessionId no crítico
-    }
-
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw new Error(`Hermes webhook respondió ${response.status}: ${text}`);
-    }
-
-    return { success: true, status: response.status };
   }
 }

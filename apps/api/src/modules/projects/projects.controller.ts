@@ -35,7 +35,6 @@ import {
   tasksToIssuesBodySchema,
 } from "@theforge/shared-types";
 import { SddIntegrationService } from "./sdd-integration.service.js";
-import { isHermesPlatformConfigured } from "../system-config/platform-config.runtime.js";
 import { PlanValidationService } from "./plan-validation.service.js";
 import { ProjectNotionPortabilityService } from "./project-notion-portability.service.js";
 
@@ -231,12 +230,6 @@ export class ProjectsController {
     const status = await this.deliverablesQueue.getJobStatus(jobId);
     if (status.status === "unknown") throw new NotFoundException("Job no encontrado");
     return status;
-  }
-
-  /** Indica si Hermes Agent está configurado (Ajustes → Sistema o env). */
-  @Get("hermes-status")
-  hermesStatus() {
-    return { configured: isHermesPlatformConfigured() };
   }
 
   @Get(":id/generation-status")
@@ -635,12 +628,6 @@ export class ProjectsController {
   ) {
     const deliverable = body?.deliverable ?? "blueprint";
     return this.projects.verifyDeliverable(id, deliverable);
-  }
-
-  /** Notifica a Hermes Agent que este proyecto está listo para desarrollo. */
-  @Post(":id/launch-hermes")
-  launchHermes(@Param("id") id: string) {
-    return this.projects.launchHermes(id);
   }
 
   @Delete(":id")

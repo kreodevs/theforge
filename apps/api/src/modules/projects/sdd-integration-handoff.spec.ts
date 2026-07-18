@@ -4,7 +4,6 @@ import { serializeAgentGovernanceScaffold } from "../ai/utils/agent-governance.u
 import { appendArchitectureDecisionToScaffold, buildArchitectureDecisionFromSddConflict } from "../documentation-gap/architecture-decision.util.js";
 import {
   analyzeAgentGovernanceSlice,
-  buildHermesHandoffPayload,
   buildProjectDeliverableExportInput,
   buildSpecKitFilesForProject,
   buildUnifiedHandoff,
@@ -13,6 +12,7 @@ import {
   reconcileExportScaffold,
   scaffoldToRepoHandoffGovernance,
   synthesizeExportGovernanceScaffold,
+  toHandoffFilesWithHash,
 } from "./handoff-export.util.js";
 
 const baseProject = {
@@ -147,13 +147,12 @@ describe("handoff-export.util", () => {
     );
   });
 
-  it("buildHermesHandoffPayload incluye hashes SHA-256", () => {
+  it("toHandoffFilesWithHash incluye hashes SHA-256", () => {
     const unified = buildUnifiedHandoff(baseProject as never, null);
-    const payload = buildHermesHandoffPayload(unified);
-    assert.ok(payload.files.length > 0);
-    assert.match(payload.files[0]!.sha256, /^[a-f0-9]{64}$/);
-    assert.equal(payload.files[0]!.sha256, hashHandoffContent(payload.files[0]!.content));
-    assert.ok(payload.cliFallback.includes("theforge-export"));
+    const payload = toHandoffFilesWithHash(unified.specKitFiles);
+    assert.ok(payload.length > 0);
+    assert.match(payload[0]!.sha256, /^[a-f0-9]{64}$/);
+    assert.equal(payload[0]!.sha256, hashHandoffContent(payload[0]!.content));
   });
 
   it("enrichSpecKitFilesForHandoff añade docs/sdd mirrors y openspec/BRANCH-POLICY", () => {

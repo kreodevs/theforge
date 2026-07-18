@@ -678,7 +678,6 @@ export default function WorkshopView({
   const bannerError = error && !isSsotPatternsNotice(error) ? error : null;
   const modelsUnavailableModalOpen = useWorkshopStore((s) => s.modelsUnavailableModalOpen);
   const setModelsUnavailableModalOpen = useWorkshopStore((s) => s.setModelsUnavailableModalOpen);
-  const launchHermes = useWorkshopStore((s) => s.launchHermes);
   const convergeTasks = useWorkshopStore((s) => s.convergeTasks);
   const tasksToIssues = useWorkshopStore((s) => s.tasksToIssues);
   const fetchProject = useWorkshopStore((s) => s.fetchProject);
@@ -1217,7 +1216,6 @@ export default function WorkshopView({
     useState<import("@theforge/shared-types").AgentGovernanceScaffold | null>(null);
   const [agentGovernanceExportLoading, setAgentGovernanceExportLoading] = useState(false);
   const [tasksViewMode, setTasksViewMode] = useState<"preview" | "source">("preview");
-  const [hermesConfigured, setHermesConfigured] = useState<boolean | null>(null);
   const [mddInicialLocalContent, setMddInicialLocalContent] = useState("");
   const [mddInicialSaving, setMddInicialSaving] = useState(false);
   const [mddInicialCopyOk, setMddInicialCopyOk] = useState(false);
@@ -2068,17 +2066,6 @@ export default function WorkshopView({
     }
   }, [uxUiGuideContent, persistUxUiGuideContent, projectName]);
 
-  // Consultar si Hermes Agent está configurado en el backend
-  useEffect(() => {
-    if (!projectId) return;
-    import("../utils/apiClient").then(({ apiFetch, API_BASE }) => {
-      apiFetch(`${API_BASE}/projects/hermes-status`)
-        .then((r) => r.json() as Promise<{ configured: boolean }>)
-        .then((data) => setHermesConfigured(data.configured === true))
-        .catch(() => setHermesConfigured(false));
-    });
-  }, [projectId]);
-
   /** Prints the visible document (.design-system-preview or .markdown-preview). */
   const handlePrintDocument = useCallback(() => {
     const useDesignSystemPrint =
@@ -2869,7 +2856,7 @@ export default function WorkshopView({
             </div>
           </div>
 
-          {/* Column 2 — stages + icon actions: selector, Nueva etapa, ZIP, Hermes, Ayuda (sin etapas: ZIP, Hermes, Ayuda en desktop) */}
+          {/* Column 2 — stages + icon actions: selector, Nueva etapa, ZIP, Ayuda (sin etapas: ZIP, Ayuda en desktop) */}
           {workshopStagesList.length > 0 ? (
             <TooltipProvider delayDuration={280}>
               <div
@@ -2956,33 +2943,6 @@ export default function WorkshopView({
                   }}
                 />
 
-                {hermesConfigured === true ? (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <WorkshopHeaderIconButton
-                        onClick={() => {
-                          if (!window.confirm("¿Lanzar este proyecto a Hermes Agent para desarrollo?")) return;
-                          launchHermes(projectId)
-                            .then((res: { success: boolean; status: number } | undefined) => {
-                              if (res?.success) setError("✅ Proyecto enviado a Hermes Agent");
-                            })
-                            .catch((err: Error) => setError(err.message));
-                        }}
-                        disabled={loading}
-                        title="Lanzar proyecto a Hermes Agent"
-                        aria-label="Lanzar proyecto a Hermes Agent"
-                      >
-                        {loading && loadingReason === "launch-hermes" ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
-                        ) : (
-                          <Rocket className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                        )}
-                      </WorkshopHeaderIconButton>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Lanzar proyecto a Hermes Agent</TooltipContent>
-                  </Tooltip>
-                ) : null}
-
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <WorkshopHeaderIconButton
@@ -3019,33 +2979,6 @@ export default function WorkshopView({
                     else setError("No hay contenido MDD para exportar bundle SDD.");
                   }}
                 />
-
-                {hermesConfigured === true ? (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <WorkshopHeaderIconButton
-                        onClick={() => {
-                          if (!window.confirm("¿Lanzar este proyecto a Hermes Agent para desarrollo?")) return;
-                          launchHermes(projectId)
-                            .then((res: { success: boolean; status: number } | undefined) => {
-                              if (res?.success) setError("✅ Proyecto enviado a Hermes Agent");
-                            })
-                            .catch((err: Error) => setError(err.message));
-                        }}
-                        disabled={loading}
-                        title="Lanzar proyecto a Hermes Agent"
-                        aria-label="Lanzar proyecto a Hermes Agent"
-                      >
-                        {loading && loadingReason === "launch-hermes" ? (
-                          <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
-                        ) : (
-                          <Rocket className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                        )}
-                      </WorkshopHeaderIconButton>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Lanzar proyecto a Hermes Agent</TooltipContent>
-                  </Tooltip>
-                ) : null}
 
                 <Tooltip>
                   <TooltipTrigger asChild>

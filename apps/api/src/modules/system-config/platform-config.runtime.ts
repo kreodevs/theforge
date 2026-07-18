@@ -73,12 +73,6 @@ export function resolvePlatformConfigString(key: string): string {
   return resolvePlatformConfigByKey(key);
 }
 
-export function isHermesPlatformConfigured(): boolean {
-  const webhook = resolvePlatformConfigByKey("hermes_webhook_url");
-  const apiKey = resolvePlatformConfigByKey("hermes_api_key");
-  return Boolean(webhook.trim() && apiKey.trim());
-}
-
 /** Env keys gestionados por el catálogo (para documentación / migración). */
 export function listManagedPlatformEnvKeys(): string[] {
   return SYSTEM_CONFIG_DEFINITIONS.map((d) => d.envKey);

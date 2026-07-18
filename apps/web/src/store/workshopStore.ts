@@ -936,7 +936,6 @@ interface WorkshopState {
     | "legacy-deliverables"
     | "deliverables-cascade"
     | "agent-governance"
-    | "launch-hermes"
     | "converge"
     | "tasks-to-issues"
     | "clarify-spec"
@@ -1219,8 +1218,6 @@ interface WorkshopState {
     projectId: string,
     patternIds: ReadonlySet<string>,
   ) => Promise<void>;
-  /** Notifica a Hermes Agent que el proyecto está listo para desarrollo. */
-  launchHermes: (projectId: string) => Promise<{ success: boolean; status: number } | undefined>;
   convergeTasks: (
     projectId: string,
     persist?: boolean,
@@ -4897,23 +4894,6 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     }
     const adrs = await r.json();
     set({ adrs });
-  },
-  launchHermes: async (projectId: string) => {
-    if (!projectId?.trim()) return;
-    set({ loading: true, loadingReason: "launch-hermes", error: null });
-    try {
-      const r = await apiFetch(`${API_BASE}/projects/${projectId.trim()}/launch-hermes`, {
-        method: "POST",
-      });
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error((err as { message?: string }).message ?? "Error al lanzar a Hermes");
-      }
-      const data = (await r.json()) as { success: boolean; status: number };
-      return data;
-    } finally {
-      set({ loading: false, loadingReason: null });
-    }
   },
   convergeTasks: async (projectId, persist = false) => {
     if (!projectId?.trim()) return null;

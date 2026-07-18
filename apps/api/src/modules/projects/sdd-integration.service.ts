@@ -62,7 +62,6 @@ import {
 } from "./document-clarify.util.js";
 import {
   analyzeAgentGovernanceSlice,
-  buildHermesHandoffPayload,
   buildProjectDeliverableExportInput,
   buildUnifiedHandoff,
   enrichSpecKitFilesForHandoff,
@@ -205,16 +204,6 @@ export class SddIntegrationService {
       changeSpecContent: stage?.changeSpecContent ?? null,
       acceptanceCriteriaLines: acceptanceLines.length ? acceptanceLines : null,
     });
-  }
-
-  /** Payload SDD estructurado para webhook Hermes (hashes completos, sin truncar). */
-  buildHermesSddPayload(project: ProjectWithStages) {
-    const stage = pickPrimaryStage(project.stages);
-    const unified = buildUnifiedHandoff(
-      project,
-      loadConsumptionGuideMarkdown(specKitFeatureDir(stage?.ordinal ?? 1, project.name)),
-    );
-    return buildHermesHandoffPayload(unified, project);
   }
 
   async getExportBundle(projectId: string): Promise<{

@@ -14,7 +14,6 @@ export type WorkshopAgentsBusySlice = {
     | "legacy-deliverables"
     | "deliverables-cascade"
     | "agent-governance"
-    | "launch-hermes"
     | "converge"
     | "tasks-to-issues"
     | "clarify-spec"
@@ -42,7 +41,6 @@ const AGENT_LOADING_REASONS = new Set<NonNullable<WorkshopAgentsBusySlice["loadi
   "legacy-deliverables",
   "deliverables-cascade",
   "agent-governance",
-  "launch-hermes",
   "converge",
   "tasks-to-issues",
   "clarify-spec",

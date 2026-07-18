@@ -68,9 +68,8 @@ Tras desplegar **v1.3.0**, copia estos valores desde Dokploy a la UI **antes** d
 
 ### Orden recomendado en la UI
 
-1. **Integraciones** — sin esto fallan legacy/MCP/Hermes  
+1. **Integraciones** — sin esto fallan legacy/MCP  
    - `THEFORGE_MCP_URL` → *TheForge MCP — URL*  
-   - `HERMES_WEBHOOK_URL` / `HERMES_API_KEY` → Hermes (si usas «Lanzar a Hermes»)  
    - `TAVILY_API_KEY` → Scout web (opcional)  
    - Brownfield: `ARIADNE_BROWNFIELD_CONVERGE_*`
 
@@ -106,8 +105,6 @@ Tras desplegar **v1.3.0**, copia estos valores desde Dokploy a la UI **antes** d
 Puedes **eliminar** estas claves de Dokploy (`theforge-api` / `theforge-worker`) una vez guardadas en UI:
 
 ```
-HERMES_WEBHOOK_URL
-HERMES_API_KEY
 THEFORGE_MCP_URL
 TECH_DOCS_MCP_DEFAULT_URL
 TAVILY_API_KEY
@@ -173,7 +170,7 @@ No borres estas si las usas; la pantalla Sistema **no** las gestiona aún:
 - [ ] Login → **Ajustes → Sistema**
 - [ ] Por cada variable migrable que tengas en Dokploy, pegar el mismo valor en el campo correspondiente
 - [ ] **Guardar** y comprobar badge **«Guardado»** (origen BD)
-- [ ] Probar integración crítica: proyecto legacy + MCP (`GET /projects/hermes-status`, doc. partida, job MDD)
+- [ ] Probar integración crítica: proyecto legacy + MCP (doc. partida, job MDD)
 
 ### Fase 2 — Limpiar env en Dokploy
 
@@ -214,5 +211,5 @@ Si algo falla tras borrar env:
 ## Notas
 
 - **Compose local:** `docker-compose.yml` puede seguir pasando `${MDD_BULLMQ_CONCURRENCY:-2}` etc.; en dev el env gana si no hay valor en BD. Para alinear con prod, usa la UI o deja env vacío y confía en defaults.
-- **Secretos:** Hermes API key y Tavily se enmascaran en GET; al editar otros campos no hace falta reescribir el secreto.
+- **Secretos:** Tavily se enmascara en GET; al editar otros campos no hace falta reescribir el secreto.
 - **Documentación viva:** catálogo fuente en `packages/shared-types/src/system-config.ts`.
