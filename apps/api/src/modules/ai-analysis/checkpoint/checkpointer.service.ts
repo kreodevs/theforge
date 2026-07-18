@@ -1,9 +1,11 @@
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
+import { ensureLangGraphCheckpointSchema } from "./langgraph-checkpoint-setup.util.js";
 
 /**
  * Crea y mantiene el PostgresSaver para LangGraph.
- * Llama a setup() en el primer uso para crear las tablas de checkpoints en Postgres.
+ * El DDL lo ejecuta `ensureLangGraphCheckpointSchema` (idempotente + advisory lock),
+ * no `PostgresSaver.setup()` directo — evita race pg_type_typname_nsp_index en multi-réplica.
  */
 @Injectable()
 export class CheckpointerService implements OnModuleInit {
@@ -19,7 +21,7 @@ export class CheckpointerService implements OnModuleInit {
   }
 
   /**
-   * Devuelve el checkpointer; si no existe, lo crea desde DATABASE_URL y ejecuta setup().
+   * Devuelve el checkpointer; si no existe, lo crea desde DATABASE_URL y asegura el schema.
    */
   async getCheckpointer(): Promise<PostgresSaver | null> {
     const url = process.env.DATABASE_URL;
@@ -42,21 +44,21 @@ export class CheckpointerService implements OnModuleInit {
 
   private async initCheckpointer(connString: string): Promise<void> {
     this.logger.log("[CheckpointerService] initCheckpointer start");
-    const saver = PostgresSaver.fromConnString(connString.trim(), {
-      schema: "public",
-    });
+    const trimmed = connString.trim();
     try {
-      this.logger.log("[CheckpointerService] PostgresSaver setup() running...");
-      await saver.setup();
-      this.logger.log("LangGraph PostgresSaver: setup() completed (checkpoints tables).");
+      this.logger.log("[CheckpointerService] ensureLangGraphCheckpointSchema running...");
+      await ensureLangGraphCheckpointSchema(trimmed);
+      this.logger.log("LangGraph checkpoint schema ready (checkpoints tables).");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(
-        `LangGraph PostgresSaver setup() failed — DBGA / Paso 0 need tables checkpoints, checkpoint_blobs, checkpoint_writes. Run DB migrations (e.g. prisma migrate deploy). ${message}`,
+        `LangGraph checkpoint schema setup failed — DBGA / Paso 0 need tables checkpoints, checkpoint_blobs, checkpoint_writes. Run DB migrations (e.g. prisma migrate deploy). ${message}`,
       );
       throw err;
     }
-    this.checkpointer = saver;
+    this.checkpointer = PostgresSaver.fromConnString(trimmed, {
+      schema: "public",
+    });
     this.logger.log("[CheckpointerService] initCheckpointer end");
   }
 }
