@@ -1934,15 +1934,25 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       const persistedMdd = selectPersistedMddBaseline(get());
       const serverMdd = focused.mddContent ?? "";
       const serverDropsPatterns = serverWouldDropGovernancePatterns(localMdd, serverMdd);
+      const sameProjectLoaded =
+        get().project?.id === requestedId && workshopScopeProjectId(get) === requestedId;
+      const localHasMdd = localMdd.trim().length > 0;
       const hasUnsavedEditorChanges =
-        !get().mddPersisting && !workshopDocumentBodiesEqual(localMdd, persistedMdd);
+        sameProjectLoaded &&
+        !get().mddPersisting &&
+        !workshopDocumentBodiesEqual(localMdd, persistedMdd);
       const serverDiffersFromLocal = !workshopDocumentBodiesEqual(localMdd, serverMdd);
       const localMatchesPersisted = workshopDocumentBodiesEqual(localMdd, persistedMdd);
+      const preserveSavedLocalOverStaleServer =
+        sameProjectLoaded &&
+        localHasMdd &&
+        localMatchesPersisted &&
+        serverDiffersFromLocal;
       const preserveMddLocal =
         get().mddPersisting ||
         serverDropsPatterns ||
         (hasUnsavedEditorChanges && serverDiffersFromLocal) ||
-        (localMatchesPersisted && serverDiffersFromLocal);
+        preserveSavedLocalOverStaleServer;
       let nextStages = stages;
       let nextProject: typeof focused.project = focused.project;
       let nextMddContent = preserveMddLocal ? localMdd : serverMdd;
