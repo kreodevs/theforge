@@ -362,6 +362,21 @@ export function governanceSectionHasCheckedPatternMarkers(md: string): boolean {
   return /^#?\s*- \[\s*[xX]\s*\]/m.test(gov);
 }
 
+/**
+ * true si el PATCH debe ir con `allowGovernancePatternChange` para no perder [X]
+ * (p. ej. Grabar con patrones activos sin cambio de selección vs baseline local).
+ */
+export function shouldAllowGovernancePatternChangeOnPersist(
+  incomingMd: string,
+  previousSavedMd: string | null | undefined,
+): boolean {
+  if (governancePatternSelectionDiffers(incomingMd, previousSavedMd)) return true;
+  const incomingIds = selectedPatternIdsFromMdd(incomingMd);
+  if (incomingIds.size === 0) return false;
+  const enforced = enforceMddGovernancePatternsOnPersist(incomingMd, previousSavedMd ?? "", {});
+  return serverWouldDropGovernancePatterns(incomingMd, enforced.markdown);
+}
+
 export type EnforceMddGovernancePatternsResult = {
   markdown: string;
   /** true si se ignoraron cambios manuales en la sección inmutable de patrones. */

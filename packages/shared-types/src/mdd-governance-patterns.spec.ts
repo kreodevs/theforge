@@ -19,6 +19,7 @@ import {
   enforceMddGovernancePatternsOnPersist,
   serverWouldDropGovernancePatterns,
   governanceSectionHasCheckedPatternMarkers,
+  shouldAllowGovernancePatternChangeOnPersist,
 } from "./mdd-governance-patterns.js";
 
 describe("mdd-governance-patterns", () => {
@@ -125,6 +126,21 @@ describe("mdd-governance-patterns", () => {
     });
     assert.equal(patternsReverted, false);
     assert.match(markdown, /- \[X\] Singleton sin formato bold/);
+  });
+
+  it("shouldAllowGovernancePatternChangeOnPersist si la selección difiere del guardado", () => {
+    const base = buildMddWithGovernanceSkeleton();
+    const withPat = updateMddGovernancePatterns(base, new Set([optsId("Singleton")]));
+    assert.equal(shouldAllowGovernancePatternChangeOnPersist(withPat, base), true);
+  });
+
+  it("shouldAllowGovernancePatternChangeOnPersist no exige flag si previous ya tiene los mismos [X]", () => {
+    const base = buildMddWithGovernanceSkeleton();
+    const withPat = updateMddGovernancePatterns(base, new Set([optsId("Singleton")]));
+    const edited =
+      withPat +
+      "\n## 1. Contexto\n\nCuerpo §1 con más de ochenta caracteres para el MDD canónico de prueba.\n";
+    assert.equal(shouldAllowGovernancePatternChangeOnPersist(edited, withPat), false);
   });
 
   it("preserva gobernanza al preparar salida con §1 sustancial", () => {

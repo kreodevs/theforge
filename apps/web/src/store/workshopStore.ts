@@ -14,7 +14,9 @@ import {
 } from "@theforge/shared-types";
 import {
   governancePatternSelectionDiffers,
+  selectedPatternIdsFromMdd,
   serverWouldDropGovernancePatterns,
+  shouldAllowGovernancePatternChangeOnPersist,
 } from "@theforge/shared-types/mdd-governance-patterns";
 import {
   documentPersistFieldLabel,
@@ -4634,12 +4636,18 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       return;
     }
 
+    const rawPrevious = selectRawMddFromStage(state);
+    const allowGovernancePatternChange =
+      options?.allowGovernancePatternChange === true ||
+      shouldAllowGovernancePatternChangeOnPersist(content, rawPrevious) ||
+      selectedPatternIdsFromMdd(content).size > 0;
+
     set({
       mddPersisting: true,
       synced: false,
       error: null,
       notice: null,
-      ...(options?.allowGovernancePatternChange
+      ...(allowGovernancePatternChange
         ? { mddContent: mddContentForEditor(content) }
         : {}),
     });
@@ -4656,7 +4664,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           body: JSON.stringify({
             mddContent: content,
             ...(stageId ? { stageId } : {}),
-            ...(options?.allowGovernancePatternChange ? { allowGovernancePatternChange: true } : {}),
+            ...(allowGovernancePatternChange ? { allowGovernancePatternChange: true } : {}),
             ...(options?.mddGovernanceSeedOnly ? { mddGovernanceSeedOnly: true } : {}),
             ...(options?.mddFormatOnly ? { mddFormatOnly: true } : {}),
             ...(options?.clearMddCompletely ? { clearMddCompletely: true } : {}),
@@ -4668,7 +4676,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           let savedContent = packed?.mddContent ?? data.mddContent ?? content;
           const patternsReverted = data.mddGovernancePatternsReverted === true;
           if (
-            options?.allowGovernancePatternChange &&
+            selectedPatternIdsFromMdd(content).size > 0 &&
             (patternsReverted || serverWouldDropGovernancePatterns(content, savedContent))
           ) {
             savedContent = content;
@@ -4795,11 +4803,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     if (workshopDocumentBodiesEqual(content, baseline)) return;
     set({ mddReviewing: true });
     try {
+      const rawPrevious = selectRawMddFromStage(get()) || baseline;
+      const allowPatternPersist =
+        selectedPatternIdsFromMdd(content).size > 0 ||
+        shouldAllowGovernancePatternChangeOnPersist(content, rawPrevious) ||
+        governancePatternSelectionDiffers(content, baseline);
       await persistMddContent(content, {
         force: true,
-        ...(governancePatternSelectionDiffers(content, baseline)
-          ? { allowGovernancePatternChange: true }
-          : {}),
+        ...(allowPatternPersist ? { allowGovernancePatternChange: true } : {}),
       });
       const stateAfterPersist = get();
       if (stateAfterPersist.error && !isSsotPatternsNotice(stateAfterPersist.error)) return;
