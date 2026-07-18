@@ -127,6 +127,7 @@ function patchAgentProgressFromMddEvent(
   }));
 }
 
+let mddPersistQueue: Promise<void> = Promise.resolve();
 let mddStreamPersistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 function enqueueMddPersist(task: () => Promise<void>): Promise<void> {

@@ -86,7 +86,11 @@ function isProgressStepSubsequence(
 ): boolean {
   let j = 0;
   for (let i = 0; i < large.length && j < small.length; i++) {
-    if (stepIdentity(large[i]) === stepIdentity(small[j])) j++;
+    const largeStep = large[i];
+    const smallStep = small[j];
+    if (largeStep && smallStep && stepIdentity(largeStep) === stepIdentity(smallStep)) {
+      j++;
+    }
   }
   return j === small.length;
 }
@@ -111,7 +115,7 @@ function mergeDoneAgentProgressSteps(
     }
   }
 
-  let result = merged;
+  let result: AgentProgressItem[] = merged;
   for (const step of incomingDone.slice(appendFrom)) {
     result = appendAgentProgressDone(result, { agent: step.agent, message: step.message });
   }
