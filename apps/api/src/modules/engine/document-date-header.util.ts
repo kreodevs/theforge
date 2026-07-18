@@ -1,4 +1,9 @@
 import { peelDocumentBodyForPersist } from "@theforge/shared-types";
+import {
+  ensureMddGovernanceSection,
+  extractGovernanceSection,
+  selectedPatternIdsFromMdd,
+} from "@theforge/shared-types/mdd-governance-patterns";
 
 /**
  * Prepend creation / last-regeneration timestamp header to any SDD document.
@@ -93,7 +98,15 @@ export function prependDocumentTimestamps(
   now: Date = new Date(),
 ): string {
   const existing = extractDocumentTimestamps(content);
-  const body = peelDocumentBodyForPersist(content);
+  const governanceBeforePeel = extractGovernanceSection(content);
+  let body = peelDocumentBodyForPersist(content);
+  if (
+    governanceBeforePeel?.trim() &&
+    selectedPatternIdsFromMdd(content).size > 0 &&
+    selectedPatternIdsFromMdd(body).size === 0
+  ) {
+    body = ensureMddGovernanceSection(body, governanceBeforePeel);
+  }
 
   const created = existing.created ?? now;
   const updated = now;

@@ -162,4 +162,35 @@ describe("theforge-doc-stamp", () => {
     assert.equal(selectedPatternIdsFromMdd(peeled).size, 1);
     assert.doesNotMatch(peeled, /^# - \[[xX]\]/m);
   });
+
+  it("peelDocumentBodyForPersist conserva patrones [X] si falta --- del stamp antes del cuerpo", async () => {
+    const { updateMddGovernancePatterns, selectedPatternIdsFromMdd, listGovernancePatternOptions } =
+      await import("./mdd-governance-patterns.js");
+    const id = listGovernancePatternOptions().find((o) => o.label.includes("Singleton"))!.id;
+    const govBody = updateMddGovernancePatterns("", new Set([id])).replace(
+      /^# Master Design Document\n\n---\n\n/,
+      "",
+    );
+    const raw =
+      "<!-- theforge-doc:created=2026-07-18T20:07:32.000Z|updated=2026-07-18T20:07:32.000Z -->\n" +
+      "> 📅 Creado: 18 de julio de 2026, 14:07:32 UTC · Última modificación: 18 de julio de 2026, 14:07:32 UTC\n\n" +
+      govBody +
+      "\n\n## 1. Contexto\n\nCuerpo §1 con más de ochenta caracteres para el MDD canónico de prueba.\n";
+    const body = peelDocumentBodyForPersist(raw);
+    assert.equal(selectedPatternIdsFromMdd(body).size, 1);
+    assert.match(body, /\[ARQUITECTURA - SECCIÓN INMUTABLE\]/);
+    assert.match(body, /## 1\. Contexto/);
+  });
+
+  it("extractCanonicalMddBody prefiere gobernanza SSOT antes que §1", async () => {
+    const { selectedPatternIdsFromMdd } = await import("./mdd-governance-patterns.js");
+    const { extractCanonicalMddBody } = await import("./theforge-doc-stamp.js");
+    const raw =
+      "📅 Creado: corrupto\n\n" +
+      "## [ARQUITECTURA - SECCIÓN INMUTABLE] CONFIGURACIÓN\n\n- [X] **Singleton:** test\n\n---\n\n" +
+      "## 1. Contexto\n\nTexto.\n";
+    const out = extractCanonicalMddBody(raw);
+    assert.match(out, /\[ARQUITECTURA - SECCIÓN INMUTABLE\]/);
+    assert.equal(selectedPatternIdsFromMdd(out).size, 1);
+  });
 });

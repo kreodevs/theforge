@@ -24,8 +24,12 @@ const ORPHAN_COMMENT_CLOSE_RE =
 const ORPHAN_HUMAN_ISO_CLOSE_RE =
   /^[^\n]*\d{4}-\d{2}-\d{2}T[\d:.+-]+Z\s*-->\s*/;
 
-/** Human line (current Creado/… or legacy Generado/…) + optional `---` separator. */
-const HUMAN_HEADER_WITH_SEP_RE = /^>\s*📅[\s\S]*?\n\n---\n\n/;
+/**
+ * Human line (Creado/… o legacy Generado/…) + separador `---` del stamp.
+ * Solo la línea 📅 (sin atravesar el cuerpo): un `\n\n---\n\n` posterior dentro de
+ * la sección SSOT de patrones no debe absorberse como cabecera de documento.
+ */
+const HUMAN_HEADER_WITH_SEP_RE = /^>\s*📅[^\n]*\n\n---\n\n/;
 
 /** Blockquote stamp without `---` (regeneraciones que van directo al H1). */
 const HUMAN_BLOCKQUOTE_LINE_RE = /^>\s*📅[^\n]*\n+/;
@@ -97,6 +101,13 @@ export function extractCanonicalMddBody(body: string): string {
   const titleMatch = trimmed.match(/(?:^|\n)(#\s*Master Design Document\b)/im);
   if (titleMatch?.index != null && titleMatch.index > 0) {
     return trimmed.slice(titleMatch.index).trimStart();
+  }
+
+  const govMatch = trimmed.match(
+    /(?:^|\n)(##\s*\[ARQUITECTURA - SECCIÓN INMUTABLE\])/im,
+  );
+  if (govMatch?.index != null && govMatch.index > 0) {
+    return trimmed.slice(govMatch.index).trimStart();
   }
 
   const sec1Match = trimmed.match(/(?:^|\n)(##\s*1\.\s[^\n]+)/im);
