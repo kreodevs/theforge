@@ -80,6 +80,7 @@ import {
   useWorkshopStore,
   type Status,
 } from "../store/workshopStore";
+import { workshopDocumentBodiesEqual } from "../utils/workshop-document-content.util";
 import { WORKSHOP_EXIT_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
 import { stageWorkflowStatusLabel } from "@/utils/stageWorkflowStatusLabel";
 import { apiFetch, API_BASE, getOfflineQueue } from "../utils/apiClient";
@@ -2696,7 +2697,7 @@ export default function WorkshopView({
   ]);
 
   const mddDirty =
-    !mddPersisting && (mddContent ?? "").trim() !== persistedMddBaseline.trim();
+    !mddPersisting && !workshopDocumentBodiesEqual(mddContent, persistedMddBaseline);
   const uxUiGuideDirty = (uxUiGuideContent ?? "") !== (project?.uxUiGuideContent ?? "");
 
   if (error && !project) {
