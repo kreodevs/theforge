@@ -31,6 +31,7 @@ import {
   History,
   Layers,
   Wand2,
+  Sparkles,
   MessageSquare,
   ClipboardPaste,
   Copy,
@@ -741,32 +742,45 @@ export default function WorkshopView({
   const legacyStart = useWorkshopStore((s) => s.legacyStart);
   const legacyAnswer = useWorkshopStore((s) => s.legacyAnswer);
   const legacyGenerateMdd = useWorkshopStore((s) => s.legacyGenerateMdd);
-  const openPatternsWizardInitial = useCallback(async () => {
-    if (!projectId?.trim()) return;
-    setMddPatternsWizardMode("initial");
-    setPatternsWizardPreselected(null);
-    setPatternsAnalyzeRationale(null);
-    setMddPatternsWizardOpen(true);
-    setPatternsWizardAnalyzing(true);
-    try {
-      const { patternIds, rationale } = await suggestGovernancePatterns(
-        projectId,
-        activeStageId,
-      );
-      setPatternsWizardPreselected(new Set(patternIds));
-      setPatternsAnalyzeRationale(
-        rationale ??
-          "Preselección a partir de Fase 0, Benchmark y BRD (puede variar si cambias esos documentos).",
-      );
-    } catch (e) {
-      setPatternsAnalyzeRationale(
-        e instanceof Error ? e.message : "No se pudo analizar; elige patrones manualmente.",
-      );
+  const openPatternsWizardWithAnalysis = useCallback(
+    async (mode: MddPatternsWizardMode) => {
+      if (!projectId?.trim()) return;
+      setMddPatternsWizardMode(mode);
       setPatternsWizardPreselected(null);
-    } finally {
-      setPatternsWizardAnalyzing(false);
-    }
-  }, [projectId, activeStageId, suggestGovernancePatterns]);
+      setPatternsAnalyzeRationale(null);
+      setMddPatternsWizardOpen(true);
+      setPatternsWizardAnalyzing(true);
+      try {
+        const { patternIds, rationale } = await suggestGovernancePatterns(
+          projectId,
+          activeStageId,
+        );
+        setPatternsWizardPreselected(new Set(patternIds));
+        setPatternsAnalyzeRationale(
+          rationale ??
+            "Preselección a partir de Fase 0, Benchmark y BRD (puede variar si cambias esos documentos).",
+        );
+      } catch (e) {
+        setPatternsAnalyzeRationale(
+          e instanceof Error ? e.message : "No se pudo analizar; elige patrones manualmente.",
+        );
+        setPatternsWizardPreselected(null);
+      } finally {
+        setPatternsWizardAnalyzing(false);
+      }
+    },
+    [projectId, activeStageId, suggestGovernancePatterns],
+  );
+
+  const openPatternsWizardInitial = useCallback(
+    () => void openPatternsWizardWithAnalysis("initial"),
+    [openPatternsWizardWithAnalysis],
+  );
+
+  const openSuggestMddPatterns = useCallback(
+    () => void openPatternsWizardWithAnalysis("edit"),
+    [openPatternsWizardWithAnalysis],
+  );
 
   const requestGenerateMdd = useCallback(() => {
     if (!projectId?.trim()) return;
@@ -2281,6 +2295,18 @@ export default function WorkshopView({
       };
       if (effectiveMddTrimmed.length > 0) {
         ordered.push({
+          id: "suggest-patterns",
+          label: "Analizar y sugerir patrones",
+          icon: Sparkles,
+          disabled:
+            loading ||
+            mddReviewing ||
+            mddReapplyingFormat ||
+            patternsWizardAnalyzing ||
+            !projectId,
+          onClick: () => void openSuggestMddPatterns(),
+        });
+        ordered.push({
           id: "edit-patterns",
           label: "Editar patrones (SSOT)",
           icon: ListChecks,
@@ -2550,6 +2576,8 @@ export default function WorkshopView({
     generateMddFromBenchmark,
     requestGenerateMdd,
     openEditMddPatterns,
+    openSuggestMddPatterns,
+    patternsWizardAnalyzing,
     legacyGenerateMdd,
     handleRegenerateLegacyCodebaseDoc,
     generateSpec,
@@ -4608,6 +4636,29 @@ export default function WorkshopView({
                         {effectiveMddTrimmed.length > 0 && (
                           <WorkshopPanelButton
                             tone="secondary"
+                            onClick={() => void openSuggestMddPatterns()}
+                            disabled={
+                              loading ||
+                              mddReviewing ||
+                              mddReapplyingFormat ||
+                              patternsWizardAnalyzing
+                            }
+                            className="w-full justify-center lg:w-auto"
+                            title="Analiza Fase 0, Benchmark y BRD con IA y abre el wizard con patrones preseleccionados (sin regenerar §1–§7)"
+                          >
+                            <WorkshopButtonIcon
+                              icon={patternsWizardAnalyzing ? Loader2 : Sparkles}
+                              tone="secondary"
+                              className={patternsWizardAnalyzing ? "animate-spin" : undefined}
+                            />
+                            {patternsWizardAnalyzing
+                              ? "Analizando patrones…"
+                              : "Analizar y sugerir patrones"}
+                          </WorkshopPanelButton>
+                        )}
+                        {effectiveMddTrimmed.length > 0 && (
+                          <WorkshopPanelButton
+                            tone="secondary"
                             onClick={openEditMddPatterns}
                             disabled={loading || mddReviewing || mddReapplyingFormat}
                             className="w-full justify-center lg:w-auto"
@@ -4678,7 +4729,8 @@ export default function WorkshopView({
                           "Genera el MDD a partir del DBGA / Benchmark guardado en Paso 0."
                         )}{" "}
                         El wizard de patrones solo aparece con MDD vacío (o tras «Limpiar MDD»). Al
-                        regenerar se conservan los patrones actuales; cámbialos con «Editar patrones».
+                        regenerar se conservan los patrones actuales; cámbialos con «Editar patrones» o
+                        re-analiza con «Analizar y sugerir patrones».
                       </p>
                     </>
                   )}
