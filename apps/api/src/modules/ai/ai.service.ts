@@ -1224,6 +1224,7 @@ export class AiService {
     options?: LegacyGenerateOptions & {
       navigationMap?: string;
       specContent?: string | null;
+      useCasesContent?: string | null;
       userStoriesContent?: string | null;
       apiContractsContent?: string | null;
       logicFlowsContent?: string | null;
@@ -1242,13 +1243,14 @@ export class AiService {
     const blueprint = capTextForLegacyBaseline(blueprintContent ?? "", 15000, options?.legacyBaselineStage);
     const navMap = capTextForLegacyBaseline(options?.navigationMap ?? "", 8000, options?.legacyBaselineStage);
     const spec = capTextForLegacyBaseline(options?.specContent ?? "", 8000, options?.legacyBaselineStage);
-    const userStories = capTextForLegacyBaseline(options?.userStoriesContent ?? "", 10000, options?.legacyBaselineStage);
-    const apiContracts = capTextForLegacyBaseline(options?.apiContractsContent ?? "", 12000, options?.legacyBaselineStage);
+    const useCases = capTextForLegacyBaseline(options?.useCasesContent ?? "", 10000, options?.legacyBaselineStage);
+    const userStories = capTextForLegacyBaseline(options?.userStoriesContent ?? "", 12000, options?.legacyBaselineStage);
+    const apiContracts = capTextForLegacyBaseline(options?.apiContractsContent ?? "", 20000, options?.legacyBaselineStage);
     const logicFlows = capTextForLegacyBaseline(options?.logicFlowsContent ?? "", 10000, options?.legacyBaselineStage);
     const infra = capTextForLegacyBaseline(options?.infraContent ?? "", 8000, options?.legacyBaselineStage);
     const architecture = capTextForLegacyBaseline(options?.architectureContent ?? "", 12000, options?.legacyBaselineStage);
     const designSystem = capTextForLegacyBaseline(options?.uxUiGuideContent ?? "", 10000, options?.legacyBaselineStage);
-    const pantallas = capTextForLegacyBaseline(options?.uiScreensContent ?? "", 12000, options?.legacyBaselineStage);
+    const pantallas = capTextForLegacyBaseline(options?.uiScreensContent ?? "", 20000, options?.legacyBaselineStage);
     let prompt =
       mdd.length > 0
         ? "Genera el documento Tasks según las instrucciones del system prompt. " +
@@ -1260,6 +1262,9 @@ export class AiService {
         : "No hay MDD. Genera un documento Tasks genérico (Backend, Frontend, Infra) con ítems comprobables.";
     if (spec.length > 0) {
       prompt += "Spec (alcance what/why — alinear user stories):\n---\n" + spec + "\n---\n\n";
+    }
+    if (useCases.length > 0) {
+      prompt += "Casos de uso (flujos actor-sistema — alinear tasks por UC):\n---\n" + useCases + "\n---\n\n";
     }
     if (userStories.length > 0) {
       prompt += "User Stories (backlog — una sección ## por HU cuando aplique):\n---\n" + userStories + "\n---\n\n";
@@ -1326,6 +1331,7 @@ export class AiService {
       options,
       prompt,
       TASKS_PROMPT + NO_MILITAR_INSTRUCTION,
+      { maxTokensOverride: resolveLlmMaxTokensForPurpose("tasksDoc") },
     );
   }
 

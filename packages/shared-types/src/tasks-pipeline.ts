@@ -38,6 +38,9 @@ export const TASKS_LLM_AUDITOR_PASS_THRESHOLD = 92;
 /** Máximo de ciclos de reparación tras fallo de gates. */
 export const TASKS_PIPELINE_MAX_REPAIRS = 2;
 
+/** Reparaciones extra cuando el documento quedó truncado (max_tokens). */
+export const TASKS_PIPELINE_MAX_REPAIRS_TRUNCATED = 3;
+
 export type TasksPipelineQualitySnapshot = {
   deterministicScore: number;
   taskAccuracyScore: number;

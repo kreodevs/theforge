@@ -150,6 +150,7 @@ import { resolveLegacyBaselineStageFlag } from "../ai/utils/legacy-as-is-spec.ut
 import {
   mergeTasksQualityIntoShortTermContext,
   peelDocumentBodyForPersist,
+  TASKS_PREFLIGHT_DOC_ACCURACY_BLOCK_THRESHOLD,
   type TasksPipelineQualitySnapshot,
 } from "@theforge/shared-types";
 import type { MddDeliveryGateResult } from "@theforge/shared-types";
@@ -2334,7 +2335,21 @@ name: ${JSON.stringify(name)}
     }
 
     if (flags.retryTasks) {
-      await this.generateTasks(projectId, feedback, { acknowledgeGaps: true }).catch((e) =>
+      const docAcc = computeCascadeAccuracy({
+        brdMarkdown: stage?.brdContent,
+        dbgaMarkdown: project.dbgaContent,
+        mddMarkdown: mdd,
+        tasksMarkdown: project.tasksContent,
+        logicFlowsMarkdown: project.logicFlowsContent,
+        apiContractsMarkdown: project.apiContractsContent,
+        uiScreensMarkdown: project.uiScreensContent,
+        userStoriesMarkdown: project.userStoriesContent,
+        useCasesMarkdown: project.useCasesContent,
+        specMarkdown: project.specContent,
+      }).doc;
+      const relaxPreflight =
+        docAcc.score < TASKS_PREFLIGHT_DOC_ACCURACY_BLOCK_THRESHOLD;
+      await this.generateTasks(projectId, feedback, { acknowledgeGaps: relaxPreflight }).catch((e) =>
         this.logger.warn(`[Cascade] W4 tasks retry: ${e instanceof Error ? e.message : e}`),
       );
     }
@@ -2904,6 +2919,7 @@ name: ${JSON.stringify(name)}
     const taskOpts = {
       navigationMap,
       specContent: project.specContent,
+      useCasesContent: project.useCasesContent,
       userStoriesContent: project.userStoriesContent,
       apiContractsContent: project.apiContractsContent,
       logicFlowsContent: project.logicFlowsContent,

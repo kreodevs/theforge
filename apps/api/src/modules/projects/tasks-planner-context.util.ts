@@ -16,6 +16,7 @@ export type SlimTasksPlannerContextInput = {
   blueprintMarkdown?: string | null;
   taskOpts: {
     specContent?: string | null;
+    useCasesContent?: string | null;
     apiContractsContent?: string | null;
     uiScreensContent?: string | null;
   };
@@ -39,6 +40,9 @@ export function buildSlimTasksPlannerContext(
 
   const spec = (input.taskOpts.specContent ?? "").trim();
   if (spec) parts.push("\n\nSpec (extracto):\n---\n" + spec.slice(0, 8_000) + "\n---");
+
+  const useCases = (input.taskOpts.useCasesContent ?? "").trim();
+  if (useCases) parts.push("\n\nUse Cases (extracto):\n---\n" + useCases.slice(0, 6_000) + "\n---");
 
   const api = (input.taskOpts.apiContractsContent ?? "").trim();
   if (api) parts.push("\n\nAPI Contracts (resumen):\n---\n" + apiEndpointSummary(api) + "\n---");

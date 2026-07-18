@@ -8,6 +8,31 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 - **Integración Hermes Agent:** eliminados webhook (`HERMES_*`), endpoints `GET /projects/hermes-status` y `POST /projects/:id/launch-hermes`, botón «Lanzar a Hermes» en Workshop y claves en Ajustes → Sistema. Handoff sigue vía export ZIP / repo-handoff / MCP.
 
+## [v1.4.0] — 2026-07-18
+
+> **Tasks — cobertura 100% determinista** — Pipeline endurecido para que el documento Tasks sea ejecutable por cualquier IA sin gaps en API, pantallas, Testing ni Deploy.
+
+### Added
+
+- **`tasks-coverage-checklist.util.ts`:** checklist determinista endpoint↔task, ruta↔Frontend, drift API, secciones Testing/Deploy; serialización JSON para auditor/repair LLM.
+- **Use Cases en pipeline Tasks:** planner, redactor y contexto slim incluyen `useCasesContent`.
+- **`tasksGenerationPrerequisites.ts` (web):** botón Tasks deshabilitado hasta cumplir MDD + Spec + Blueprint + API (+ Pantallas si UX team).
+
+### Changed
+
+- **Redactor Tasks:** `max_tokens` perfil **`tasksDoc` (131K)** — corrige truncado silencioso a 8K en MVPs grandes.
+- **Caps upstream redactor:** API y pantallas a 20K; user stories a 12K; use cases a 10K.
+- **Gates estructurales:** 1 task Backend por endpoint de `api-contracts`; 1 task Frontend por ruta en `pantallas.md`; drift API desde ≥1 ruta inventada; Testing/Deploy obligatorios cuando aplica §7/§8.
+- **Task auditor v2:** `mdd_ref` error en tareas de implementación; `story_ref` error si hay user stories upstream.
+- **Planner heurístico:** 1 ítem plan por endpoint (no agrupación por resource).
+- **Auditor/repair LLM:** contexto ampliado (API, pantallas, checklist determinista); repair usa `tasksDoc` tokens.
+- **Reparaciones:** 3 ciclos si documento truncado (`TASKS_PIPELINE_MAX_REPAIRS_TRUNCATED`).
+- **W4 cascada:** `acknowledgeGaps` en retry Tasks solo si DocAccuracy upstream &lt; 70.
+
+### Fixed
+
+- **Tasks truncados en proyectos grandes:** el pipeline ya no usa el perfil `chat` (8K) para generar el markdown completo.
+
 ## [v1.3.0] — 2026-07-18
 
 > **Configuración de plataforma en UI** — Tunables operativos migrados de `.env` a Ajustes → Sistema con defaults y persistencia en `AppConfig`.

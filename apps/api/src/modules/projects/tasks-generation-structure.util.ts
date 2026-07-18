@@ -4,9 +4,12 @@
 
 import { parseTasksV2 } from "../engine/task-v2/tasks-parser-v2.js";
 import {
-  extractHttpEndpointsFromMarkdown,
-  normalizeApiPath,
-} from "../ui-mcp/api-contract-endpoints.util.js";
+  buildTasksCoverageChecklist,
+  extractPantallaRoutes,
+  formatTasksCoverageChecklistGaps,
+} from "./tasks-coverage-checklist.util.js";
+
+export { extractPantallaRoutes };
 
 export type TasksStructuralReport = {
   ok: boolean;
@@ -62,46 +65,12 @@ function countFrontendTasks(markdown: string): number {
   return 0;
 }
 
-/** Rutas de la tabla pantallas.md (`| /ruta | …`). */
-export function extractPantallaRoutes(uiScreensMarkdown: string): string[] {
-  const routes = new Set<string>();
-  for (const line of (uiScreensMarkdown ?? "").split("\n")) {
-    const m = line.match(/^\|\s*(\/[a-zA-Z0-9_\-/{}:.]+)/);
-    if (m?.[1]) {
-      const route = m[1].replace(/\/+$/, "") || m[1];
-      routes.add(route);
-    }
-  }
-  return [...routes];
-}
-
-function extractTaskApiPaths(tasksMarkdown: string): string[] {
-  const paths: string[] = [];
-  const re = /\b(GET|POST|PUT|PATCH|DELETE)\s+(\/api\/[^\s`,|]+)/gi;
-  for (const m of tasksMarkdown.matchAll(re)) {
-    paths.push(normalizeApiPath((m[2] ?? "").replace(/[,;]+$/g, "")));
-  }
-  return paths;
-}
-
-function findApiPathsDriftingFromContracts(tasksMarkdown: string, apiMarkdown: string): string[] {
-  const contractPaths = new Set(
-    extractHttpEndpointsFromMarkdown(apiMarkdown).map((e) => normalizeApiPath(e.path)),
-  );
-  if (contractPaths.size === 0) return [];
-
-  const drift: string[] = [];
-  for (const path of extractTaskApiPaths(tasksMarkdown)) {
-    if (contractPaths.has(path)) continue;
-    drift.push(path);
-  }
-  return [...new Set(drift)].slice(0, 10);
-}
-
 export function evaluateTasksStructure(params: {
   tasksMarkdown: string;
   uiScreensMarkdown?: string | null;
   apiContractsMarkdown?: string | null;
+  mddMarkdown?: string | null;
+  infraMarkdown?: string | null;
 }): TasksStructuralReport {
   const tasksMarkdown = (params.tasksMarkdown ?? "").trim();
   const gaps: string[] = [];
@@ -124,9 +93,9 @@ export function evaluateTasksStructure(params: {
     gaps.push("Falta sección canónica ## Infra tasks o ## Infraestructura tasks.");
   }
 
-  if (pantallaRoutes >= 3 && frontendTaskCount === 0) {
+  if (pantallaRoutes > 0 && frontendTaskCount === 0) {
     gaps.push(
-      `${pantallaRoutes} rutas en pantallas.md pero 0 tareas con section: Frontend — requerido 1 task Frontend por vista principal.`,
+      `${pantallaRoutes} rutas en pantallas.md pero 0 tareas con section: Frontend — requerido 1 task Frontend por vista.`,
     );
   }
 
@@ -136,22 +105,20 @@ export function evaluateTasksStructure(params: {
     );
   }
 
-  const apiMd = (params.apiContractsMarkdown ?? "").trim();
-  if (apiMd.length > 80) {
-    const drift = findApiPathsDriftingFromContracts(tasksMarkdown, apiMd);
-    if (drift.length >= 4) {
-      gaps.push(
-        `Tasks cita rutas API ausentes en api-contracts (≥4): ${drift.slice(0, 4).join(", ")}…`,
-      );
-    }
-  }
+  const coverage = buildTasksCoverageChecklist({
+    tasksMarkdown,
+    apiContractsMarkdown: params.apiContractsMarkdown,
+    uiScreensMarkdown: params.uiScreensMarkdown,
+    mddMarkdown: params.mddMarkdown,
+    infraMarkdown: params.infraMarkdown,
+  });
+  gaps.push(...formatTasksCoverageChecklistGaps(coverage));
 
   const parseErrors = parsed.errors.filter((e) => e.severity === "error");
   if (parseErrors.length > 0) {
     gaps.push(`Parser tasks v2: ${parseErrors.length} error(es) de formato YAML.`);
   }
 
-  // Detect orphan tasks: tasks with empty target_files or empty verification
   const orphans = parsed.tasks.filter(
     (t) =>
       (t.targetFiles.length === 0 || Object.keys(t.verification).length === 0) &&
