@@ -58,7 +58,8 @@
     "echarts": "^5.6.0",
     "puppeteer-core": "^24.0.0",
     "@mermaid-js/mermaid-cli": "^11.0.0",
-    "multer": "^1.4.5-lts.1"
+    "multer": "^1.4.5-lts.1",
+    "jszip": "^3.10.1"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.9",

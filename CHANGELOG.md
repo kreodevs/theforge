@@ -6,6 +6,7 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ### Added
 
+- **Portabilidad de proyecto (formato Notion):** export/import ZIP Markdown & CSV a nivel proyecto — páginas `.md` por documento, carpetas por etapa, `Integración/Handoff items.csv`, `Integración/Trazas integración.csv`, `Etapas.csv`, `index.html` y metadatos en `_theforge/`. API: `GET /projects/:id/export/notion`, `POST /projects/import/notion`, `POST /projects/import/notion/pair` (restaura vínculo NEW↔LEGACY y matriz de trazas). UI: export en configuración del proyecto; import e import pareja en el dashboard.
 - **Resolución Forge ↔ Ariadne:** tabla `project_ariadne_links`, `POST /theforge/resolve-forge-project-for-ariadne` y MCP `resolve_forge_project_for_ariadne` (404/409 con candidatos para modal en Ariadne). Enlace primario al crear proyecto LEGACY o promover handoff.
 - **Change pack Ariadne → etapa LEGACY:** `POST /theforge/create-stage-from-ariadne-change-pack` y MCP `create_stage_from_ariadne_change_pack` (pack v1, `recommendedNextTools` para MDD/entregables).
 - **MDD jobs — visibilidad y cancelación:** `GET /projects/:id/generation-status` incluye `mddJobs[]` (jobId, mode, status, progreso). `DELETE /projects/:id/mdd-jobs/:jobId` cancela jobs en cola o aborta pipeline activo entre nodos LangGraph. Banner Workshop con detalle del job y botón «Cancelar MDD».

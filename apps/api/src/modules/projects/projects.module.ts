@@ -26,6 +26,7 @@ import { PlanValidationService } from "./plan-validation.service.js";
 import { ProjectGroupsModule } from "../project-groups/project-groups.module.js";
 import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
 import { TasksGenerationPipelineService } from "./tasks-generation-pipeline.service.js";
+import { ProjectNotionPortabilityService } from "./project-notion-portability.service.js";
 import { PluginModule } from "../../plugins/plugin.module.js";
 
 @Module({
@@ -59,6 +60,7 @@ import { PluginModule } from "../../plugins/plugin.module.js";
     DeliverablesQueueService,
     ProjectGenerationGuardService,
     TasksGenerationPipelineService,
+    ProjectNotionPortabilityService,
   ],
   exports: [ProjectsService, ProjectIntegrationService, IntegrationAgentService, ProjectMergeService, PROJECTS_ORCHESTRATOR_PORT, DeliverablesQueueService, ProjectGenerationGuardService, PlanValidationService],
 })
