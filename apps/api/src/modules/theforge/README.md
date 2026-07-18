@@ -64,3 +64,13 @@ Al crear un proyecto **`LEGACY`** (`POST /projects`) o al **promover handoff a e
 - `theforgeServiceToken` → `THEFORGE_SERVICE_JWT` si está definido
 
 Auth: token Ariadne del usuario (`User.ariadneMcpToken`) o `MCP_AUTH_TOKEN` / `MCP_X_M2M_TOKEN` en env. URL ingest: `ARIADNE_INGEST_URL` o derivada de `THEFORGE_MCP_URL` (`/mcp` → `/api`). Utilidades: `ariadne-brownfield-wire.util.ts`, `ariadne-ingest-api.util.ts`, `TheForgeService.wireAriadneBrownfieldConverge`.
+
+Al programar el auto-wire, **`scheduleAriadneBrownfieldWire`** también hace upsert del enlace primario en **`project_ariadne_links`** (`ProjectAriadneLinkService.upsertPrimaryFromBrownfield`) — tabla persistida en Forge, no editable desde Ariadne.
+
+## Resolución Forge ↔ Ariadne (MCP)
+
+- **`POST /theforge/resolve-forge-project-for-ariadne`** — input: al menos uno de `ariadneProjectId`, `ariadneRepositoryId`, `projectKey`, `repoSlug`, `gitRemoteUrl`. Resuelve proyecto Workshop con scoring en `resolve-forge-project-for-ariadne.util.ts`. 404 si no hay match; 409 con `candidates[]` si hay empate.
+- **MCP:** `resolve_forge_project_for_ariadne` (delega en el endpoint anterior; devuelve JSON estructurado en 404/409 para modal en Ariadne).
+- **`POST /theforge/create-stage-from-ariadne-change-pack`** — MCP `create_stage_from_ariadne_change_pack`. Crea etapa LEGACY o importa pack v1 en `stageId` existente (≥2). Contrato en `@theforge/shared-types/ariadne-change-pack`.
+- **Flujo Ariadne recomendado:** (1) `resolve_forge_project_for_ariadne` → (2) `create_stage_from_ariadne_change_pack` → (3) `legacy_generate_mdd` / `legacy_generate_deliverables` según `recommendedNextTools`.
+- **Secuencia alternativa:** `create_project_stage` + `POST …/integration/stages/:stageId/import-handoff` (handoff NEW) + tools legacy scoped con `stageId`.

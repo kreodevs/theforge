@@ -28,6 +28,7 @@ import { formatRawEvidenceObjectToMarkdown } from "./theforge-raw-evidence-markd
 import { normalizeLegacyMddToolText } from "./legacy-mdd-v1-markdown.util.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { getRequestUserId } from "../../common/request-user.store.js";
+import { ProjectAriadneLinkService } from "./project-ariadne-link.service.js";
 
 /** Repo (root) dentro de un proyecto multi-repo. */
 export interface TheForgeProjectRoot {
@@ -154,6 +155,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   constructor(
     private readonly contextCache: TheForgeContextCacheService,
     private readonly prisma: PrismaService,
+    private readonly ariadneLinks: ProjectAriadneLinkService,
   ) {
   }
 
@@ -1269,7 +1271,19 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     logLabel = "TheForge",
   ): void {
     const label = logLabel.trim() || "TheForge";
-    void this.wireAriadneBrownfieldConverge(input)
+    void this.persistAriadneForgePrimaryLink(
+      {
+        ariadneSourceId: input.ariadneSourceId,
+        workshopProjectId: input.workshopProjectId,
+      },
+      label,
+    )
+      .catch((err) => {
+        this.logger.warn(
+          `[${label}] Ariadne forge link upsert error: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      })
+      .then(() => this.wireAriadneBrownfieldConverge(input))
       .then((wire) => {
         if (wire.wired) return;
         if (wire.skippedReason) {
@@ -1287,5 +1301,30 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
           `[${label}] Ariadne brownfield auto-wire error: ${err instanceof Error ? err.message : String(err)}`,
         );
       });
+  }
+
+  /** Persiste fila primaria en `project_ariadne_links` (brownfield / handoff import). */
+  private async persistAriadneForgePrimaryLink(
+    input: {
+      ariadneSourceId: string;
+      workshopProjectId: string;
+    },
+    logLabel: string,
+  ): Promise<void> {
+    let catalog = null as Awaited<ReturnType<TheForgeService["getProjectsCatalog"]>> | null;
+    if (this.isConfigured()) {
+      try {
+        catalog = await this.getProjectsCatalog();
+      } catch (err) {
+        this.logger.debug(
+          `[${logLabel}] Ariadne catalog unavailable for forge link: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    await this.ariadneLinks.upsertPrimaryFromBrownfield({
+      forgeProjectId: input.workshopProjectId,
+      ariadneSourceId: input.ariadneSourceId,
+      catalog,
+    });
   }
 }

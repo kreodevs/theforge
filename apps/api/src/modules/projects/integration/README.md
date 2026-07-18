@@ -16,6 +16,26 @@ Cross-project handoff, trace matrix, and stage promotion for brownfield SDD.
 | `POST` | `/projects/:projectId/integration/stages/:stageId/sync-handoff-spec` | **IntegrationAgent:** (re)generate `handoff-spec.md` for a stage |
 | `POST` | `/projects/:projectId/integration/sync-handoff-spec` | **IntegrationAgent:** same for the primary (active) stage |
 
+Bridge Ariadne (también vía `TheForgeController` + MCP): `POST /theforge/create-stage-from-ariadne-change-pack` — ver sección **Ariadne change pack** en `apps/api/src/modules/theforge/README.md`.
+
+## Ariadne change pack (MCP `create_stage_from_ariadne_change_pack`)
+
+Body (`createStageFromAriadneChangePackInputSchema`):
+
+```json
+{
+  "forgeProjectId": "uuid-workshop",
+  "pack": {
+    "version": "1",
+    "changeDescription": "Añadir módulo de descuentos",
+    "filesToModify": [{ "path": "src/discount.ts" }]
+  }
+}
+```
+
+- LEGACY only; sin `stageId` → crea etapa; con `stageId` → importa en existente (ordinal ≥ 2)
+- Secuencia alternativa: `create_project_stage` → `import-handoff` (NEW) → `legacy_generate_mdd` con `stageId`
+
 ## Promote to stage (hybrid C+B)
 
 Body (`promoteHandoffToStageBodySchema` in `@theforge/shared-types`):

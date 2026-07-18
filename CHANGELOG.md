@@ -6,6 +6,8 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ### Added
 
+- **Resolución Forge ↔ Ariadne:** tabla `project_ariadne_links`, `POST /theforge/resolve-forge-project-for-ariadne` y MCP `resolve_forge_project_for_ariadne` (404/409 con candidatos para modal en Ariadne). Enlace primario al crear proyecto LEGACY o promover handoff.
+- **Change pack Ariadne → etapa LEGACY:** `POST /theforge/create-stage-from-ariadne-change-pack` y MCP `create_stage_from_ariadne_change_pack` (pack v1, `recommendedNextTools` para MDD/entregables).
 - **MDD jobs — visibilidad y cancelación:** `GET /projects/:id/generation-status` incluye `mddJobs[]` (jobId, mode, status, progreso). `DELETE /projects/:id/mdd-jobs/:jobId` cancela jobs en cola o aborta pipeline activo entre nodos LangGraph. Banner Workshop con detalle del job y botón «Cancelar MDD».
 - **Worker BullMQ dedicado:** proceso `worker.js` (`THEFORGE_RUNTIME_ROLE=worker`) y servicio `theforge-worker` en compose; la API (`http`) solo encola. Config `bullmq-runtime.config.ts` con concurrencia por cola (`MDD_BULLMQ_CONCURRENCY`, default 2).
 

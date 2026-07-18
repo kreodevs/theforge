@@ -228,6 +228,46 @@ function apiDelete(path: string): Promise<unknown> {
   return apiFetch("DELETE", path);
 }
 
+/** Igual que apiFetch pero devuelve status + body JSON sin lanzar en códigos permitidos. */
+async function apiFetchAllowStatuses(
+  method: string,
+  path: string,
+  body: unknown | undefined,
+  allowedStatuses: number[],
+  retried = false,
+): Promise<{ status: number; data: unknown }> {
+  const url = `${API_BASE}${path}`;
+  const res = await fetch(url, {
+    method,
+    headers: authHeaders(),
+    body: body != null ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+
+  if (res.status === 401 && !retried) {
+    await login();
+    return apiFetchAllowStatuses(method, path, body, allowedStatuses, true);
+  }
+
+  const text = await res.text().catch(() => "");
+  let data: unknown = text;
+  if (text.trim()) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
+  } else {
+    data = null;
+  }
+
+  if (res.ok || allowedStatuses.includes(res.status)) {
+    return { status: res.status, data };
+  }
+
+  throw new Error(formatNestApiError(res.status, text));
+}
+
 function summarizeAgentGovernanceField(raw: unknown): {
   exists: boolean;
   wordCount: number;
@@ -249,10 +289,10 @@ function summarizeAgentGovernanceField(raw: unknown): {
   };
 }
 
-// ── Tool Definitions (51 tools) ────────────────────────────────────────
+// ── Tool Definitions (53 tools) ────────────────────────────────────────
 
 /**
- * Manifiesto MCP: 51 herramientas que reflejan la API REST The Forge (proyectos, grupos, entregables, análisis,
+ * Manifiesto MCP: 53 herramientas que reflejan la API REST The Forge (proyectos, grupos, entregables, análisis,
  * orquestador, sesiones, flujo legacy e integración Ariadne). Cada `name` debe existir como método en
  * {@link handlers}.
  *
@@ -1092,6 +1132,67 @@ const TOOLS: Tool[] = [
     inputSchema: { type: "object", properties: {}, required: [] },
   },
   {
+    name: "resolve_forge_project_for_ariadne",
+    description:
+      "Resuelve un proyecto Workshop (Forge) desde identificadores Ariadne. Devuelve forgeProjectId, linkKind (primary|alias|inferred) y etapas opcionales. HTTP 404 → not_found; 409 → ambiguous con candidates[] para modal en Ariadne.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ariadneProjectId: { type: "string", description: "UUID proyecto Falkor / multi-root" },
+        ariadneRepositoryId: { type: "string", description: "UUID repo indexado" },
+        projectKey: { type: "string", description: "Clave de proyecto, ej. kreodevs" },
+        repoSlug: { type: "string", description: "Slug del repo, ej. theforge" },
+        gitRemoteUrl: { type: "string", description: "URL git normalizada (fallback)" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "create_stage_from_ariadne_change_pack",
+    description:
+      "Crea una etapa LEGACY (o importa en stageId existente ≥2) desde un change pack Ariadne v1. Persiste legacyChangeState, handoff opcional, wire brownfield y legacy/start condicional. Devuelve recommendedNextTools (legacy_generate_mdd, etc.).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        forgeProjectId: { type: "string", description: "UUID proyecto Workshop (de resolve_forge_project_for_ariadne)" },
+        pack: {
+          type: "object",
+          description: "Change pack v1",
+          properties: {
+            version: { type: "string", enum: ["1"] },
+            changeDescription: { type: "string" },
+            ariadneChangeId: { type: "string" },
+            ariadneRepositoryId: { type: "string" },
+            filesToModify: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  path: { type: "string" },
+                  repoId: { type: "string" },
+                },
+                required: ["path"],
+              },
+            },
+            questionsToRefine: { type: "array", items: { type: "string" } },
+            handoffItems: { type: "array", items: { type: "object" } },
+            linkedNewProjectId: { type: "string" },
+          },
+          required: ["version", "changeDescription"],
+        },
+        stageId: { type: "string", description: "Importar en etapa existente (ordinal ≥ 2) en lugar de crear" },
+        stageName: { type: "string" },
+        activate: { type: "boolean", description: "Default true al crear etapa" },
+        runLegacyStart: {
+          type: "boolean",
+          description: "Forzar legacy/start; default false si pack trae filesToModify",
+        },
+        wireAriadne: { type: "boolean", description: "PATCH brownfield converge (default true)" },
+      },
+      required: ["forgeProjectId", "pack"],
+    },
+  },
+  {
     name: "get_project_tables",
     description: "Obtiene definiciones de tablas SQL del §3 (Modelo de Datos) del MDD de un proyecto de referencia. Opcional: filtrar solo las tablas especificadas en tableNames.",
     inputSchema: {
@@ -1798,6 +1899,32 @@ const handlers: Record<string, Handler> = {
   // TheForge
   async list_theforge_projects() {
     return JSON.stringify(await apiGet("/theforge/projects"));
+  },
+  async resolve_forge_project_for_ariadne(args) {
+    const { status, data } = await apiFetchAllowStatuses(
+      "POST",
+      "/theforge/resolve-forge-project-for-ariadne",
+      args ?? {},
+      [404, 409],
+    );
+    if (status === 200) {
+      return JSON.stringify(data);
+    }
+    const body =
+      typeof data === "object" && data !== null ? (data as Record<string, unknown>) : {};
+    const inner = body.message;
+    if (typeof inner === "object" && inner !== null && !Array.isArray(inner)) {
+      return JSON.stringify({ status, ...(inner as Record<string, unknown>) });
+    }
+    return JSON.stringify({
+      status,
+      message: typeof body.message === "string" ? body.message : data,
+    });
+  },
+  async create_stage_from_ariadne_change_pack(args) {
+    return JSON.stringify(
+      await apiPost("/theforge/create-stage-from-ariadne-change-pack", args ?? {}),
+    );
   },
   async get_project_tables(args) {
     const { projectId, tableNames } = args as { projectId: string; tableNames?: string[] };

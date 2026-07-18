@@ -2,9 +2,10 @@
 
 Prisma schema y client compartido.
 
-- **Schema:** `schema.prisma` — **`User`** (email único; JWT `sub` tras OTP), `Project` (**`userId`** → propietario), `Session` (**`userId`** redundante con propietario del proyecto), `Estimation`, `Status`, **`Stage`**, **`EpisodicMemory`**, `ArchitecturalPreference`, `AgentStateCheckpoint`.
+- **Schema:** `schema.prisma` — **`User`** (email único; JWT `sub` tras OTP), `Project` (**`userId`** → propietario), `Session` (**`userId`** redundante con propietario del proyecto), `Estimation`, `Status`, **`Stage`**, **`EpisodicMemory`**, `ArchitecturalPreference`, `AgentStateCheckpoint`, **`ProjectAriadneLink`** (enlace Forge ↔ Ariadne).
 - **Migración `20260326150000_user_project_session_ownership`:** crea `User`, enlaza proyectos/sesiones existentes al primer usuario insertado (`jorge.correa@kreoint.mx` si la tabla está vacía) y exige `userId` NOT NULL.
 - **Migración `20260327140000_ensure_pg_enums_idempotent`:** crea con `IF NOT EXISTS` los ENUM de Prisma (`Status`, `ProjectType`, `ComplexityLevel`, `StageStatus`, `EpisodicMemoryKind`) para desbloquear deploys donde faltaba el tipo antes de `ADD COLUMN …`.
+- **Migración `20260718100000_project_ariadne_links`:** tabla `project_ariadne_links` (enlace primario Forge ↔ Ariadne; upsert en alta brownfield / handoff).
 - **Client:** generado en `src/generated`; exportado por el package.
 
 Desde la **raíz** del monorepo: `pnpm run db:generate` (o el `build` del paquete) genera el client. `pnpm run db:push` aplica el schema a la DB. `pnpm run db:migrate` ejecuta migraciones en producción.

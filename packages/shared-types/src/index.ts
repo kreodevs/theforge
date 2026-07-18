@@ -66,6 +66,8 @@ export * from "./traceability-suggest.js";
 export * from "./aem.js";
 export * from "./document-edit-intent.js";
 export * from "./workshop-fin-delimiter-covenant.js";
+export * from "./ariadne-forge-link.js";
+export * from "./ariadne-change-pack.js";
 export * from "./dbga-endpoint-catalog-merge.js";
 export * from "./ui-mcp-contract.js";
 export * from "./technology-docs/index.js";

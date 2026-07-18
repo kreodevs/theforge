@@ -34,7 +34,7 @@ import { PluginModule } from "../../plugins/plugin.module.js";
     AiModule,
     Phase0Module,
     ScraperModule,
-    TheForgeModule,
+    forwardRef(() => TheForgeModule),
     GraphMemoryModule,
     ChangeLogModule,
     DocumentSnapshotModule,
