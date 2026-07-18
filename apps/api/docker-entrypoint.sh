@@ -190,6 +190,7 @@ resolve_applied_if_project_column "20260609120000_add_agent_governance_content" 
 resolve_applied_if_project_column "20260612120000_project_merge_suite" "archivedAt"
 resolve_applied_if_table "20260702_add_ui_mcp_instance" "UiMcpInstance"
 resolve_applied_if_table_column "20260703180000_ui_mcp_adapter_id" "UiMcpInstance" "adapterId"
+resolve_applied_if_table "20260513180000_langgraph_checkpoint_tables" "checkpoints"
 
 # Migraciones en cada arranque del contenedor (producción); fallo → exit 1, sin API
 echo "Running prisma migrate deploy..."
