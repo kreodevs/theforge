@@ -11,6 +11,12 @@ import { randomUUID } from "node:crypto";
 import { Queue, Worker, type Job } from "bullmq";
 import type { AffectedArtifact } from "@theforge/shared-types";
 import { getRequestUserId, runWithRequestUserAsync } from "../../common/request-user.store.js";
+import {
+  resolveDeliverablesWorkerConcurrency,
+  resolveRedisUrlOrThrow,
+  shouldStartBullmqWorkers,
+} from "../../common/bullmq-runtime.config.js";
+import { longRunningBullmqWorkerOptions } from "../../common/bullmq-long-job.worker-options.js";
 import { DocReconcileService } from "../documentation-gap/doc-reconcile.service.js";
 import { ProjectGenerationGuardService } from "./project-generation-guard.service.js";
 import { ProjectsService } from "./projects.service.js";
@@ -131,15 +137,15 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   usesRedis(): boolean {
-    return !!process.env.REDIS_URL?.trim();
+    return !!resolveRedisUrlOrThrow();
   }
 
   async onModuleInit(): Promise<void> {
     this.logger.log("[DeliverablesQueueService] onModuleInit start");
-    const url = process.env.REDIS_URL?.trim();
+    const url = resolveRedisUrlOrThrow();
     if (!url) {
       this.logger.log(
-        "BullMQ: sin REDIS_URL — cascada de entregables usa cola in-memory (polling + progreso en chat)",
+        "BullMQ: sin REDIS_URL — cascada de entregables usa cola in-memory (solo desarrollo)",
       );
       this.logger.log("[DeliverablesQueueService] onModuleInit end");
       return;
@@ -156,39 +162,46 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
         },
       },
     });
-    this.worker = new Worker(
-      DELIVERABLES_QUEUE_NAME,
-      async (job: Job<GenerateJobData>) => {
-        const { userId } = job.data;
-        return runWithRequestUserAsync(userId ?? "system", async () => {
-          this.logger.log(
-            `BullMQ worker: iniciando job ${job.id} type=${job.data.type} projectId=${job.data.projectId} attempt=${job.attemptsMade + 1}/${this.MAX_ATTEMPTS}`,
-          );
-          job.updateProgress(0);
-          return this.runJob(job.data, (p) => job.updateProgress(p as Job["progress"]));
-        });
-      },
-      {
-        connection: { url },
-        concurrency: 2,
-      },
-    );
-    this.worker.on("failed", (job, err) => {
-      const data = job?.data as GenerateJobData | undefined;
-      const transient = isTransientError(err);
-      this.logger.error(
-        `BullMQ job ${job?.id} (${data?.type ?? "?"} projectId=${data?.projectId ?? "?"}) ` +
-          `${transient ? "falló (transitorio, reintentando...)" : "falló definitivamente"}: ${err instanceof Error ? err.message : err}`,
+    const concurrency = resolveDeliverablesWorkerConcurrency();
+    if (shouldStartBullmqWorkers()) {
+      this.worker = new Worker(
+        DELIVERABLES_QUEUE_NAME,
+        async (job: Job<GenerateJobData>) => {
+          const { userId } = job.data;
+          return runWithRequestUserAsync(userId ?? "system", async () => {
+            this.logger.log(
+              `BullMQ worker: iniciando job ${job.id} type=${job.data.type} projectId=${job.data.projectId} attempt=${job.attemptsMade + 1}/${this.MAX_ATTEMPTS}`,
+            );
+            job.updateProgress(0);
+            return this.runJob(job.data, (p) => job.updateProgress(p as Job["progress"]));
+          });
+        },
+        {
+          connection: { url },
+          ...longRunningBullmqWorkerOptions({ concurrency }),
+        },
       );
-    });
-    this.worker.on("completed", (job) => {
-      const data = job.data as GenerateJobData | undefined;
-      const elapsed = job.finishedOn && job.processedOn ? Math.round((job.finishedOn - job.processedOn) / 1000) : 0;
-      this.logger.log(`BullMQ job ${job.id} (${data?.type ?? "?"}) completado en ${elapsed}s`);
-    });
-    this.logger.log(
-      `BullMQ worker activo (${DELIVERABLES_QUEUE_NAME}), maxAttempts=${this.MAX_ATTEMPTS}, concurrency=2, backoff=exponential/4s`,
-    );
+      this.worker.on("failed", (job, err) => {
+        const data = job?.data as GenerateJobData | undefined;
+        const transient = isTransientError(err);
+        this.logger.error(
+          `BullMQ job ${job?.id} (${data?.type ?? "?"} projectId=${data?.projectId ?? "?"}) ` +
+            `${transient ? "falló (transitorio, reintentando...)" : "falló definitivamente"}: ${err instanceof Error ? err.message : err}`,
+        );
+      });
+      this.worker.on("completed", (job) => {
+        const data = job.data as GenerateJobData | undefined;
+        const elapsed = job.finishedOn && job.processedOn ? Math.round((job.finishedOn - job.processedOn) / 1000) : 0;
+        this.logger.log(`BullMQ job ${job.id} (${data?.type ?? "?"}) completado en ${elapsed}s`);
+      });
+      this.logger.log(
+        `BullMQ worker activo (${DELIVERABLES_QUEUE_NAME}), maxAttempts=${this.MAX_ATTEMPTS}, concurrency=${concurrency}, backoff=exponential/4s`,
+      );
+    } else {
+      this.logger.log(
+        `[DeliverablesQueueService] Cola Redis conectada; workers desactivados (THEFORGE_RUNTIME_ROLE=http)`,
+      );
+    }
     this.logger.log("[DeliverablesQueueService] onModuleInit end");
   }
 

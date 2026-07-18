@@ -14,6 +14,11 @@ import { resolve } from "node:path";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module.js";
 import { ModelsUnavailableExceptionFilter } from "./common/filters/models-unavailable.exception-filter.js";
+import {
+  assertRedisConfiguredForProduction,
+  resolveTheForgeRuntimeRole,
+  shouldStartHttpServer,
+} from "./common/bullmq-runtime.config.js";
 
 // SMTP (p. ej. Gmail): priorizar IPv4 evita timeouts cuando IPv6 no llega al servidor de correo.
 if (typeof dns.setDefaultResultOrder === "function") {
@@ -50,8 +55,15 @@ function corsOriginsFromEnv(): string[] {
 
 async function bootstrap() {
   const logger = new Logger("Bootstrap");
+  assertRedisConfiguredForProduction();
+  const role = resolveTheForgeRuntimeRole();
+  if (!shouldStartHttpServer()) {
+    throw new Error(
+      `THEFORGE_RUNTIME_ROLE=${role} does not start the HTTP server; run worker.js for BullMQ consumers.`,
+    );
+  }
   logger.log(
-    `[bootstrap] build=${process.env.THEFORGE_BUILD_SHA ?? "dev"} di=forwardRef`,
+    `[bootstrap] build=${process.env.THEFORGE_BUILD_SHA ?? "dev"} role=${role} di=forwardRef`,
   );
   logger.log("[bootstrap] Creating Nest application...");
   const app = await NestFactory.create(AppModule, {

@@ -102,6 +102,11 @@ if [ -z "${JWT_SECRET:-}" ]; then
   export JWT_SECRET="local-dev-jwt-secret-replace-in-dokploy"
 fi
 
+if [ "${NODE_ENV:-}" = "production" ] && [ -z "${REDIS_URL:-}" ]; then
+  echo "ERROR: REDIS_URL is required in production (BullMQ queue). Set redis://theforge-redis-queue:6379 or equivalent."
+  exit 1
+fi
+
 cd /app/packages/database
 
 # DDL idempotente antes de migrate (db push previo puede haber creado columnas sin registrar migración)
@@ -213,7 +218,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS "User_mcpSecret_key" ON "User"("mcpSecret");
 SQL
 
 cd /app/apps/api
-MAIN_JS="./dist/main.js"
+RUNTIME_ROLE="${THEFORGE_RUNTIME_ROLE:-all}"
+if [ "$RUNTIME_ROLE" = "worker" ]; then
+  MAIN_JS="./dist/worker.js"
+else
+  MAIN_JS="./dist/main.js"
+fi
 if [ ! -f "$MAIN_JS" ]; then
   echo "WARNING: $MAIN_JS not found. Attempting to build on container start..."
   echo "Contents of dist/:"
@@ -228,5 +238,5 @@ if [ ! -f "$MAIN_JS" ]; then
     exit 1
   fi
 fi
-echo "Starting API ($MAIN_JS)..."
+echo "Starting process role=${RUNTIME_ROLE} ($MAIN_JS)..."
 exec node "$MAIN_JS"

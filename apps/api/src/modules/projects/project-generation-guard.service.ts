@@ -95,6 +95,8 @@ export class ProjectGenerationGuardService {
       }
     }
 
+    const mddJobs = await this.mddQueue.listJobsForProject(projectId);
+
     const merged = [...queueJobs, ...bgSnapshots];
     const activeJob = merged.find((j) => j.status === "active") ?? merged.find((j) => j.status === "retrying") ?? null;
     const queuedJobs = merged.filter((j) => j.status === "queued");
@@ -115,6 +117,7 @@ export class ProjectGenerationGuardService {
     return {
       busy,
       mddStreamActive,
+      mddJobs,
       activeJob,
       queuedJobs,
       gates,

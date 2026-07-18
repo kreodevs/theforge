@@ -8,6 +8,7 @@
     "build": "nest build",
     "dev": "nest start --watch",
     "start": "node dist/main.js",
+    "start:worker": "node dist/worker.js",
     "test": "node --import tsx --test 'src/**/*.spec.ts'",
     "test:types": "tsc --noEmit -p tsconfig.json",
     "test:mcp-alignment": "nest build && node --test dist/apps/api/src/modules/theforge/theforge-mcp-tools-alignment.spec.js",

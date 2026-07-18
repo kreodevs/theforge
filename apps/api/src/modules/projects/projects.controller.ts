@@ -147,6 +147,12 @@ export class ProjectsController {
     return status;
   }
 
+  /** Cancela job MDD encolado o solicita abort del pipeline activo. */
+  @Delete(":id/mdd-jobs/:jobId")
+  async cancelMddJob(@Param("id") projectId: string, @Param("jobId") jobId: string) {
+    return this.mddQueue.cancelJob(jobId, projectId);
+  }
+
   /** SSE: progreso de cascada de entregables en cola BullMQ (`REDIS_URL`). */
   @Get(":id/deliverables-jobs/:jobId/stream")
   async deliverablesJobStream(

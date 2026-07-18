@@ -1692,6 +1692,7 @@ export class AiAnalysisService {
   async runMddGenerationJob(
     data: MddJobData,
     onProgress: (p: MddJobProgress) => void,
+    options?: { signal?: AbortSignal },
   ): Promise<MddJobResult> {
     const { mode, projectId, stageId } = data;
     let lastPersistedLen = 0;
@@ -1713,6 +1714,9 @@ export class AiAnalysisService {
     const consume = async (events: AsyncGenerator<MddJobEvent>): Promise<MddJobResult> => {
       let finalMarkdown = "";
       for await (const event of events) {
+        if (options?.signal?.aborted) {
+          throw new Error("Cancelado por el usuario");
+        }
         if (event.type === "progress") {
           onProgress({ agent: event.agent, message: event.message });
         } else if (event.type === "draft" && event.markdown?.trim()) {

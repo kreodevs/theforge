@@ -61,5 +61,9 @@ Se usa desde el script `dev:local` del `package.json` raíz. Requiere Colima y D
 
 En **Docker Compose** (`docker-compose.yml`) el servicio **`theforge-redis-queue`** expone Redis 6379 **solo en la red interna** del stack; el API recibe `REDIS_URL=redis://theforge-redis-queue:6379` por defecto.
 
-- **Local sin Compose:** levanta Redis (p. ej. `redis-server` o un contenedor en `localhost:6379`) y en `.env` define `REDIS_URL=redis://localhost:6379`. Si `REDIS_URL` está vacío, la API puede operar en modo síncrono para cascadas cortas; cascadas largas de entregables conviene no depender de ello.
+**Producción:** `REDIS_URL` es obligatorio (`NODE_ENV=production`). El entrypoint y `main.ts`/`worker.ts` abortan si falta.
+
+**Procesos separados:** `theforge-api` (`THEFORGE_RUNTIME_ROLE=http`) encola jobs; `theforge-worker` (`THEFORGE_RUNTIME_ROLE=worker`) ejecuta workers BullMQ (MDD, entregables, legacy). Desarrollo local: `THEFORGE_RUNTIME_ROLE=all` en un solo `nest start`.
+
+- **Local sin Compose:** levanta Redis (p. ej. `redis-server` o un contenedor en `localhost:6379`) y en `.env` define `REDIS_URL=redis://localhost:6379`. Si `REDIS_URL` está vacío en dev, la API usa cola in-memory (no usar en prod).
 - **No confundir** con **FalkorDB** (`theforge-falkor-sdd`): ese servicio es el grafo SDD (Cypher / MDD_Section), no la cola BullMQ.

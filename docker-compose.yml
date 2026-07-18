@@ -135,6 +135,11 @@ services:
       HERMES_API_KEY: ${HERMES_API_KEY:-}
       # 1 = un arranque: borra ProviderInstance + UserProviderConfig (clave BYOK irrecuperable). Quitar tras deploy.
       WIPE_BYOK_ON_START: ${WIPE_BYOK_ON_START:-}
+      # HTTP solo encola jobs; workers BullMQ viven en theforge-worker.
+      THEFORGE_RUNTIME_ROLE: http
+      MDD_BULLMQ_CONCURRENCY: ${MDD_BULLMQ_CONCURRENCY:-2}
+      DELIVERABLES_BULLMQ_CONCURRENCY: ${DELIVERABLES_BULLMQ_CONCURRENCY:-2}
+      LEGACY_DELIVERABLES_BULLMQ_CONCURRENCY: ${LEGACY_DELIVERABLES_BULLMQ_CONCURRENCY:-1}
     depends_on:
       theforge-db:
         condition: service_healthy
@@ -151,6 +156,49 @@ services:
       timeout: 10s
       start_period: 120s
       retries: 3
+
+  # BullMQ consumers (MDD + entregables). Misma imagen que theforge-api; sin HTTP.
+  theforge-worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      args:
+        BUILD_CACHE_BUST: ${BUILD_CACHE_BUST:-98}
+    container_name: theforge-worker
+    env_file:
+      - path: .env
+        required: false
+    networks:
+      - default
+    environment:
+      DATABASE_URL: postgresql://theforge:theforge@theforge-db:5432/theforge
+      REDIS_URL: ${REDIS_URL:-redis://theforge-redis-queue:6379}
+      FALKORDB_SDD_URL: redis://theforge-falkor-sdd:6379
+      FALKORDB_URL: redis://theforge-falkor-sdd:6379
+      NODE_ENV: production
+      THEFORGE_RUNTIME_ROLE: worker
+      MDD_BULLMQ_CONCURRENCY: ${MDD_BULLMQ_CONCURRENCY:-2}
+      DELIVERABLES_BULLMQ_CONCURRENCY: ${DELIVERABLES_BULLMQ_CONCURRENCY:-2}
+      LEGACY_DELIVERABLES_BULLMQ_CONCURRENCY: ${LEGACY_DELIVERABLES_BULLMQ_CONCURRENCY:-1}
+      JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-replace-in-dokploy}
+      TOKEN_MASTER_KEYS: ${TOKEN_MASTER_KEYS:-}
+      TOKEN_ACTIVE_KEY_VERSION: ${TOKEN_ACTIVE_KEY_VERSION:-1}
+      OPENAI_EMBEDDING_DIM: ${OPENAI_EMBEDDING_DIM:-}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-}
+      LLM_DEBUG: ${LLM_DEBUG:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      THEFORGE_MCP_TIMEOUT_MS: ${THEFORGE_MCP_TIMEOUT_MS:-60000}
+      DEBUG_MCP: ${DEBUG_MCP:-0}
+      PRISMA_RESOLVE_ROLLED_BACK: ${PRISMA_RESOLVE_ROLLED_BACK:-}
+      AGENT_EVALUATOR_LEGACY: ${AGENT_EVALUATOR_LEGACY:-}
+    depends_on:
+      theforge-db:
+        condition: service_healthy
+      theforge-redis-queue:
+        condition: service_healthy
+      theforge-falkor-sdd:
+        condition: service_healthy
+    restart: unless-stopped
 
   # Web estáticos (nginx :80). Traefik/Dokploy: / → theforge-web:80
   theforge-web:

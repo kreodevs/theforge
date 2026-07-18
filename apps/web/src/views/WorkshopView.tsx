@@ -84,7 +84,8 @@ import { WORKSHOP_EXIT_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
 import { stageWorkflowStatusLabel } from "@/utils/stageWorkflowStatusLabel";
 import { apiFetch, API_BASE, getOfflineQueue } from "../utils/apiClient";
 import { isWorkshopConnectionError, isSsotPatternsNotice } from "../utils/workshopSyncStatus";
-import { activeGenerationLabel, generationJobAllowed } from "../utils/projectGenerationGate";
+import { activeGenerationLabel, generationJobAllowed, primaryMddJob } from "../utils/projectGenerationGate";
+import { MDD_JOB_MODE_LABELS } from "@theforge/shared-types";
 import type { ArtifactTypeDefinition, GenerationJobType } from "@theforge/shared-types";
 import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
@@ -632,7 +633,10 @@ export default function WorkshopView({
   const error = useWorkshopStore((s) => s.error);
   const notice = useWorkshopStore((s) => s.notice);
   const generationStatus = useWorkshopStore((s) => s.generationStatus);
+  const cancelMddJob = useWorkshopStore((s) => s.cancelMddJob);
   const backgroundGenerationLabel = activeGenerationLabel(generationStatus);
+  const activeMddJob = primaryMddJob(generationStatus);
+  const [cancellingMddJob, setCancellingMddJob] = useState(false);
   const isGenerationGateBlocked = useCallback(
     (type: GenerationJobType) => !generationJobAllowed(generationStatus, type),
     [generationStatus],
@@ -3066,9 +3070,46 @@ export default function WorkshopView({
 
       {(backgroundGenerationLabel && !cascadeRunning) && (
         <div className="shrink-0 border-b border-[color-mix(in_oklch,var(--primary)_35%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_10%,transparent)] px-4 py-2">
-          <p className="text-sm text-[color-mix(in_oklch,var(--primary)_80%,white)]">
-            {backgroundGenerationLabel} Puedes cerrar el navegador; al volver, recarga el proyecto para ver el resultado.
-          </p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="text-sm text-[color-mix(in_oklch,var(--primary)_80%,white)]">
+                {backgroundGenerationLabel} Puedes cerrar el navegador; al volver, recarga el proyecto para ver el
+                resultado.
+              </p>
+              {activeMddJob ? (
+                <p className="text-xs text-[color-mix(in_oklch,var(--primary)_65%,white)]">
+                  Job {activeMddJob.jobId.slice(0, 8)}… · {MDD_JOB_MODE_LABELS[activeMddJob.mode]} ·{" "}
+                  {activeMddJob.status === "queued" ? "en cola" : "en ejecución"}
+                  {activeMddJob.progressMessage ? ` · ${activeMddJob.progressMessage}` : ""}
+                </p>
+              ) : null}
+              {(generationStatus?.mddJobs?.length ?? 0) > 1 ? (
+                <p className="text-xs text-[color-mix(in_oklch,var(--primary)_55%,white)]">
+                  {generationStatus!.mddJobs.length} jobs MDD registrados (cola in-memory o BullMQ).
+                </p>
+              ) : null}
+            </div>
+            {activeMddJob && projectId ? (
+              <button
+                type="button"
+                disabled={cancellingMddJob}
+                onClick={() => {
+                  setCancellingMddJob(true);
+                  void cancelMddJob(projectId, activeMddJob.jobId).finally(() => setCancellingMddJob(false));
+                }}
+                className="shrink-0 rounded-md border border-[color-mix(in_oklch,var(--destructive)_45%,var(--border))] bg-[color-mix(in_oklch,var(--destructive)_8%,transparent)] px-2.5 py-1 text-xs font-medium text-[color-mix(in_oklch,var(--destructive)_75%,white)] hover:bg-[color-mix(in_oklch,var(--destructive)_14%,transparent)] disabled:opacity-50"
+              >
+                {cancellingMddJob ? (
+                  <>
+                    <Loader2 className="mr-1 inline h-3 w-3 animate-spin" aria-hidden />
+                    Cancelando…
+                  </>
+                ) : (
+                  "Cancelar MDD"
+                )}
+              </button>
+            ) : null}
+          </div>
         </div>
       )}
 

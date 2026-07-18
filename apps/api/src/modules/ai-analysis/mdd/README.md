@@ -5,8 +5,9 @@ Cola de generación/regeneración del MDD desacoplada del SSE del navegador.
 ## Cola
 
 - Nombre BullMQ: `theforge-mdd` (`MddQueueService`, `mdd-queue.service.ts`).
-- Con `REDIS_URL`: jobs persistentes en Redis (sobreviven cerrar el navegador).
-- Sin Redis: cola in-memory secuencial por proyecto en el mismo proceso Node (no sobrevive reinicio del API).
+- Con `REDIS_URL` (**obligatorio en production**): jobs persistentes en Redis.
+- Sin Redis: cola in-memory secuencial por proyecto (**solo desarrollo**).
+- Worker: `THEFORGE_RUNTIME_ROLE=worker` (`dist/worker.js`) o monolito `all`. Concurrencia: `MDD_BULLMQ_CONCURRENCY` (default **2**, max 8).
 
 ## Modos (`MddJobMode`)
 
@@ -35,6 +36,8 @@ El Workshop ya no depende de `persistMddContent` tras encolar.
 | `POST` | `/ai-analysis/mdd/jobs` | Encola greenfield (`pipeline` \| `manager` \| `section`) |
 | `GET` | `/ai-analysis/mdd/jobs/:jobId` | Estado del job |
 | `GET` | `/projects/:id/mdd-jobs/:jobId` | Alias polling (web) |
+| `DELETE` | `/projects/:id/mdd-jobs/:jobId` | Cancela job encolado o aborta pipeline activo |
+| `GET` | `/projects/:id/generation-status` | Incluye `mddJobs[]` (jobId, mode, status, progreso) |
 | `POST` | `/projects/:id/legacy/generate-mdd` | Encola legacy por defecto (`?queue=false` sync) |
 | `GET` | `/projects/:id/legacy/mdd-jobs/:jobId` | Polling legacy |
 

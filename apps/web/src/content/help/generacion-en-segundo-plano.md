@@ -33,7 +33,7 @@ No puedes pulsar «Regenerar Spec» si el MDD acaba de encolarse en cascada pero
 ## Cómo saber el estado
 
 - **Workshop:** banner cuando hay generación en curso; botones de regenerar deshabilitados si el gate lo impide.
-- **API:** `GET /projects/:id/generation-status` devuelve `{ busy, activeJob, queuedJobs, mddStreamActive, gates }`.
+- **API:** `GET /projects/:id/generation-status` devuelve `{ busy, activeJob, queuedJobs, mddStreamActive, mddJobs, gates }`. Los jobs MDD (`mddJobs`) incluyen `jobId`, `mode`, `status` y último progreso. Cancelación: `DELETE /projects/:id/mdd-jobs/:jobId`.
 - **Job concreto:** `GET /projects/:id/deliverables-jobs/:jobId`, `GET /projects/:id/mdd-jobs/:jobId` (MDD greenfield) o `GET /projects/jobs/:jobId`.
 
 ## Sin Redis (desarrollo local)

@@ -1017,6 +1017,7 @@ interface WorkshopState {
   /** Gate de cola: jobs activos, MDD en stream y dependencias upstream. */
   generationStatus: ProjectGenerationStatus | null;
   fetchGenerationStatus: (projectId: string) => Promise<ProjectGenerationStatus | null>;
+  cancelMddJob: (projectId: string, jobId: string) => Promise<boolean>;
   /** Datos por pluginId (`project.pluginData` sincronizado desde API). */
   pluginData: Record<string, unknown>;
   patchPluginData: (pluginId: string, data: unknown) => void;
@@ -1638,7 +1639,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     try {
       const r = await apiFetch(`${API_BASE}/projects/${requestedId}/generation-status`);
       if (!r.ok) return null;
-      const status = (await r.json()) as ProjectGenerationStatus;
+      const raw = (await r.json()) as ProjectGenerationStatus;
+      const status: ProjectGenerationStatus = { ...raw, mddJobs: raw.mddJobs ?? [] };
       if (!shouldApplyWorkshopUpdate(get, requestedId)) return status;
       const wasBusy = get().generationStatus?.busy === true;
       set({ generationStatus: status });
@@ -1659,6 +1661,33 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       return status;
     } catch {
       return null;
+    }
+  },
+
+  cancelMddJob: async (projectId, jobId) => {
+    const pid = projectId.trim();
+    const jid = jobId.trim();
+    if (!pid || !jid) return false;
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${pid}/mdd-jobs/${jid}`, { method: "DELETE" });
+      if (!r.ok) {
+        set({
+          error: await parseErrorMessageFromResponse(r, "No se pudo cancelar el job MDD"),
+        });
+        return false;
+      }
+      set({
+        loading: false,
+        loadingReason: null,
+        agentProgress: [],
+        notice:
+          "Generación MDD cancelada. El pipeline puede tardar unos segundos en detenerse entre nodos.",
+      });
+      await get().fetchGenerationStatus(pid);
+      return true;
+    } catch (e) {
+      set({ error: friendlyFetchError(e) });
+      return false;
     }
   },
 

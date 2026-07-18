@@ -10,13 +10,17 @@ Env: `DATABASE_URL` y claves en `.env.example` (OpenRouter). **Auth multi-usuari
 
 **CORS:** `CORS_ORIGINS` (coma) obligatorio si `NODE_ENV=production`; `docker-compose` incluye por defecto `https://theforge.kreoint.mx`, `WEB_DOMAIN` y localhost (Vite). Sobreescribe en Dokploy si el front vive en otro origen.
 
-**BullMQ (opcional):** con `REDIS_URL`, la cascada `POST /projects/:id/generate-deliverables` se encola (`theforge-deliverables`); el cliente usa polling o `GET …/deliverables-jobs/:jobId/stream` (SSE). Sin Redis, la respuesta sigue siendo el proyecto actualizado en la misma petición.
+**BullMQ:** `REDIS_URL` obligatorio en `NODE_ENV=production`. Colas: `theforge-deliverables`, `theforge-mdd`, `theforge-legacy-deliverables`. Sin Redis: fallback in-memory solo en desarrollo.
+
+**Runtime:** `THEFORGE_RUNTIME_ROLE=all|http|worker`. Compose prod: `theforge-api` (`http`, encola) + `theforge-worker` (`worker`, consume). Local: `all`.
+
+**Concurrencia:** `MDD_BULLMQ_CONCURRENCY` (default 2, max 8), `DELIVERABLES_BULLMQ_CONCURRENCY` (default 2), `LEGACY_DELIVERABLES_BULLMQ_CONCURRENCY` (default 1).
 
 **SSRF (scrape):** `url-ssrf-guard.ts` — resolución DNS y `ip-range-check`; usado en `scrape-cheerio.tool.ts` y `ScraperService`. Proyectos **legacy** + MCP: `THEFORGE_MCP_URL`, tokens MCP; pipeline evidencia-primero y topes en variables `LEGACY_*` (ver raíz `.env.example` y `docs/notebooklm/LEGACY-EVIDENCE-CONTEXT.md`).
 
 ## Despliegue (Docker / Dokploy)
 
-- **ENTRYPOINT** `docker-entrypoint.sh`: (1) espera TCP a Postgres, (2) valida `TOKEN_MASTER_KEYS` / defaults de `CORS_ORIGINS`, (3) `safe-schema-sync.sql`, (4) desbloqueos P3009 + `resolve --applied` si `db push` adelantó columnas, (5) `prisma migrate deploy`, (6) opcional `WIPE_BYOK_ON_START`, (7) arranca Nest (`main.js`).
+- **ENTRYPOINT** `docker-entrypoint.sh`: … migraciones … arranca `main.js` (HTTP) o `worker.js` (BullMQ) según `THEFORGE_RUNTIME_ROLE`.
 - En la UI de Dokploy (o cualquier plataforma), **no** sustituir el comando de arranque por `node dist/main.js` solo: se saltarían las migraciones. Usar la imagen tal cual o un comando que invoque el mismo entrypoint.
 - **BYOK / cifrado:** obligatorias `TOKEN_MASTER_KEYS` + `TOKEN_ACTIVE_KEY_VERSION`. Rotación de clave maestra: `cd /app && npm run rotate-master-key` en la terminal del contenedor (o desde el monorepo con `DATABASE_URL` de prod). Guía: [README raíz § Cifrado de tokens BYOK](../../README.md#cifrado-de-tokens-byok-claves-maestras). Si perdiste la clave vieja: nuevo `TOKEN_MASTER_KEYS`, `WIPE_BYOK_ON_START=1` en Dokploy, redeploy, quitar la variable, reconfigurar keys en UI.
 - Opcional: `WAIT_FOR_POSTGRES_ATTEMPTS` (default 90), `WAIT_FOR_POSTGRES_DELAY_MS` (default 1000).

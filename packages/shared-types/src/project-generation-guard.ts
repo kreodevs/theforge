@@ -9,6 +9,25 @@ import {
 /** Longitud mínima para considerar un entregable persistido como terminado (alineado con semáforo). */
 export const MIN_GENERATION_CONTENT_LEN = 48;
 
+/** Modos de job MDD en cola background (`theforge-mdd`). */
+export type MddJobMode = "pipeline" | "manager" | "section" | "legacy";
+
+export const MDD_JOB_MODE_LABELS: Record<MddJobMode, string> = {
+  pipeline: "MDD desde benchmark",
+  manager: "MDD (Manager)",
+  section: "Regeneración de sección MDD",
+  legacy: "MDD legacy (codebase)",
+};
+
+export type MddJobSnapshot = {
+  jobId: string;
+  mode: MddJobMode;
+  status: "queued" | "active" | "retrying";
+  progressAgent?: string;
+  progressMessage?: string;
+  progressPhase?: string;
+};
+
 /** Tipos de job de generación soportados por la cola BullMQ / in-memory. */
 export type GenerationJobType =
   | "cascade"
@@ -96,6 +115,7 @@ export type GenerationGateEntry = {
 export type ProjectGenerationStatus = {
   busy: boolean;
   mddStreamActive: boolean;
+  mddJobs: MddJobSnapshot[];
   activeJob: GenerationJobSnapshot | null;
   queuedJobs: GenerationJobSnapshot[];
   gates: Partial<Record<GenerationJobType, GenerationGateEntry>>;

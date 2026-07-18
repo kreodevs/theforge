@@ -9,6 +9,12 @@ import {
 import { randomUUID } from "node:crypto";
 import { Queue, Worker, type Job } from "bullmq";
 import { getRequestUserId, runWithRequestUserAsync } from "../../common/request-user.store.js";
+import {
+  resolveLegacyDeliverablesWorkerConcurrency,
+  resolveRedisUrlOrThrow,
+  shouldStartBullmqWorkers,
+} from "../../common/bullmq-runtime.config.js";
+import { longRunningBullmqWorkerOptions } from "../../common/bullmq-long-job.worker-options.js";
 import { ProjectsService } from "../projects/projects.service.js";
 import { LegacyCoordinatorService } from "./legacy-coordinator.service.js";
 
@@ -64,10 +70,10 @@ export class LegacyDeliverablesQueueService implements OnModuleInit, OnModuleDes
 
   async onModuleInit(): Promise<void> {
     this.logger.log("[LegacyDeliverablesQueueService] onModuleInit start");
-    const url = process.env.REDIS_URL?.trim();
+    const url = resolveRedisUrlOrThrow();
     if (!url) {
       this.logger.log(
-        "BullMQ legacy: sin REDIS_URL — cascada legacy usa cola in-memory (polling + progreso en chat)",
+        "BullMQ legacy: sin REDIS_URL — cascada legacy usa cola in-memory (solo desarrollo)",
       );
       this.logger.log("[LegacyDeliverablesQueueService] onModuleInit end");
       return;
@@ -83,36 +89,45 @@ export class LegacyDeliverablesQueueService implements OnModuleInit, OnModuleDes
       },
     });
 
-    this.worker = new Worker(
-      LEGACY_DELIVERABLES_QUEUE_NAME,
-      async (job: Job<LegacyDeliverablesJobData>) => {
-        const { projectId, stageId, userId } = job.data;
-        return runWithRequestUserAsync(userId ?? "system", async () => {
-          this.logger.log(
-            `BullMQ legacy worker: job ${job.id} projectId=${projectId} attempt=${job.attemptsMade + 1}/${this.MAX_ATTEMPTS}`,
-          );
-          job.updateProgress({ phase: "legacy_deliverables", step: "preflight", index: 0, total: 1 });
-          await this.projects.assertMddDeliveryGateForDeliverables(projectId);
-          return this.coordinator.generateDeliverables(projectId, stageId, {
-            onProgress: (p) => job.updateProgress({ phase: "legacy_deliverables", ...p }),
+    const concurrency = resolveLegacyDeliverablesWorkerConcurrency();
+    if (shouldStartBullmqWorkers()) {
+      this.worker = new Worker(
+        LEGACY_DELIVERABLES_QUEUE_NAME,
+        async (job: Job<LegacyDeliverablesJobData>) => {
+          const { projectId, stageId, userId } = job.data;
+          return runWithRequestUserAsync(userId ?? "system", async () => {
+            this.logger.log(
+              `BullMQ legacy worker: job ${job.id} projectId=${projectId} attempt=${job.attemptsMade + 1}/${this.MAX_ATTEMPTS}`,
+            );
+            job.updateProgress({ phase: "legacy_deliverables", step: "preflight", index: 0, total: 1 });
+            await this.projects.assertMddDeliveryGateForDeliverables(projectId);
+            return this.coordinator.generateDeliverables(projectId, stageId, {
+              onProgress: (p) => job.updateProgress({ phase: "legacy_deliverables", ...p }),
+            });
           });
-        });
-      },
-      { connection: { url }, concurrency: 1 },
-    );
-
-    this.worker.on("failed", (job, err) => {
-      const data = job?.data as LegacyDeliverablesJobData | undefined;
-      this.logger.error(
-        `BullMQ legacy job ${job?.id} (projectId=${data?.projectId ?? "?"}) falló: ${err instanceof Error ? err.message : err}`,
+        },
+        { connection: { url }, ...longRunningBullmqWorkerOptions({ concurrency }) },
       );
-    });
-    this.worker.on("completed", (job) => {
-      const elapsed =
-        job.finishedOn && job.processedOn ? Math.round((job.finishedOn - job.processedOn) / 1000) : 0;
-      this.logger.log(`BullMQ legacy job ${job.id} completado en ${elapsed}s`);
-    });
-    this.logger.log(`BullMQ legacy worker activo (${LEGACY_DELIVERABLES_QUEUE_NAME}), concurrency=1`);
+
+      this.worker.on("failed", (job, err) => {
+        const data = job?.data as LegacyDeliverablesJobData | undefined;
+        this.logger.error(
+          `BullMQ legacy job ${job?.id} (projectId=${data?.projectId ?? "?"}) falló: ${err instanceof Error ? err.message : err}`,
+        );
+      });
+      this.worker.on("completed", (job) => {
+        const elapsed =
+          job.finishedOn && job.processedOn ? Math.round((job.finishedOn - job.processedOn) / 1000) : 0;
+        this.logger.log(`BullMQ legacy job ${job.id} completado en ${elapsed}s`);
+      });
+      this.logger.log(
+        `BullMQ legacy worker activo (${LEGACY_DELIVERABLES_QUEUE_NAME}), concurrency=${concurrency}`,
+      );
+    } else {
+      this.logger.log(
+        "[LegacyDeliverablesQueueService] Cola Redis conectada; workers desactivados (THEFORGE_RUNTIME_ROLE=http)",
+      );
+    }
     this.logger.log("[LegacyDeliverablesQueueService] onModuleInit end");
   }
 
