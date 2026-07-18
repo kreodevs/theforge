@@ -32,13 +32,45 @@ export interface SystemConfigDefinition {
 export const SYSTEM_CONFIG_CATEGORIES: ReadonlyArray<{
   id: SystemConfigCategory;
   label: string;
+  /** Texto breve para la UI (Ajustes → Sistema): alcance e impacto de la categoría. */
+  description: string;
 }> = [
-  { id: "integrations", label: "Integraciones" },
-  { id: "llm", label: "LLM y LangGraph" },
-  { id: "queues", label: "Colas BullMQ" },
-  { id: "mcp", label: "MCP y caché" },
-  { id: "legacy", label: "Legacy / brownfield" },
-  { id: "debug", label: "Depuración" },
+  {
+    id: "integrations",
+    label: "Integraciones",
+    description:
+      "Conexión con MCP Ariadne, documentación Context7, búsqueda Tavily y converge brownfield. Sin MCP configurado, los proyectos LEGACY no indexan ni generan doc. de partida.",
+  },
+  {
+    id: "llm",
+    label: "LLM y LangGraph",
+    description:
+      "Límites globales del motor de IA y del grafo LangGraph (MDD, chat, entregables). Afecta longitud de respuestas, coste por token e iteraciones del Manager/Auditor.",
+  },
+  {
+    id: "queues",
+    label: "Colas BullMQ",
+    description:
+      "Paralelismo de jobs en background (MDD y entregables). Más concurrencia acelera generaciones simultáneas pero exige más CPU/RAM; requiere reiniciar el worker.",
+  },
+  {
+    id: "mcp",
+    label: "MCP y caché",
+    description:
+      "Timeouts y caché de llamadas MCP (TheForge y Context7). Reduce latencia y evita cortes en ingest largos; TTL alto puede servir contexto desactualizado tras cambios en Ariadne.",
+  },
+  {
+    id: "legacy",
+    label: "Legacy / brownfield",
+    description:
+      "Comportamiento de proyectos LEGACY: diagramas, pipeline evidencia-primero, gates de índice y merge de entregables. Desactivar flags acelera pero puede bajar calidad o trazabilidad.",
+  },
+  {
+    id: "debug",
+    label: "Depuración",
+    description:
+      "Logs y atajos solo para diagnóstico. En producción aumentan ruido en consola y pueden exponer payloads sensibles; OTP dev nunca debe quedar activo en entornos reales.",
+  },
 ] as const;
 
 function def(
@@ -61,7 +93,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "string",
     "",
     "TheForge MCP — URL",
-    "URL Streamable HTTP del MCP AriadneSpecs. Vacío = MCP desconfigurado.",
+    "Endpoint HTTP del MCP AriadneSpecs (LEGACY, brownfield, herramientas del arquitecto). Vacío desactiva indexación, converge y doc. de partida desde código.",
     "integrations",
   ),
   def(
@@ -70,7 +102,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "string",
     "https://mcp.context7.com/mcp",
     "Docs técnicas — URL MCP por defecto",
-    "URL Context7 remota si el usuario no personaliza la suya en Ajustes.",
+    "URL de Context7 cuando el usuario no define la suya en Ajustes → Docs técnicas. Determina qué documentación de librerías alimentan Spec, Blueprint y entregables.",
     "integrations",
   ),
   def(
@@ -79,7 +111,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "secret",
     "",
     "Tavily — API key",
-    "Búsqueda web Scout (opcional).",
+    "Clave para búsqueda web en Scout y Fase 0. Vacía desactiva búsqueda en internet sin bloquear el resto del taller.",
     "integrations",
     { secret: true },
   ),
@@ -89,7 +121,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "boolean",
     "1",
     "Brownfield — auto converge",
-    "PATCH repos al crear proyecto LEGACY cuando MCP está configurado.",
+    "Al crear un proyecto LEGACY, lanza converge en el repo vía MCP si está configurado. Acelera onboarding pero puede tardar y modificar el remoto de Ariadne.",
     "integrations",
   ),
   def(
@@ -98,7 +130,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "string",
     "incremental",
     "Brownfield — modo converge",
-    "Valores: off | incremental | full | all.",
+    "Alcance del converge en el repo: off, incremental, full o all. Modos más amplios tardan más y tocan más archivos del índice.",
     "integrations",
   ),
   def(
@@ -107,7 +139,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "boolean",
     "0",
     "Brownfield — persistir converge",
-    "Persistir resultado de converge en el repo Ariadne.",
+    "Guarda el resultado del converge en el repositorio Ariadne. Desactivado = efecto transitorio; activado = cambios persistidos en el grafo.",
     "integrations",
   ),
   def(
@@ -116,7 +148,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "number",
     "131072",
     "LLM — tope global max_tokens",
-    "Techo de tokens de salida; los perfiles por tarea nunca lo superan.",
+    "Techo de tokens de salida por llamada LLM; los perfiles por tarea nunca lo superan. Valores altos permiten documentos largos pero suben coste y latencia.",
     "llm",
     { min: 1024, max: 1_000_000 },
   ),
@@ -126,7 +158,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "number",
     "100",
     "LangGraph — límite de recursión",
-    "Pasos LangGraph por invocación (MDD Manager puede superar el default 25).",
+    "Pasos máximos del grafo LangGraph por invocación (MDD Manager, pipeline). Bajo puede cortar pipelines; alto permite más reintentos del Auditor.",
     "llm",
     { min: 10, max: 500 },
   ),
@@ -136,7 +168,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "boolean",
     "0",
     "Evaluador legacy en respuesta",
-    "Incluir evaluador legacy en la respuesta del orquestador.",
+    "Incluye el evaluador legacy en la respuesta del orquestador de chat. Útil para depurar calidad; añade tokens y latencia a cada mensaje.",
     "llm",
   ),
   def(
@@ -145,7 +177,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "number",
     "2",
     "Cola MDD — concurrencia",
-    "Jobs MDD concurrentes por worker (pipeline LangGraph pesado).",
+    "Jobs MDD (pipeline LangGraph) procesados en paralelo por worker. Más valor = más generaciones simultáneas y mayor carga en CPU, RAM y APIs LLM.",
     "queues",
     { min: 1, max: 8, restartRequired: true },
   ),
@@ -155,7 +187,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "number",
     "2",
     "Cola entregables — concurrencia",
-    "Jobs de entregables greenfield concurrentes por worker.",
+    "Jobs de entregables greenfield en paralelo por worker. Subir acelera cascadas simultáneas; bajar reduce picos de memoria en el servidor.",
     "queues",
     { min: 1, max: 6, restartRequired: true },
   ),
@@ -165,7 +197,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "number",
     "1",
     "Cola legacy entregables — concurrencia",
-    "Jobs legacy/generate-deliverables concurrentes por worker.",
+    "Jobs legacy/generate-deliverables en paralelo por worker. Legacy suele ser más pesado; conviene mantener bajo en instancias pequeñas.",
     "queues",
     { min: 1, max: 4, restartRequired: true },
   ),
@@ -175,7 +207,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "number",
     "60000",
     "TheForge MCP — timeout (ms)",
-    "Timeout por llamada JSON-RPC a herramientas rápidas.",
+    "Tiempo máximo por llamada MCP rápida (tools JSON-RPC). Muy bajo falla en redes lentas; muy alto retiene conexiones ocupadas.",
     "mcp",
     { min: 1000, max: 600_000 },
   ),
@@ -185,7 +217,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "number",
     "900000",
     "TheForge MCP — timeout ask_codebase (ms)",
-    "Timeout solo para tools/call ask_codebase (ingest puede tardar minutos).",
+    "Timeout exclusivo para ask_codebase (ingest/indexación de repos). Operaciones de minutos; bajarlo corta ingests grandes.",
     "mcp",
     { min: 60_000, max: 3_600_000 },
   ),
@@ -195,7 +227,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "number",
     "15000",
     "Docs técnicas — timeout MCP (ms)",
-    "Timeout por llamada al MCP Context7.",
+    "Tiempo máximo por llamada al MCP Context7. Afecta generaciones que consultan docs de librerías en §2 y entregables.",
     "mcp",
     { min: 1000, max: 120_000 },
   ),
@@ -205,7 +237,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "number",
     "3",
     "Docs técnicas — máx. librerías",
-    "Máximo de librerías por generación desde MDD §2.",
+    "Cuántas librerías de Context7 se consultan por generación desde MDD §2. Más librerías = prompts más ricos pero más latencia y coste.",
     "mcp",
     { min: 1, max: 6 },
   ),
@@ -215,7 +247,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "number",
     "60000",
     "MCP — caché list_known_projects (ms)",
-    "TTL de caché para list_known_projects. 0 = sin caché.",
+    "TTL de caché para list_known_projects. 0 desactiva caché (más llamadas MCP); valores altos pueden ocultar proyectos recién registrados.",
     "mcp",
     { min: 0, max: 3_600_000 },
   ),
@@ -225,7 +257,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "boolean",
     "1",
     "Caché contexto MCP",
-    "Caché en memoria del contexto TheForge/Ariadne.",
+    "Activa caché en memoria del contexto TheForge/Ariadne inyectado en prompts. Desactivar fuerza lecturas frescas del MCP en cada job.",
     "mcp",
   ),
   def(
@@ -234,7 +266,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "number",
     "1800000",
     "Caché contexto — TTL (ms)",
-    "TTL de entradas (mínimo efectivo 60000).",
+    "Cuánto tiempo se reutiliza cada entrada de contexto cacheado. TTL corto = datos más frescos; largo = menos carga MCP.",
     "mcp",
     { min: 60_000, max: 86_400_000 },
   ),
@@ -244,7 +276,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "number",
     "80",
     "Caché contexto — máx. entradas",
-    "Máximo de entradas en caché (mínimo efectivo 8).",
+    "Límite de entradas en la caché de contexto (mín. efectivo 8). Bajo = menos RAM; alto = más hits pero más memoria.",
     "mcp",
     { min: 8, max: 500 },
   ),
@@ -254,7 +286,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "string",
     "",
     "Caché contexto — revisión manual",
-    "Bump manual para invalidar caché (cualquier string).",
+    "Cambia este valor para invalidar toda la caché de contexto sin reiniciar el API. Útil tras reindexar Ariadne o cambiar roots del workspace.",
     "mcp",
   ),
   def(
@@ -263,7 +295,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "number",
     "16000",
     "Contexto TheForge — tope en prompts",
-    "Tope de caracteres del bloque TheForge en prompts de entregables.",
+    "Máximo de caracteres del bloque de contexto TheForge/Ariadne en prompts de entregables legacy. Bajo recorta evidencia; alto aumenta tokens LLM.",
     "legacy",
     { min: 2000, max: 200_000 },
   ),
@@ -273,7 +305,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "boolean",
     "1",
     "MDD greenfield — diagrama §2",
-    "Inyecta diagrama de componentes propuesto en §2 del MDD greenfield.",
+    "Inyecta un diagrama de componentes propuesto en §2 del MDD greenfield. Mejora legibilidad; el diagrama es heurístico, no evidencia del código.",
     "legacy",
   ),
   def(
@@ -282,7 +314,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "boolean",
     "1",
     "Legacy — pipeline evidencia-primero",
-    "Activa pipeline evidencia-primero en flujo legacy.",
+    "Prioriza evidencia del índice MCP sobre texto libre al armar contexto legacy. Desactivar puede alucinar stack no presente en el repo.",
     "legacy",
   ),
   def(
@@ -291,7 +323,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "boolean",
     "1",
     "Legacy — analyzer compacto",
-    "Legacy Analyzer en modo compacto.",
+    "Reduce tamaño del Analyzer legacy (menos tokens). Acelera y abarata; puede omitir matices en proyectos grandes.",
     "legacy",
   ),
   def(
@@ -300,7 +332,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "boolean",
     "1",
     "Legacy — exigir hits en grafo",
-    "No ejecutar Analyzer si el índice MCP está vacío.",
+    "Bloquea el Analyzer si el índice MCP no devolvió símbolos. Evita análisis vacío; puede impedir generar cuando el grafo aún no indexó.",
     "legacy",
   ),
   def(
@@ -309,7 +341,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "boolean",
     "1",
     "Legacy — gate índice SDD",
-    "Cruce índice MCP vs SDD Falkor.",
+    "Compara índice MCP con SDD en Falkor antes de generar. Detecta desalineaciones; puede devolver 409 hasta que el usuario confirme.",
     "legacy",
   ),
   def(
@@ -318,7 +350,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "boolean",
     "1",
     "Legacy MDD — diagrama componentes",
-    "Añade diagrama Mermaid de componentes en doc. partida y §2 legacy.",
+    "Añade diagrama Mermaid de componentes en doc. de partida y §2 legacy. Ayuda a visualizar arquitectura inferida del índice.",
     "legacy",
   ),
   def(
@@ -327,7 +359,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "string",
     "all",
     "Legacy entregables — section merge",
-    "Valores: all | blueprint | auto | off.",
+    "Cómo fusionar secciones al generar entregables legacy: all, blueprint, auto u off. Cambia si el LLM reescribe todo el doc. o solo partes.",
     "legacy",
   ),
   def(
@@ -336,7 +368,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "boolean",
     "0",
     "Debug MCP",
-    "Log petición/respuesta MCP en consola.",
+    "Escribe petición y respuesta MCP en consola del API. Solo diagnóstico; en producción puede filtrar secretos y volumen alto de logs.",
     "debug",
   ),
   def(
@@ -345,7 +377,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "boolean",
     "0",
     "Debug MDD §3",
-    "Log detallado de la sección 3 del MDD.",
+    "Log detallado de la sección 3 (modelo de datos) en el pipeline MDD. Útil para depurar SQL/ER; muy verboso en consola.",
     "debug",
   ),
   def(
@@ -354,7 +386,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "number",
     "65536",
     "Debug MCP — truncado request",
-    "Máximo de caracteres logueados por petición MCP.",
+    "Máximo de caracteres logueados por petición MCP cuando debug está activo. Evita logs gigantes en ask_codebase.",
     "debug",
     { min: 1024, max: 1_048_576 },
   ),
@@ -364,7 +396,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "number",
     "32768",
     "Debug MCP — truncado response",
-    "Máximo de caracteres logueados por respuesta MCP.",
+    "Máximo de caracteres logueados por respuesta MCP cuando debug está activo. Respuestas grandes se cortan en el log.",
     "debug",
     { min: 1024, max: 1_048_576 },
   ),
@@ -374,7 +406,7 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "boolean",
     "0",
     "OTP dev — exponer código",
-    "POST /auth/otp/request devuelve devCode sin enviar correo (solo desarrollo).",
+    "Devuelve devCode en POST /auth/otp/request sin enviar correo. Solo desarrollo local; en producción expone códigos OTP en la API.",
     "debug",
   ),
 ] as const;

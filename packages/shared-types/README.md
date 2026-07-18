@@ -23,3 +23,4 @@ DTOs e interfaces compartidas (Zod).
 - **`sdd-integrations.ts`:** Zod `convergeBodySchema`, `tasksToIssuesBodySchema`.
 - **`plugin.ts`:** `ArtifactTypeDefinition` (con `pluginId`, `generatable`, `requires`, `contentType`), `PluginArtifactContext`, `PluginArtifactResult`; job `plugin-artifact` en `project-generation-guard.ts` (incl. gate `project_busy`).
 - **`workshop-fin-delimiter-covenant.ts`:** covenant LLM (`WORKSHOP_DBGA_EDIT_COVENANT`, `workshopFinDelimiterCovenant`) y mensajes al usuario cuando el panel del Workshop no persistió (sin mencionar `---FIN_*---` en la UI).
+- **`system-config.ts`:** catálogo allowlist Ajustes → Sistema (`SYSTEM_CONFIG_CATEGORIES` con `description` por pestaña, `SYSTEM_CONFIG_DEFINITIONS` con texto de impacto por campo).

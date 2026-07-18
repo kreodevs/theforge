@@ -128,11 +128,13 @@ export function SystemConfigCard() {
   const categories = useMemo(() => {
     if (!snapshot) return [];
     const labelById = new Map(snapshot.categories.map((c) => [c.id, c.label]));
+    const descriptionById = new Map(snapshot.categories.map((c) => [c.id, c.description]));
     return CATEGORY_ORDER.filter((id) =>
       snapshot.settings.some((s) => s.category === id),
     ).map((id) => ({
       id,
       label: labelById.get(id) ?? id,
+      description: descriptionById.get(id) ?? "",
       settings: snapshot.settings.filter((s) => s.category === id),
     }));
   }, [snapshot]);
@@ -279,6 +281,9 @@ export function SystemConfigCard() {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">{activeCategoryData.label}</CardTitle>
+            {activeCategoryData.description ? (
+              <CardDescription>{activeCategoryData.description}</CardDescription>
+            ) : null}
           </CardHeader>
           <CardContent className="space-y-5">
             {activeCategoryData.settings.map((setting) => (
