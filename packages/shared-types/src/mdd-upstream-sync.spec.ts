@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import {
   analyzeMddUpstreamChanges,
   buildMddUpstreamBaseline,
-  expandMddSectionsForSync,
   hashUpstreamDocumentBody,
-} from "./mdd-upstream-sync.js";
+} from "./mdd-upstream-sync-node.js";
+import { expandMddSectionsForSync } from "./mdd-upstream-sync.js";
 
 describe("mdd-upstream-sync", () => {
   it("expandMddSectionsForSync añade §4 cuando cambia §3", () => {

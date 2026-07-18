@@ -2,10 +2,12 @@ import { Injectable, Logger, NotFoundException, forwardRef, Inject } from "@nest
 import {
   analyzeMddUpstreamChanges,
   buildMddUpstreamBaseline,
-  buildUpstreamChangeSummaryForPipeline,
-  expandMddSectionsForSync,
   type MddUpstreamBaseline,
   type MddUpstreamSyncAnalysis,
+} from "@theforge/shared-types/mdd-upstream-sync-node";
+import {
+  buildUpstreamChangeSummaryForPipeline,
+  expandMddSectionsForSync,
 } from "@theforge/shared-types";
 import { PrismaService } from "../../../prisma/prisma.service.js";
 import { pickPrimaryStage } from "../../projects/stage-helpers.js";
