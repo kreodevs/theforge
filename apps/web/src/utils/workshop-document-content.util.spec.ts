@@ -38,6 +38,13 @@ describe("workshop-document-content", () => {
     const body = "# Fase 0\n\nTexto.";
     assert.equal(workshopDocumentBodiesEqual(body, STAMP + body), true);
   });
+
+  it("MDD editor strips stamp like other deliverables", () => {
+    const body = "# Master Design Document\n\n## 1. Contexto\n";
+    const out = normalizeWorkshopDocumentForEditor(STAMP + body);
+    assert.equal(out?.trim(), body.trim());
+    assert.doesNotMatch(out ?? "", /📅/);
+  });
 });
 
 describe("buildWorkshopDocumentTimestampsMap", () => {

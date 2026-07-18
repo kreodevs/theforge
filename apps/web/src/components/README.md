@@ -6,7 +6,7 @@
 | **MddManualAudit** | Botón **Auditar MDD**: audita el **mddContent** visible en pestaña MDD (`POST …/mdd/audit` / `…/mdd/audit/answer`). Reutiliza nodo Auditor MDD + preguntas por gaps. |
 | **Phase0InterviewPanel** | Entrevistador interactivo Paso 0 (`start` → preguntas → `answer`). Incluye auditoría manual al completar. |
 | **MddViewer** | Preview markdown (Fase 0, MDD, BRD, Blueprint): quita el stamp API del cuerpo renderizado y muestra **una sola** `WorkshopDocumentStampBar` (prop `documentTimestamps` o extracción del markdown). **KaTeX** para fórmulas `$…$` / `$$…$$` (`remark-math` + `rehype-katex`). `repairDirectoryTreeBlocks` + detección `((Root))`/`— apps/`; párrafos colapsados → `<pre>` monoespaciado. Diagramas Mermaid vía `MermaidDiagramBlock`. |
-| **WorkshopDocumentStampBar** | Cabecera visible **Creado / Última modificación** (stamp API). Fechas en zona horaria del navegador. El editor y el preview quitan el stamp del markdown; las fechas viven en la barra / `workshopStore.documentTimestamps`. |
+| **WorkshopDocumentStampBar** | Cabecera visible **Creado / Última modificación** (stamp API). Fechas en zona horaria del navegador. El editor y el preview quitan el stamp del markdown; las fechas viven en la barra / `workshopStore.documentTimestamps`. El MDD usa `normalizeWorkshopDocumentForEditor` al cargar (igual que DBGA/Spec). |
 | **DashboardSidebar** | En Workshop, «Panel de proyectos» queda `disabled` mientras `selectWorkshopAgentsBusy` (mismo criterio que el chat). |
 | **DashboardPanelHeader** | Panel de proyectos: acciones Crear / Tutorial / Refrescar. |
 | **ProjectTutorialDialog** | Tutorial **Greenfield** vs **Brownfield** (`content/tutorial/*.md`). Bloques ` ```mermaid ` vía `MarkdownMermaid` (misma ruta híbrida que Workshop). |

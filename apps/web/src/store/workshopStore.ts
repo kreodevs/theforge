@@ -726,7 +726,9 @@ function effectiveMddContentForSectionRegen(getState: () => {
   const fromStore = (mddContent ?? "").trim();
   if (fromStore.length >= 100) return fromStore;
   const st = project?.stages?.find((s) => s.id === activeStageId);
-  return (cleanDoc(st?.mddContent ?? null) ?? cleanDoc(project?.mddContent ?? null) ?? "").trim();
+  return (normalizeWorkshopDocumentForEditor(st?.mddContent ?? null) ??
+    normalizeWorkshopDocumentForEditor(project?.mddContent ?? null) ??
+    "").trim();
 }
 
 function workshopDeliverableStorePatch(
@@ -766,7 +768,7 @@ function workshopStateFromProjectStage(p: Project, stageId: string | null) {
       stages,
     },
     activeStageId: stageId,
-    mddContent: cleanDoc(flat.mddContent) ?? "",
+    mddContent: normalizeWorkshopDocumentForEditor(flat.mddContent) ?? "",
     documentTimestamps: buildWorkshopDocumentTimestampsMap(p, stageId),
     ...deliverablePatch,
   };
@@ -1563,7 +1565,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           workshopStages: stages,
           project: { ...nextProject, ...flat },
           activeStageId,
-          mddContent: cleanDoc(flat.mddContent) ?? "",
+          mddContent: normalizeWorkshopDocumentForEditor(flat.mddContent) ?? "",
           error: null,
         });
         const pid = projectId.trim();
@@ -2671,7 +2673,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                       // `done` con markdown corto (p. ej. placeholder) no debe vaciar borradores ya mostrados por eventos `draft`.
                       const current = get();
                       const flat = workshopFlatFromStage(current.project as Project, get().activeStageId);
-                      const serverMdd = (cleanDoc(flat.mddContent) ?? "").trim();
+                      const serverMdd = (normalizeWorkshopDocumentForEditor(flat.mddContent) ?? "").trim();
                       if (serverMdd.length < mddBeforeFetch.length) {
                         set({
                           mddContent: mddBeforeFetch,

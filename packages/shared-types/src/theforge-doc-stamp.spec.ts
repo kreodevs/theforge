@@ -60,6 +60,23 @@ describe("theforge-doc-stamp", () => {
     assert.ok(body.startsWith("# Specs"));
   });
 
+  it("peels glued blockquote stamp before --- and H1", () => {
+    const raw =
+      "<!-- theforge-doc:created=2026-07-16T03:28:39.226Z|updated=2026-07-16T03:28:39.226Z -->\n" +
+      "> 📅 Creado: 16 de julio de 2026, 03:28:39 UTC · Última regeneración: 16 de julio de 2026, 03:28:39 UTC --- # Specs\n";
+    const { stamp, body } = peelTheforgeDocStamp(raw);
+    assert.ok(stamp.includes("Creado:"));
+    assert.ok(body.startsWith("# Specs"));
+  });
+
+  it("peels orphan --> before blockquote stamp", () => {
+    const raw =
+      "--> > 📅 Creado: 16 de julio de 2026, 03:28:39 UTC · Última regeneración: 16 de julio de 2026, 03:28:39 UTC\n\n# Specs\n";
+    const { stamp, body } = peelTheforgeDocStamp(raw);
+    assert.ok(stamp.includes("📅"));
+    assert.ok(body.startsWith("# Specs"));
+  });
+
   it("formatTheforgeDocTimestampsForDisplay accepts custom timezone", () => {
     const display = formatTheforgeDocTimestampsForDisplay(parseTheforgeDocTimestamps(STAMPED), {
       timeZone: "America/Mexico_City",
