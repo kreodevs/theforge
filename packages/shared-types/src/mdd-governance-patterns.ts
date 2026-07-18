@@ -355,6 +355,13 @@ export function serverWouldDropGovernancePatterns(sent: string, received: string
   return false;
 }
 
+/** Detecta [X] en la sección de gobernanza aunque el parser estricto falle (p. ej. markdown corrupto). */
+export function governanceSectionHasCheckedPatternMarkers(md: string): boolean {
+  const gov = extractGovernanceSection(md);
+  if (!gov) return false;
+  return /^#?\s*- \[\s*[xX]\s*\]/m.test(gov);
+}
+
 export type EnforceMddGovernancePatternsResult = {
   markdown: string;
   /** true si se ignoraron cambios manuales en la sección inmutable de patrones. */
@@ -379,6 +386,13 @@ export function enforceMddGovernancePatternsOnPersist(
 
   if (options?.allowPatternChange) {
     const ids = selectedPatternIdsFromMdd(incoming);
+    if (
+      ids.size === 0 &&
+      governanceSectionHasCheckedPatternMarkers(incoming) &&
+      hasGovernanceSection(incoming)
+    ) {
+      return { markdown: incoming, patternsReverted: false };
+    }
     const markdown =
       ids.size > 0 || hasGovernanceSection(incoming)
         ? updateMddGovernancePatterns(incoming, ids)

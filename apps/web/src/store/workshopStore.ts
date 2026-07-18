@@ -149,6 +149,11 @@ function enqueueMddPersist(task: () => Promise<void>): Promise<void> {
   return next;
 }
 
+/** No aplicar markdown de stream si borraría patrones [X] ya visibles o guardados. */
+function streamMarkdownPreservesGovernancePatterns(current: string, incoming: string): boolean {
+  return !serverWouldDropGovernancePatterns(current, incoming);
+}
+
 /** Persiste MDD tras eventos interrupt/done del stream Manager (debounce + sin fetchProject). */
 async function persistMddFromChatStream(
   get: () => WorkshopState,
@@ -158,6 +163,11 @@ async function persistMddFromChatStream(
 ): Promise<void> {
   const incoming = markdown.trim();
   if (incoming.length <= 80) return;
+
+  if (!shouldApplyWorkshopUpdate(get, requestProjectId)) return;
+
+  const current = get().mddContent ?? "";
+  if (serverWouldDropGovernancePatterns(current, incoming)) return;
 
   set({ mddContent: mddContentForEditor(incoming) });
 
@@ -1865,13 +1875,26 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       const localMdd = get().mddContent ?? "";
       const persistedMdd = selectPersistedMddBaseline(get());
       const serverMdd = focused.mddContent ?? "";
+      const serverDropsPatterns = serverWouldDropGovernancePatterns(localMdd, serverMdd);
       const preserveMddLocal =
         get().mddPersisting ||
         !workshopDocumentBodiesEqual(localMdd, persistedMdd) ||
-        serverWouldDropGovernancePatterns(localMdd, serverMdd);
+        serverDropsPatterns;
+      let nextStages = stages;
+      let nextProject = focused.project;
+      if (preserveMddLocal && serverDropsPatterns && activeStageId) {
+        nextStages = stages.map((s) =>
+          s.id === activeStageId ? { ...s, mddContent: localMdd } : s,
+        );
+        nextProject = {
+          ...focused.project,
+          stages: nextStages,
+          mddContent: nextStages.find((s) => s.id === activeStageId)?.mddContent ?? focused.project.mddContent,
+        };
+      }
       set({
-        project: focused.project,
-        workshopStages: stages,
+        project: nextProject,
+        workshopStages: nextStages,
         activeStageId,
         mddContent: preserveMddLocal ? localMdd : serverMdd,
         documentTimestamps: focused.documentTimestamps,
@@ -2598,10 +2621,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                   } else if (event.type === "draft" && event.markdown != null && event.markdown.trim().length > 80) {
                     if (!shouldApplyWorkshopUpdate(get, requestProjectId)) continue;
                     const draftGate = deliveryGateFromStreamEvent(event as { deliveryGate?: MddDeliveryGateResult });
-                    set({
-                      mddContent: mddContentForEditor(event.markdown),
-                      ...(draftGate ? { deliveryGate: draftGate } : {}),
-                    });
+                    const currentMdd = get().mddContent ?? "";
+                    if (streamMarkdownPreservesGovernancePatterns(currentMdd, event.markdown)) {
+                      set({
+                        mddContent: mddContentForEditor(event.markdown),
+                        ...(draftGate ? { deliveryGate: draftGate } : {}),
+                      });
+                    }
                   } else if (event.type === "interrupt") {
                     set({
                       managerThreadId: event.threadId ?? get().managerThreadId ?? null,
@@ -2625,13 +2651,16 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                             "El chat indicó cambios pero el MDD no se actualizó. Revisa si hay un plan pendiente de aprobar, o usa /infraestructura o /seguridad para forzar la regeneración.",
                         });
                       }
-                      set({ mddContent: mddContentForEditor(incoming) });
-                      if (!unchanged) {
-                        await persistMddFromChatStream(get, set, incoming, requestProjectId);
+                      const currentMdd = get().mddContent ?? "";
+                      if (streamMarkdownPreservesGovernancePatterns(currentMdd, incoming)) {
+                        set({ mddContent: mddContentForEditor(incoming) });
+                        if (!unchanged) {
+                          await persistMddFromChatStream(get, set, incoming, requestProjectId);
+                        }
                       }
                     }
-                    // No sobrescribir mddContent con markdown vacío (auditar puede venir de checkpoint sin draft)
 
+                    // No sobrescribir mddContent con markdown vacío (auditar puede venir de checkpoint sin draft)
                     const precisionBreakdown = (event as any).precisionBreakdown;
                     const auditTrail = (event as any).auditTrail;
                     const auditorFeedback = (event as any).auditorFeedback;
@@ -2688,7 +2717,12 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
                     set({ managerThreadId: null, pendingPlanApproval: null });
                     const markdownOk = event.markdown.trim().length > 80;
                     const mddBeforeFetch = (get().mddContent ?? "").trim();
-                    if (markdownOk) set({ mddContent: mddContentForEditor(event.markdown) });
+                    if (
+                      markdownOk &&
+                      streamMarkdownPreservesGovernancePatterns(mddBeforeFetch, event.markdown)
+                    ) {
+                      set({ mddContent: mddContentForEditor(event.markdown) });
+                    }
 
                     const precisionBreakdown = (event as any).precisionBreakdown;
                     const auditTrail = (event as any).auditTrail;
@@ -4600,7 +4634,15 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       return;
     }
 
-    set({ mddPersisting: true, synced: false, error: null, notice: null });
+    set({
+      mddPersisting: true,
+      synced: false,
+      error: null,
+      notice: null,
+      ...(options?.allowGovernancePatternChange
+        ? { mddContent: mddContentForEditor(content) }
+        : {}),
+    });
 
     return enqueueMddPersist(async () => {
       const { projectId, project, fetchEstimation } = get();

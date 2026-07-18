@@ -13,10 +13,12 @@ import {
   mddNeedsPatternWizard,
   MDD_GOVERNANCE_WIZARD_BODY,
   parseActivePatternsFromMdd,
+  selectedPatternIdsFromMdd,
   stripGovernanceSection,
   updateMddGovernancePatterns,
   enforceMddGovernancePatternsOnPersist,
   serverWouldDropGovernancePatterns,
+  governanceSectionHasCheckedPatternMarkers,
 } from "./mdd-governance-patterns.js";
 
 describe("mdd-governance-patterns", () => {
@@ -110,6 +112,19 @@ describe("mdd-governance-patterns", () => {
       "## [ARQUITECTURA - SECCIÓN INMUTABLE]\n\n# - [X] **Singleton:** Descripción. *(Afecta a: MDD, Tasks)*\n";
     const md = `# MDD\n\n---\n\n${gov}\n\n## 1. Contexto\n\nTexto.\n`;
     assert.ok(parseActivePatternsFromMdd(md).some((p) => p.label.includes("Singleton")));
+  });
+
+  it("enforceMddGovernancePatternsOnPersist no vacía [X] si el parser estricto falla", () => {
+    const gov =
+      "## [ARQUITECTURA - SECCIÓN INMUTABLE]\n\n- [X] Singleton sin formato bold\n\n---\n";
+    const md = `# MDD\n\n---\n\n${gov}\n\n## 1. Contexto\n\nTexto.\n`;
+    assert.equal(selectedPatternIdsFromMdd(md).size, 0);
+    assert.equal(governanceSectionHasCheckedPatternMarkers(md), true);
+    const { markdown, patternsReverted } = enforceMddGovernancePatternsOnPersist(md, "", {
+      allowPatternChange: true,
+    });
+    assert.equal(patternsReverted, false);
+    assert.match(markdown, /- \[X\] Singleton sin formato bold/);
   });
 
   it("preserva gobernanza al preparar salida con §1 sustancial", () => {
