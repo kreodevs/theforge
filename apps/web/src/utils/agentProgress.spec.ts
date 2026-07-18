@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { appendAgentProgressDone } from "./agentProgress.js";
+import { appendAgentProgressDone, agentProgressFromMddJobProgress } from "./agentProgress.js";
 
 describe("appendAgentProgressDone", () => {
   it("deduplicates consecutive identical poll progress (same agent + message)", () => {
@@ -31,5 +31,17 @@ describe("appendAgentProgressDone", () => {
       message: "Schema SQL y contratos de API definidos",
     });
     assert.equal(progress.length, 3);
+  });
+
+  it("builds active step from accumulated job progress", () => {
+    const items = agentProgressFromMddJobProgress({
+      steps: [
+        { agent: "Arquitecto de Software", message: "Schema SQL y contratos de API definidos" },
+      ],
+      active: { agent: "Auditor (calidad MDD)", message: "Evaluando calidad del MDD…" },
+    });
+    assert.equal(items.length, 2);
+    assert.equal(items[1]?.status, "generando");
+    assert.equal(items[1]?.agent, "Auditor (calidad MDD)");
   });
 });

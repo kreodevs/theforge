@@ -11,6 +11,7 @@ import {
 import { ProjectsService } from "./projects.service.js";
 import { DeliverablesQueueService } from "./deliverables-queue.service.js";
 import { MddQueueService } from "../ai-analysis/mdd/mdd-queue.service.js";
+import { MddUpstreamSyncService } from "../ai-analysis/mdd/mdd-upstream-sync.service.js";
 
 type TrackedBgJob = {
   projectId: string;
@@ -33,6 +34,8 @@ export class ProjectGenerationGuardService {
     private readonly deliverablesQueue: DeliverablesQueueService,
     @Inject(forwardRef(() => MddQueueService))
     private readonly mddQueue: MddQueueService,
+    @Inject(forwardRef(() => MddUpstreamSyncService))
+    private readonly mddUpstreamSync: MddUpstreamSyncService,
   ) {}
 
   registerMddStream(projectId: string): void {
@@ -114,6 +117,23 @@ export class ProjectGenerationGuardService {
 
     const busy = mddStreamActive || activeJobsForGates.length > 0;
 
+    let mddUpstreamSync = null;
+    try {
+      const analysis = await this.mddUpstreamSync.analyze(projectId);
+      mddUpstreamSync = {
+        pendingSync: analysis.pendingSync,
+        changedSources: analysis.changedSources,
+        recommendedSections: analysis.recommendedSections,
+        expandedSections: analysis.expandedSections,
+        canSync: analysis.canSync,
+        needsFullRegen: analysis.needsFullRegen,
+        hasBaseline: analysis.hasBaseline,
+        changes: analysis.changes,
+      };
+    } catch {
+      mddUpstreamSync = null;
+    }
+
     return {
       busy,
       mddStreamActive,
@@ -123,6 +143,7 @@ export class ProjectGenerationGuardService {
       gates,
       complexity,
       contentReady,
+      mddUpstreamSync,
     };
   }
 }

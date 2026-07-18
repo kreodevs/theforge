@@ -16,6 +16,7 @@ Cola de generación/regeneración del MDD desacoplada del SSE del navegador.
 | `pipeline` | Greenfield — benchmark → MDD | `streamMddAnalysis` |
 | `manager` | Greenfield — chat Manager (arranque) | `streamMddAnalysisWithManager` |
 | `section` | Greenfield — `/seguridad`, etc. | `streamMddRegenerateSection` |
+| `upstream-sync` | Greenfield — cambios DBGA/BRD/Benchmark | `streamMddUpstreamSync` (§1–§7 selectivas) |
 | `legacy` | Proyectos `LEGACY` | `LegacyCoordinatorService.generateMdd` |
 
 Un solo job MDD activo o en cola por proyecto (`assertCanEnqueue` → 409 si busy).
@@ -33,20 +34,30 @@ El Workshop ya no depende de `persistMddContent` tras encolar.
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| `POST` | `/ai-analysis/mdd/jobs` | Encola greenfield (`pipeline` \| `manager` \| `section`) |
+| `POST` | `/ai-analysis/mdd/jobs` | Encola greenfield (`pipeline` \| `manager` \| `section` \| `upstream-sync`) |
+| `GET` | `/ai-analysis/mdd/upstream-sync/analysis?projectId=&stageId=` | Diff upstream vs baseline MDD (secciones recomendadas) |
 | `GET` | `/ai-analysis/mdd/jobs/:jobId` | Estado del job |
 | `GET` | `/projects/:id/mdd-jobs/:jobId` | Alias polling (web) |
 | `DELETE` | `/projects/:id/mdd-jobs/:jobId` | Cancela job encolado o aborta pipeline activo |
-| `GET` | `/projects/:id/generation-status` | Incluye `mddJobs[]` (jobId, mode, status, progreso) |
+| `GET` | `/projects/:id/generation-status` | Incluye `mddJobs[]` y `mddUpstreamSync` (banner Workshop) |
 | `POST` | `/projects/:id/legacy/generate-mdd` | Encola legacy por defecto (`?queue=false` sync) |
 | `GET` | `/projects/:id/legacy/mdd-jobs/:jobId` | Polling legacy |
 
 SSE (`POST …/mdd/stream`, `…/stream/manager`, `…/regenerate-section`) sigue disponible; el Workshop usa jobs por defecto.
 
+## Progreso acumulado
+
+El job guarda `MddJobProgressState` (`steps[]` completados + `active` en curso). El poll ya no pierde nodos rápidos entre intervalos de 2 s. Eventos `phase: "active"` al iniciar nodo; `phase: "done"` al completar (pipeline greenfield vía `onNodeStart` en `createMddGraph`).
+
 ## Frontend
 
 - `apps/web/src/utils/pollMddJob.ts` — `enqueueAndPollMddJob`, `enqueueAndPollLegacyMdd`.
-- `workshopStore`: `generateMddFromBenchmark`, `legacyGenerateMdd`, regeneración §N vía cola.
+- `workshopStore`: `generateMddFromBenchmark`, `generateMddUpstreamSync`, `legacyGenerateMdd`, regeneración §N vía cola.
+- `MddRegenerateDialog` / `MddUpstreamSyncBanner` — elegir pipeline completo vs sync incremental.
+
+## Baseline upstream
+
+Tras `pipeline` o `upstream-sync` exitoso, `MddUpstreamSyncService.captureBaseline` persiste en `Stage.mddUpstreamBaseline` (hashes + snapshots 32k de DBGA/BRD/Benchmark) para detectar cambios posteriores.
 
 ## Gates
 

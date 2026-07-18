@@ -13,6 +13,12 @@ import { randomUUID } from "node:crypto";
 import { Queue, Worker, type Job } from "bullmq";
 import type { MddJobSnapshot } from "@theforge/shared-types";
 import {
+  applyMddJobProgress,
+  createEmptyMddJobProgressState,
+  normalizeMddJobProgressState,
+  type MddJobProgressState,
+} from "@theforge/shared-types";
+import {
   LONG_JOB_LOCK_DURATION_MS,
   longRunningBullmqWorkerOptions,
 } from "../../../common/bullmq-long-job.worker-options.js";
@@ -28,7 +34,7 @@ import { AiAnalysisService } from "../ai-analysis.service.js";
 
 export const MDD_QUEUE_NAME = "theforge-mdd";
 
-export type MddJobMode = "pipeline" | "manager" | "section" | "legacy";
+export type MddJobMode = "pipeline" | "manager" | "section" | "legacy" | "upstream-sync";
 
 export interface MddJobData {
   mode: MddJobMode;
@@ -40,6 +46,9 @@ export interface MddJobData {
   mddContent?: string;
   section?: number;
   gapReasons?: string[];
+  /** Secciones MDD 1–7 para mode upstream-sync. */
+  upstreamSections?: number[];
+  upstreamChangeSummary?: string;
 }
 
 export type MddJobProgress = {
@@ -49,6 +58,29 @@ export type MddJobProgress = {
   mddLength?: number;
   section?: number;
 };
+
+function pushMddJobProgress(
+  record: InMemoryMddJobRecord,
+  patch: MddJobProgress,
+): void {
+  const prev = normalizeMddJobProgressState(record.progress);
+  record.progress = applyMddJobProgress(prev, patch);
+}
+
+function snapshotFromProgressState(state: MddJobProgressState): Pick<
+  MddJobSnapshot,
+  "progressAgent" | "progressMessage" | "progressPhase" | "progressSteps" | "progressActive"
+> {
+  const active = state.active;
+  const latest = state.latest;
+  return {
+    progressAgent: active?.agent ?? latest?.agent,
+    progressMessage: active?.message ?? latest?.message,
+    progressPhase: active ? "active" : latest?.phase,
+    progressSteps: state.steps,
+    progressActive: state.active,
+  };
+}
 
 export type MddJobResult = {
   ok: boolean;
@@ -159,18 +191,12 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
     const snapshots: MddJobSnapshot[] = [];
     for (const job of active) {
       const full = await this.getJobStatus(job.jobId);
-      const progress = full.progress as MddJobProgress | number | undefined;
-      const progressObj =
-        progress && typeof progress === "object" && !Array.isArray(progress)
-          ? (progress as MddJobProgress)
-          : undefined;
+      const state = normalizeMddJobProgressState(full.progress);
       snapshots.push({
         jobId: job.jobId,
         mode: job.mode,
         status: job.status,
-        progressAgent: progressObj?.agent,
-        progressMessage: progressObj?.message,
-        progressPhase: progressObj?.phase,
+        ...snapshotFromProgressState(state),
       });
     }
     return snapshots;
@@ -272,8 +298,10 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
             this.logger.log(
               `BullMQ MDD job ${job.id} mode=${job.data.mode} projectId=${job.data.projectId}`,
             );
+            let progressState = createEmptyMddJobProgressState();
             const onProgress = async (p: MddJobProgress) => {
-              await job.updateProgress(p);
+              progressState = applyMddJobProgress(progressState, p);
+              await job.updateProgress(progressState);
               if (!token) return;
               try {
                 await job.extendLock(token, LONG_JOB_LOCK_DURATION_MS);
@@ -366,7 +394,7 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
     void runWithRequestUserAsync(data.userId ?? "system", async () => {
       try {
         const result = await this.executeJob(jobId, data, (p) => {
-          record.progress = p;
+          pushMddJobProgress(record, p);
         });
         record.status = "completed";
         record.result = result;

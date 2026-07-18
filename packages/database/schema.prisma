@@ -237,6 +237,8 @@ model Stage {
   theforgeProjectId   String?
   /// Memoria de trabajo (corto plazo): último contexto / scratch del agente (JSON).
   shortTermContext Json?
+  /// Snapshot (hashes + metadatos) de DBGA/BRD/Benchmark al último MDD finalizado en etapa.
+  mddUpstreamBaseline Json?
   episodicMemories EpisodicMemory[]
   documentationGaps DocumentationGap[]
   agentSessionLogs AgentSessionLog[]

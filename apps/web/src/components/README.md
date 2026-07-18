@@ -35,5 +35,8 @@
 | **UxUiGuidePanel** | Design System: preview / design kit / fuente + barra **DesignRefSelector** antes de generar. |
 | **LegacyMcpDebugPanel/** | Panel colapsable (MDD Inicial, LEGACY): traza petición↔respuesta JSON-RPC con Ariadne cuando el API envía `mcpDebugTrace` (`LEGACY_CODEBASE_DOC_MCP_DEBUG_UI=1`); botón **Copiar traza**. En **WorkshopView**, **Copiar MDD** junto al título copia el markdown de partida. Ver README en la carpeta. |
 | **WorkshopHelpModal** | Modal **Ayuda — TheForge** (Workshop): manual, **Integración Legacy ↔ Nuevo**, SDD y referencia por documento. Renderiza Mermaid en markdown. |
+| **WorkshopAgentProgressPanel** | Lista de pasos del pipeline MDD/cascadas: completados (✓) + paso activo con animación (`status: generando`). Sincroniza `steps[]` y `progressActive` del job vía poll / `generation-status` (no pierde nodos rápidos). |
+| **MddRegenerateDialog** | Al pulsar «Regenerar MDD» (greenfield con MDD existente): pipeline completo vs `upstream-sync` con checkboxes §1–§7 y diff de Fase 0/BRD/Benchmark. |
+| **MddUpstreamSyncBanner** | Banner cuando `generation-status.mddUpstreamSync.pendingSync`; abre el diálogo en modo sincronización. |
 | **WorkshopDbgaRestoreDialog** | Modal **Versiones anteriores del DBGA** (Fase 0): lista snapshots (`GET …/document-snapshots?field=dbgaContent`) y restauración (`POST …/document-snapshots/:id/restore`). Botón en toolbar y acciones del panel benchmark. |
 | **IntegrationPanel** | Pestaña **Integración**: enlace NEW↔LEGACY, handoff NEW-LEG, import en etapa 2+, matriz trazabilidad. |
