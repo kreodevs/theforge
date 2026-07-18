@@ -65,6 +65,10 @@ import {
   extractSection,
 } from "../engine/conformance.service.js";
 import { AiService } from "../ai/ai.service.js";
+import {
+  isHermesPlatformConfigured,
+  resolvePlatformConfigByKey,
+} from "../system-config/platform-config.runtime.js";
 import { DiscoveryService } from "../ai/discovery.service.js";
 import { ScraperService } from "../scraper/scraper.service.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
@@ -3778,13 +3782,14 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
     const project = await this.findOne(projectId);
     if (!project) throw new NotFoundException("Proyecto no encontrado");
 
-    const webhookUrl = process.env.HERMES_WEBHOOK_URL?.trim();
-    const apiKey = process.env.HERMES_API_KEY?.trim();
-    if (!webhookUrl || !apiKey) {
+    if (!isHermesPlatformConfigured()) {
       throw new BadRequestException(
-        "HERMES_WEBHOOK_URL y HERMES_API_KEY no están configurados",
+        "Hermes no está configurado (Ajustes → Sistema o variables HERMES_*)",
       );
     }
+
+    const webhookUrl = resolvePlatformConfigByKey("hermes_webhook_url").trim();
+    const apiKey = resolvePlatformConfigByKey("hermes_api_key").trim();
 
     const stages = (project as { stages?: StageWithEst[] }).stages ?? [];
     const projectWithStages = { ...(project as Project), stages };

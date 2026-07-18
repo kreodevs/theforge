@@ -8,7 +8,10 @@
  * @license Apache-2.0
  */
 import { Injectable, Logger } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
+import {
+  resolvePlatformConfigByKey,
+  resolvePlatformConfigNumber,
+} from "../system-config/platform-config.runtime.js";
 import {
   resolveStackLibrariesFromMarkdown,
   resolveTechDocCandidatesFromText,
@@ -59,10 +62,7 @@ export type BuildTechDocsContextOptions = {
 export class TechnologyDocsMcpClientService {
   private readonly logger = new Logger(TechnologyDocsMcpClientService.name);
 
-  constructor(
-    private readonly config: ConfigService,
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Builds a markdown block with official library docs for technologies detected in the MDD.
@@ -161,7 +161,7 @@ export class TechnologyDocsMcpClientService {
 
     const url =
       user?.techDocsMcpUrl?.trim() ||
-      this.config.get<string>("TECH_DOCS_MCP_DEFAULT_URL")?.trim() ||
+      resolvePlatformConfigByKey("tech_docs_mcp_default_url").trim() ||
       DEFAULT_TECH_DOCS_MCP_URL;
 
     return {
@@ -191,15 +191,11 @@ export class TechnologyDocsMcpClientService {
   }
 
   private readTimeoutMs(): number {
-    const raw = this.config.get<string>("TECH_DOCS_MCP_TIMEOUT_MS");
-    const n = raw ? Number.parseInt(raw, 10) : 15_000;
-    return Number.isFinite(n) && n > 0 ? n : 15_000;
+    return resolvePlatformConfigNumber("tech_docs_mcp_timeout_ms");
   }
 
   private readMaxLibraries(): number {
-    const raw = this.config.get<string>("TECH_DOCS_MCP_MAX_LIBRARIES");
-    const n = raw ? Number.parseInt(raw, 10) : 3;
-    return Number.isFinite(n) && n > 0 ? Math.min(n, 6) : 3;
+    return resolvePlatformConfigNumber("tech_docs_mcp_max_libraries");
   }
 
   private async fetchSectionsFromCandidates(

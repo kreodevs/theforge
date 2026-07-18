@@ -76,3 +76,4 @@ export * from "./ui-mcp-contract.js";
 export * from "./technology-docs/index.js";
 export * from "./plugin.js";
 export * from "./document-ast/index.js";
+export * from "./system-config.js";

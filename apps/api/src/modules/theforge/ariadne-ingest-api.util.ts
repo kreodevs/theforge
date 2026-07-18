@@ -2,6 +2,7 @@
  * Resolve Ariadne ingest REST base URL and auth for PATCH /repositories/:id (brownfield converge wiring).
  * MCP tools cannot mutate repo config; this uses the same host/token family as THEFORGE_MCP_URL.
  */
+import { resolvePlatformConfigBoolean } from "../system-config/platform-config.runtime.js";
 
 export type AriadneBrownfieldConvergeMode = "off" | "full" | "incremental" | "all";
 
@@ -24,9 +25,7 @@ export function normalizeAriadneBrownfieldConvergeMode(
 }
 
 export function isAriadneBrownfieldConvergeAutoEnabled(): boolean {
-  const v = process.env.ARIADNE_BROWNFIELD_CONVERGE_AUTO?.trim().toLowerCase();
-  if (!v) return true;
-  return v !== "0" && v !== "false" && v !== "no" && v !== "off";
+  return resolvePlatformConfigBoolean("ariadne_brownfield_converge_auto");
 }
 
 /**

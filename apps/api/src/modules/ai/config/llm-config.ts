@@ -1,6 +1,10 @@
 /**
  * Utilidades LLM globales (sin claves ni modelos desde env — BYOK por usuario).
  */
+import {
+  resolvePlatformConfigBoolean,
+  resolvePlatformConfigNumber,
+} from "../../system-config/platform-config.runtime.js";
 
 export const OPENROUTER_DEFAULT_BASE = "https://openrouter.ai/api/v1";
 export const OPENROUTER_DEFAULT_CHAT_MODEL = "nousresearch/hermes-3-llama-3.1-405b";
@@ -54,12 +58,9 @@ const WORKSHOP_DOCUMENT_TABS = new Set([
   "phase0",
 ]);
 
-/** Tope global desde env (techo de todos los perfiles). */
+/** Tope global desde catálogo de plataforma (BD → env → default). */
 export function llmMaxTokens(): number {
-  const raw = process.env.LLM_MAX_TOKENS?.trim();
-  if (raw === undefined || raw === "") return LLM_MAX_TOKENS_DEFAULT;
-  const n = parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? Math.min(n, 1_000_000) : LLM_MAX_TOKENS_DEFAULT;
+  return resolvePlatformConfigNumber("llm_max_tokens");
 }
 
 /**
@@ -105,10 +106,7 @@ export function resolveLlmMaxTokensForWorkshopTab(
  */
 export function resolveEmbeddingDimension(runtimeDim?: number | null): number {
   if (runtimeDim != null && runtimeDim > 0) return runtimeDim;
-  const envDim = process.env.OPENAI_EMBEDDING_DIM || process.env.EMBEDDING_DIM;
-  const dim = envDim ? parseInt(envDim, 10) : 0;
-  if (Number.isFinite(dim) && dim > 0) return dim;
-  return 1536;
+  return resolvePlatformConfigNumber("openai_embedding_dim");
 }
 
 /**
@@ -129,7 +127,5 @@ export function getLlmProvidersSnapshot(): { id: string; chatConfigured: boolean
 /** Fallback 429 en cadena de modelos (cuando el usuario define chatModelFallbacks en extras). */
 export function isChatFallbackOn429Enabled(hasFallbacks = true): boolean {
   if (!hasFallbacks) return false;
-  const raw = process.env.OPENROUTER_CHAT_FALLBACK_ON_429?.trim().toLowerCase();
-  if (raw === "0" || raw === "false" || raw === "off" || raw === "no") return false;
-  return true;
+  return resolvePlatformConfigBoolean("openrouter_chat_fallback_on_429");
 }
