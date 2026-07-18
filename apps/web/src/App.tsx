@@ -35,6 +35,10 @@ import { ProjectSelectionToolbar } from "./components/ProjectSelectionToolbar";
 import { DashboardSidebar } from "./components/DashboardSidebar";
 import { DashboardPanelHeader } from "./components/DashboardPanelHeader";
 import { ProjectTutorialDialog } from "./components/ProjectTutorialDialog";
+import {
+  ProjectPortabilityDialog,
+  type ProjectPortabilityMode,
+} from "./components/ProjectPortabilityDialog";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import {
   apiFetch,
@@ -189,6 +193,8 @@ export default function App() {
   } | null>(null);
   const [showCreateWizard, setShowCreateWizard] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
+  const [portabilityOpen, setPortabilityOpen] = useState(false);
+  const [portabilityMode, setPortabilityMode] = useState<ProjectPortabilityMode>("import");
   const [showTheForgeModal, setShowTheForgeModal] = useState(false);
   const [usersViewOpen, setUsersViewOpen] = useState(false);
   const [settingsViewOpen, setSettingsViewOpen] = useState(false);
@@ -928,6 +934,29 @@ export default function App() {
               }
             : undefined
         }
+        onExportNotion={
+          settingsTarget
+            ? () => {
+                setPortabilityMode("export");
+                setPortabilityOpen(true);
+              }
+            : undefined
+        }
+      />
+
+      <ProjectPortabilityDialog
+        open={portabilityOpen}
+        onOpenChange={setPortabilityOpen}
+        mode={portabilityMode}
+        projectId={portabilityMode === "export" ? settingsTarget?.id : undefined}
+        projectName={portabilityMode === "export" ? settingsTarget?.name : undefined}
+        onImported={(id, name) => {
+          void refreshDashboard();
+          setWorkshopProject({ id, name } as Project);
+        }}
+        onPairImported={() => {
+          void refreshDashboard();
+        }}
       />
 
       <CreateProjectGroupDialog
@@ -1292,6 +1321,14 @@ export default function App() {
           onCreateProject={() => setShowCreateWizard(true)}
           onRefresh={() => void refreshDashboard()}
           onOpenTutorial={() => setShowTutorial(true)}
+          onImportProject={() => {
+            setPortabilityMode("import");
+            setPortabilityOpen(true);
+          }}
+          onImportIntegrationPair={() => {
+            setPortabilityMode("import-pair");
+            setPortabilityOpen(true);
+          }}
         />
 
         <Card id="dashboard-projects-filters">

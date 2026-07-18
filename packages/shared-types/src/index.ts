@@ -48,6 +48,7 @@ export * from "./document-persist-validation.js";
 export * from "./mdd-governance-patterns.js";
 export * from "./phase0-content.js";
 export * from "./project-integration.js";
+export * from "./project-notion-portability.js";
 export * from "./spec-kit-bundle.js";
 export * from "./ui-screens-export.js";
 export * from "./ui-mcp-adapter-label.js";
