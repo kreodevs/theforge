@@ -13,7 +13,12 @@ export const MDD_NODE_PROGRESS_MESSAGE: Record<string, string> = {
   security: "Arquitectura de seguridad definida",
   integration: "Integraciones definidas",
   format_after_redactor: "Documento formateado (post-redacción)",
+  format_sec_int: "Documento formateado (seguridad e integración)",
+  llm_formatter: "Documento normalizado con LLM",
+  cross_consistency_checker: "Consistencia entre secciones verificada",
   diagram_injector: "Diagramas Mermaid añadidos",
+  prepare_output: "Salida del MDD preparada",
+  graph_populator: "Grafo de dependencias actualizado",
   auditor: "Calidad del MDD evaluada",
 };
 

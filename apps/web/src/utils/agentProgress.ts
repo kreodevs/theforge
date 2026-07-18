@@ -7,11 +7,24 @@ export type AgentProgressItem = {
   status?: AgentProgressStatus;
 };
 
+function sameAgentProgressStep(
+  a: Pick<AgentProgressItem, "agent" | "message">,
+  b: Pick<AgentProgressItem, "agent" | "message">,
+): boolean {
+  return a.agent === b.agent && a.message === b.message;
+}
+
 /** Paso ya ejecutado: marca el activo anterior como hecho y añade uno nuevo completado. */
 export function appendAgentProgressDone(
   prev: readonly AgentProgressItem[],
   item: { agent: string; message: string },
 ): AgentProgressItem[] {
+  const last = prev[prev.length - 1];
+  if (last && sameAgentProgressStep(last, item)) {
+    return prev.map((p) =>
+      isAgentProgressActive(p) ? { ...p, status: "done" as const } : { ...p, status: p.status ?? "done" },
+    );
+  }
   const normalized = prev.map((p) =>
     isAgentProgressActive(p) ? { ...p, status: "done" as const } : { ...p, status: p.status ?? "done" },
   );

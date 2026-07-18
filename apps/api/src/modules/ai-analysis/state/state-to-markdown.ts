@@ -12,9 +12,18 @@ const AGENT_LABELS: Record<string, string> = {
   executor: "Executor (plan paso a paso)",
   clarifier: "Clarificador (MDD)",
   software_architect: "Arquitecto de Software",
+  architect_critic: "Crítico de arquitectura (MDD)",
+  format_after_architect: "Formateador (post-arquitectura)",
   security: "Arquitecto de Seguridad",
   integration: "Ingeniero de Integración",
   security_integration: "Seguridad + Integración (paralelo)",
+  format_sec_int: "Formateador (seguridad e integración)",
+  format_after_redactor: "Formateador (post-redacción)",
+  llm_formatter: "Formateador LLM (MDD)",
+  cross_consistency_checker: "Consistencia cruzada (MDD)",
+  diagram_injector: "Inyector de diagramas (MDD)",
+  prepare_output: "Preparación de salida (MDD)",
+  graph_populator: "Poblador de grafo (MDD)",
   redactor: "Redactor (MDD)",
   // "auditor" ya existe para DBGA; para MDD el nodo se llama "auditor" pero el mensaje es distinto
 };
