@@ -4616,6 +4616,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             cleanDoc(savedContent) ??
             savedContent ??
             "";
+          const nextTimestamps = extractWorkshopDocumentTimestamps(savedContent);
           (nextProject as Project).mddContent = editorBaseline;
           if (stageId && nextProject.stages?.length) {
             nextProject.stages = nextProject.stages.map((s) =>
@@ -4628,6 +4629,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             workshopStages: nextStages.length > 0 ? nextStages : get().workshopStages,
             activeStageId: packed?.activeStageId ?? get().activeStageId,
             mddContent: editorBaseline,
+            ...(nextTimestamps
+              ? {
+                  documentTimestamps: {
+                    ...get().documentTimestamps,
+                    mddContent: nextTimestamps,
+                  },
+                }
+              : {}),
             synced: true,
             error: null,
             notice: patternsReverted ? SSOT_PATTERNS_RESTORED_NOTICE : null,

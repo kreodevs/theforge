@@ -47,12 +47,12 @@ describe("workshop-document-content", () => {
     assert.doesNotMatch(out ?? "", /📅/);
   });
 
-  it("strips corrupted stamp glued before H1 (no false dirty / upstream sync)", () => {
+  it("strips corrupted stamp glued before H1 with inline §1 and §2", () => {
     const corrupted =
-      "Última modificación: 2026-07-18T05:06:06.701Z --> 📅 Creado: 18 de julio de 2026, 05:06:06 UTC · Última modificación: 18 de julio de 2026, 05:06:06 UTC --- # Master Design Document\n\n## 1. Contexto\n";
-    const body = "# Master Design Document\n\n## 1. Contexto\n";
+      "Última modificación: 2026-07-18T06:25:57.540Z --> 📅 Creado: 18 de julio de 2026, 06:25:57 UTC · Última modificación: 18 de julio de 2026, 06:25:57 UTC --- # Master Design Document --- ## 1. Contexto y alcance --- ## 2. Arquitectura";
+    const body = "# Master Design Document\n\n---\n\n## 1. Contexto y alcance\n\n---\n\n## 2. Arquitectura";
     const out = normalizeWorkshopDocumentForEditor(corrupted);
-    assert.equal(out?.trim(), body.trim());
+    assert.equal(out?.trim(), formatDocumentMarkdown(body).trim());
     assert.doesNotMatch(out ?? "", /📅|Última modificación:/);
   });
 });

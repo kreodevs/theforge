@@ -70,8 +70,27 @@ export class MddUpstreamSyncService {
     };
   }
 
-  async analyze(projectId: string, stageId?: string | null): Promise<MddUpstreamSyncAnalysis> {
+  async tryRestoreFromUpstreamCache(
+    projectId: string,
+    stageId?: string | null,
+  ): Promise<{
+    canRestore: boolean;
+    analysis: MddUpstreamSyncAnalysis;
+    mddContent: string;
+    stageId: string;
+  }> {
     const docs = await this.loadUpstreamDocuments(projectId, stageId);
+    const analysis = this.analyzeFromDocs(docs);
+    const canRestore = analysis.hasMdd && analysis.hasBaseline && !analysis.pendingSync;
+    return {
+      canRestore,
+      analysis,
+      mddContent: docs.mddContent,
+      stageId: docs.stageId,
+    };
+  }
+
+  private analyzeFromDocs(docs: Awaited<ReturnType<MddUpstreamSyncService["loadUpstreamDocuments"]>>): MddUpstreamSyncAnalysis {
     return analyzeMddUpstreamChanges({
       baseline: docs.baseline,
       dbgaContent: docs.dbgaContent,
@@ -79,6 +98,11 @@ export class MddUpstreamSyncService {
       benchmarkContent: docs.benchmarkContent,
       mddContent: docs.mddContent,
     });
+  }
+
+  async analyze(projectId: string, stageId?: string | null): Promise<MddUpstreamSyncAnalysis> {
+    const docs = await this.loadUpstreamDocuments(projectId, stageId);
+    return this.analyzeFromDocs(docs);
   }
 
   async captureBaseline(projectId: string, stageId: string): Promise<MddUpstreamBaseline> {

@@ -59,6 +59,16 @@ El job guarda `MddJobProgressState` (`steps[]` completados + `active` en curso).
 
 Tras `pipeline` o `upstream-sync` exitoso, `MddUpstreamSyncService.captureBaseline` persiste en `Stage.mddUpstreamBaseline` (hashes + snapshots 32k de DBGA/BRD/Benchmark) para detectar cambios posteriores.
 
+## Caché documento (upstream sin cambios)
+
+Modo `pipeline`: antes de ejecutar el grafo LLM, `MddUpstreamSyncService.tryRestoreFromUpstreamCache` compara hashes actuales de DBGA, BRD y Benchmark contra `mddUpstreamBaseline`. Si hay MDD guardado, baseline previo y **ningún upstream cambió** (`pendingSync === false`):
+
+1. Se omite el pipeline LLM (~45 min).
+2. Se reutiliza `stage.mddContent` existente.
+3. `persistMddFromBackgroundJob` repara stamp/formato (`peelDocumentBodyForPersist` → `prepareMddForOutput` → `prependDocumentTimestamps`) y ejecuta el pipeline determinista de entrega (gate + semáforo).
+
+Progreso del job: `phase: "cache"`. Requiere haber completado al menos una generación previa que capturó baseline (primera regeneración tras el deploy sigue siendo pipeline completo).
+
 ## Gates
 
 `ProjectGenerationGuardService` incluye `mddQueue.isProjectBusy()` en `mddStreamActive` para bloquear entregables downstream mientras corre un job MDD.

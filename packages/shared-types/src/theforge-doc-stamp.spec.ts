@@ -4,6 +4,7 @@ import { formatDocumentMarkdown } from "./format-document-markdown.js";
 import {
   formatTheforgeDocTimestampsForDisplay,
   parseTheforgeDocTimestamps,
+  peelDocumentBodyForPersist,
   peelTheforgeDocStamp,
   reattachTheforgeDocStamp,
 } from "./theforge-doc-stamp.js";
@@ -109,6 +110,25 @@ describe("theforge-doc-stamp", () => {
     });
     assert.ok(display);
     assert.doesNotMatch(display!.created, / UTC$/);
+  });
+
+  it("peelDocumentBodyForPersist splits glued §1 and §2 from stamp residue", () => {
+    const raw =
+      "Última modificación: 2026-07-18T06:25:57.540Z --> 📅 Creado: 18 de julio de 2026, 06:25:57 UTC · Última modificación: 18 de julio de 2026, 06:25:57 UTC --- # Master Design Document --- ## 1. Contexto y alcance --- ## 2. Arquitectura y Stack ### 2.1 Visión";
+    const body = peelDocumentBodyForPersist(raw);
+    assert.match(body, /^# Master Design Document\n\n---\n\n## 1\. Contexto y alcance/);
+    assert.match(body, /## 2\. Arquitectura y Stack/);
+    assert.doesNotMatch(body, /📅|Última modificación:/);
+  });
+
+  it("peelDocumentBodyForPersist strips double-stamped blockquote with inline sections", () => {
+    const raw =
+      "<!-- theforge-doc:created=2026-07-18T06:25:57.540Z|updated=2026-07-18T06:25:57.540Z -->\n" +
+      "> 📅 Creado: 18 de julio de 2026, 06:25:57 UTC · Última modificación: 18 de julio de 2026, 06:25:57 UTC --- # Master Design Document --- ## 1. Contexto --- ## 2. Stack\n\n## 3. Modelo";
+    const body = peelDocumentBodyForPersist(raw);
+    assert.match(body, /^# Master Design Document/);
+    assert.match(body, /## 3\. Modelo/);
+    assert.doesNotMatch(body, /📅/);
   });
 
   it("formatDocumentMarkdown preserves stamp ISO and human header", () => {

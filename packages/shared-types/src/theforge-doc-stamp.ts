@@ -34,7 +34,7 @@ const HUMAN_BLOCKQUOTE_LINE_RE = /^>\s*📅[^\n]*\n+/;
 const HUMAN_LINE_NO_BLOCKQUOTE_RE = /^📅[^\n]*(?:\n|$)/;
 
 /** `📅 … --- # Título` en una sola línea (no confundir con `--- ##`). */
-const HUMAN_GLUE_H1_RE = /^>?\s*📅[^\n]*?\s+---\s+#(?!\#)/;
+const HUMAN_GLUE_H1_RE = /^>?\s*📅[^\n]*?\s+---\s+(?=#(?!\#))/;
 
 function stripLeadingHorizontalRuleBeforeHeading(body: string): string {
   return body.replace(/^---\s*(?=#{1,2}\s)/, "").trimStart();
@@ -59,17 +59,43 @@ function promoteBareDocumentTitleBeforeH2(body: string): string {
   );
 }
 
+const STAMP_RESIDUE_MARKERS_RE =
+  /📅|theforge-doc:|<!--|\|updated=|Última modificación:|Última regeneración:/;
+
 /** Si quedó basura de stamp, recorta todo lo anterior al primer H1/H2. */
 export function stripStampResidueBeforeHeading(body: string): string {
   if (!body.trim()) return body;
   const header = body.match(/^#{1,2}\s+/m);
   if (header?.index != null && header.index > 0) {
     const prefix = body.slice(0, header.index);
-    if (/📅|theforge-doc:|<!--|\|updated=/.test(prefix)) {
+    if (STAMP_RESIDUE_MARKERS_RE.test(prefix)) {
       return body.slice(header.index).trimStart();
     }
   }
   return body;
+}
+
+/**
+ * Recorta prefijo corrupto (stamp + §1–§2 pegados) antes del título canónico del MDD.
+ * Último recurso tras `peelTheforgeDocStamp` iterativo.
+ */
+export function extractCanonicalMddBody(body: string): string {
+  const trimmed = (body ?? "").trim();
+  if (!trimmed) return trimmed;
+  const head = trimmed.slice(0, 1200);
+  if (!STAMP_RESIDUE_MARKERS_RE.test(head)) return trimmed;
+
+  const titleMatch = trimmed.match(/(?:^|\n)(#\s*Master Design Document\b)/im);
+  if (titleMatch?.index != null && titleMatch.index > 0) {
+    return trimmed.slice(titleMatch.index).trimStart();
+  }
+
+  const sec1Match = trimmed.match(/(?:^|\n)(##\s*1\.\s[^\n]+)/im);
+  if (sec1Match?.index != null && sec1Match.index > 0) {
+    return trimmed.slice(sec1Match.index).trimStart();
+  }
+
+  return trimmed;
 }
 
 const STAMP_LOCALE = "es-MX";
@@ -209,7 +235,10 @@ export function peelDocumentBodyForPersist(text: string): string {
     if (!next || next === body) break;
     body = next;
   }
-  return body;
+  body = extractCanonicalMddBody(body);
+  body = repairInlineHorizontalRuleSectionBreaks(body);
+  body = promoteBareDocumentTitleBeforeH2(body);
+  return body.trim();
 }
 
 export function reattachTheforgeDocStamp(stamp: string, body: string): string {

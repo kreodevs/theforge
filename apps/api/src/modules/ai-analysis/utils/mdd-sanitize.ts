@@ -1,5 +1,5 @@
 import type { MddStructured } from "../state/mdd-structured.schema.js";
-import { formatDocumentMarkdown, repairGluedMarkdownHeadings } from "@theforge/shared-types";
+import { formatDocumentMarkdown, repairGluedMarkdownHeadings, peelDocumentBodyForPersist } from "@theforge/shared-types";
 import { applyMddQualityAutoRepairs, collectMddQualityIssues } from "../../engine/mdd-quality-audit.util.js";
 import { sanitizeMermaidInDraft } from "../../engine/mdd-pre-render.js";
 import { sqlToErDiagramContent } from "./mdd-diagram-suggestions.js";
@@ -1433,7 +1433,8 @@ export function sanitizeMddAtPersist(mddMarkdown: string): string {
  */
 export function prepareMddMarkdownForPersist(mddMarkdown: string): string {
   if (!mddMarkdown?.trim()) return mddMarkdown;
-  const formatted = formatDocumentMarkdown(mddMarkdown);
+  const body = peelDocumentBodyForPersist(mddMarkdown);
+  const formatted = formatDocumentMarkdown(body);
   const sanitized = sanitizeMddAtPersist(formatted);
   // Segunda pasada estructural: sanitize puede reintroducir fences rotos en §3/§4.
   return formatDocumentMarkdown(sanitized);

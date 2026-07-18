@@ -149,6 +149,7 @@ import {
 import { resolveLegacyBaselineStageFlag } from "../ai/utils/legacy-as-is-spec.util.js";
 import {
   mergeTasksQualityIntoShortTermContext,
+  peelDocumentBodyForPersist,
   type TasksPipelineQualitySnapshot,
 } from "@theforge/shared-types";
 import type { MddDeliveryGateResult } from "@theforge/shared-types";
@@ -2812,7 +2813,7 @@ name: ${JSON.stringify(name)}
       pickPrimaryStage(existingRaw.stages);
     if (!targetStage) throw new BadRequestException("El proyecto no tiene etapas");
 
-    const cleaned = cleanDocumentContent(rawMarkdown);
+    const cleaned = cleanDocumentContent(peelDocumentBodyForPersist(rawMarkdown));
     if (cleaned.trim().length < 48) return;
 
     const enforced = enforceMddGovernancePatternsOnPersist(cleaned, targetStage.mddContent, {});

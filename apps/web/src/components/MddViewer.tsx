@@ -7,7 +7,7 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { formatDocumentMarkdown, peelTheforgeDocStamp } from "@theforge/shared-types";
+import { formatDocumentMarkdown, peelDocumentBodyForPersist } from "@theforge/shared-types";
 import { extractWorkshopDocumentTimestamps } from "@/utils/workshop-document-content.util";
 import {
   isCollapsedDirectoryTreeLine,
@@ -239,7 +239,7 @@ class MddViewerErrorBoundary extends Component<
 function MddViewerInner({ content, className = "", documentTimestamps }: MddViewerProps) {
   const timestamps =
     documentTimestamps ?? extractWorkshopDocumentTimestamps(content);
-  const { body } = peelTheforgeDocStamp(content);
+  const body = peelDocumentBodyForPersist(content);
   const cleaned = stripBrokenMermaidBlocks(formatDocumentMarkdown(body));
   const sections = parseMarkdownSections(cleaned);
 

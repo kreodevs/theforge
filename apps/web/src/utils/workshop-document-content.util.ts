@@ -2,6 +2,7 @@ import {
   formatDocumentMarkdown,
   formatTheforgeDocTimestampsForDisplay,
   parseTheforgeDocTimestamps,
+  peelDocumentBodyForPersist,
   peelTheforgeDocStamp,
   stripStampResidueBeforeHeading,
 } from "@theforge/shared-types";
@@ -132,7 +133,7 @@ export function normalizeWorkshopDocumentForEditor(
   if (text == null) return null;
   const trimmed = text.trim();
   if (!trimmed) return null;
-  const { body } = peelTheforgeDocStamp(trimmed);
+  const body = peelDocumentBodyForPersist(trimmed);
   const cleaned = cleanDocForWorkshop(body);
   if (!cleaned) return null;
   return formatDocumentMarkdown(cleaned);

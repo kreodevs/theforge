@@ -1932,6 +1932,24 @@ export class AiAnalysisService {
 
     switch (mode) {
       case "pipeline": {
+        const cache = await this.mddUpstreamSync.tryRestoreFromUpstreamCache(projectId, stageId).catch(() => null);
+        if (cache?.canRestore && cache.mddContent.trim().length >= 48) {
+          onProgress({
+            phase: "cache",
+            message:
+              "DBGA, BRD y Benchmark sin cambios — recuperando el último MDD guardado (reparando formato y fechas)…",
+          });
+          await persistMarkdown(cache.mddContent, true);
+          return {
+            ok: true,
+            mode,
+            projectId,
+            stageId: cache.stageId,
+            mddLength: cache.mddContent.length,
+            outcome: "done",
+          };
+        }
+
         const jobResult = await consume(
           this.streamMddAnalysis(data.dbgaContent ?? "", projectId, stageId) as AsyncGenerator<MddJobEvent>,
         );
