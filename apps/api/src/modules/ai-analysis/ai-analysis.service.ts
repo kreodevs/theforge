@@ -51,6 +51,7 @@ import { getMddArchitectTools } from "./tools/tool-registry.js";
 import { contextSynthesizerComplexityAppendix } from "./utils/mdd-complexity-rigor.js";
 import { formatDbgaStreamError } from "./utils/dbga-stream-error.util.js";
 import { awaitWithNdjsonHeartbeat } from "./utils/ndjson-heartbeat.util.js";
+import { MddRegenTracer } from "./utils/mdd-regen-tracer.js";
 import {
   INSUFFICIENT_DBGA_IDEA_MESSAGE,
   isInsufficientDbgaIdea,
@@ -88,16 +89,28 @@ async function* runRegenWithHeartbeat<T>(
   work: Promise<T>,
   agent: string,
   label: string,
+  tracer?: MddRegenTracer,
 ): AsyncGenerator<StreamProgressEvent, T, undefined> {
+  const stepName = `llm:${agent}`;
+  const t0 = Date.now();
+  tracer?.event(stepName, { label, status: "start" });
   yield { type: "progress", agent, message: label };
-  const heartbeat = awaitWithNdjsonHeartbeat(work, () => ({
-    type: "progress" as const,
-    agent,
-    message: `${label} (LLM en curso)`,
-  }));
+  const heartbeat = awaitWithNdjsonHeartbeat(work, () => {
+    const elapsed = Date.now() - t0;
+    tracer?.heartbeat(stepName, elapsed);
+    return {
+      type: "progress" as const,
+      agent,
+      message: `${label} (LLM en curso, ${Math.round(elapsed / 1000)}s)`,
+    };
+  });
   while (true) {
     const step = await heartbeat.next();
-    if (step.done) return step.value;
+    if (step.done) {
+      const dur = Date.now() - t0;
+      tracer?.event(stepName, { label, status: "done", duration: `${dur}ms` });
+      return step.value;
+    }
     yield step.value;
   }
 }
@@ -1455,39 +1468,60 @@ export class AiAnalysisService {
       yield { type: "error", message: "section debe ser 1–7" };
       return;
     }
-    let mddContent = typeof mddContentFromClient === "string" ? mddContentFromClient.trim() : "";
-    if (mddContent.length < 100) {
-      const project = await this.prisma.project.findUnique({
-        where: { id: pid },
-        include: { stages: { orderBy: { ordinal: "asc" } } },
-      });
-      const sid = stageId?.trim();
-      if (sid) {
-        mddContent = project?.stages?.find((s) => s.id === sid)?.mddContent?.trim() ?? "";
-      }
-      if (mddContent.length < 100) {
-        mddContent = (pickPrimaryStage(project?.stages ?? [])?.mddContent ?? "").trim();
-      }
+    const tracer = new MddRegenTracer({
+      mode: "section",
+      projectId: pid,
+      section,
+      stageId: stageId?.trim() || undefined,
+    });
+    let mddContent = "";
+    try {
+      mddContent = await tracer.step("fetch-mdd", async () => {
+        let content = typeof mddContentFromClient === "string" ? mddContentFromClient.trim() : "";
+        if (content.length < 100) {
+          const project = await this.prisma.project.findUnique({
+            where: { id: pid },
+            include: { stages: { orderBy: { ordinal: "asc" } } },
+          });
+          const sid = stageId?.trim();
+          if (sid) {
+            content = project?.stages?.find((s) => s.id === sid)?.mddContent?.trim() ?? "";
+          }
+          if (content.length < 100) {
+            content = (pickPrimaryStage(project?.stages ?? [])?.mddContent ?? "").trim();
+          }
+        }
+        return content;
+      }, { source: mddContentFromClient && mddContentFromClient.trim().length >= 100 ? "client" : "db" });
+    } catch {
+      yield { type: "error", message: "No hay MDD suficiente para regenerar una sección. Genera o edita el MDD antes." };
+      tracer.summary(false);
+      return;
     }
     if (mddContent.length < 100) {
       yield { type: "error", message: "No hay MDD suficiente para regenerar una sección. Genera o edita el MDD antes." };
+      tracer.summary(false, { reason: "mdd-too-short" });
       return;
     }
 
     // Qitar stamp (cabecera Creado/Última modificación) antes de procesar.
     // Si el MDD viene de BD trae el stamp; si no se peela, llega al LLM como contexto
     // y las funciones de reemplazo de sección pueden insertar contenido dentro del bloque de fechas.
-    mddContent = peelDocumentBodyForPersist(mddContent);
+    mddContent = await tracer.step("peel-stamp", async () => peelDocumentBodyForPersist(mddContent), { inputLen: mddContent.length });
 
+    const preservedGov = extractGovernanceSection(mddContent);
     const { opts: regenPrepareOpts, gateRef: regenGateRef } = createPrepareOptsWithGate({
-      preservedGovernance: extractGovernanceSection(mddContent),
+      preservedGovernance: preservedGov,
     });
 
     // regenEstimationStage desde pid + stageId (To-Be/As-Is eliminados)
     const regenCx = "HIGH" as EstimationComplexity;
     const regenEstimationStage = stageId?.trim() || undefined;
     const regenBrdContent = regenEstimationStage
-      ? (await this.prisma.stage.findUnique({ where: { id: regenEstimationStage }, select: { brdContent: true } }))?.brdContent ?? null
+      ? await tracer.step("fetch-brd", async () => {
+        const r = await this.prisma.stage.findUnique({ where: { id: regenEstimationStage }, select: { brdContent: true } });
+        return r?.brdContent ?? null;
+      })
       : null;
 
     this.estimationService.cacheProjectComplexity(pid, regenEstimationStage ?? null, regenCx);
@@ -1495,10 +1529,11 @@ export class AiAnalysisService {
 
     let llm: Awaited<ReturnType<typeof createDbgaLLM>>;
     try {
-      const regenUserId = await this.resolveUserId(pid);
-      llm = await createDbgaLLM(this.aiFactory, regenUserId);
+      const regenUserId = await tracer.step("resolve-user", async () => this.resolveUserId(pid));
+      llm = await tracer.step("create-llm", async () => createDbgaLLM(this.aiFactory, regenUserId));
     } catch (err) {
       const formatted = formatDbgaStreamError(err);
+      tracer.summary(false, { error: formatted.message });
       yield { type: "error", message: formatted.message, code: formatted.code };
       return;
     }
@@ -1509,6 +1544,7 @@ export class AiAnalysisService {
           llm.invoke([new HumanMessage(prompt)]),
           "Contexto",
           "Regenerando §1…",
+          tracer,
         );
         const text = (typeof response.content === "string" ? response.content : "").trim();
         let newBody = (text && extractContextSectionBody(text)) || text || "(Contexto sintetizado desde el documento.)";
@@ -1526,9 +1562,10 @@ export class AiAnalysisService {
           .replace(/\n?```\s*$/, "")
           .trim() || newBody;
         const finalDraft = replaceSection1BodyFromAnyHeading(mddContent, newBody);
-        const markdown = await this.runPrepareMddForOutput(finalDraft, regenPrepareOpts);
-        const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
+        const markdown = await tracer.step("prepare-output", async () => this.runPrepareMddForOutput(finalDraft, regenPrepareOpts), { draftLen: finalDraft.length });
+        const metrics = await tracer.step("metrics", async () => this.estimationService.calculateLiveMetrics(markdown, regenEstOpts));
         const regenGate1 = mddStreamDeliveryGateFields(regenGateRef.current, metrics.status);
+        tracer.summary(true, { mddLen: markdown.length, precision: metrics.precision });
         yield {
           type: "done",
           markdown,
@@ -1540,8 +1577,8 @@ export class AiAnalysisService {
         return;
       }
 
-      const structured = markdownToMddStructured(mddContent);
-      const agentCtxRegen = await this.buildMddAgentContext(pid, regenEstimationStage ?? null);
+      const structured = await tracer.step("parse-structured", async () => markdownToMddStructured(mddContent));
+      const agentCtxRegen = await tracer.step("agent-context", async () => this.buildMddAgentContext(pid, regenEstimationStage ?? null));
       let dbgaRegen = upstreamContext?.dbgaContent?.trim() || "(Regenerando sección desde documento actual.)";
       const pre = composeBrdPreamble(regenBrdContent);
       if (pre) dbgaRegen = pre + dbgaRegen;
@@ -1571,14 +1608,16 @@ export class AiAnalysisService {
           integrationNode(state as MDDStateType),
           getAgentLabel("integration"),
           "Regenerando §7 Infraestructura…",
+          tracer,
         );
         const finalDraft = (result.mddDraft ?? mddContent).trim();
-        const markdown = await this.runPrepareMddForOutput(
+        const markdown = await tracer.step("prepare-output", async () => this.runPrepareMddForOutput(
           { mddStructured: result.mddStructured, mddDraft: finalDraft },
           regenPrepareOpts,
-        );
-        const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
+        ), { draftLen: finalDraft.length });
+        const metrics = await tracer.step("metrics", async () => this.estimationService.calculateLiveMetrics(markdown, regenEstOpts));
         const regenGate7 = mddStreamDeliveryGateFields(regenGateRef.current, metrics.status);
+        tracer.summary(true, { mddLen: markdown.length, precision: metrics.precision });
         yield {
           type: "done",
           markdown,
@@ -1595,13 +1634,15 @@ export class AiAnalysisService {
           securityNode(state as MDDStateType),
           getAgentLabel("security"),
           "Regenerando §6 Seguridad…",
+          tracer,
         );
         const finalDraft = (result.mddDraft ?? mddContent).trim();
-        const markdown = await this.runPrepareMddForOutput(
+        const markdown = await tracer.step("prepare-output", async () => this.runPrepareMddForOutput(
           { mddStructured: result.mddStructured, mddDraft: finalDraft },
           regenPrepareOpts,
-        );
+        ), { draftLen: finalDraft.length });
         if (!draftHasSection6Heading(markdown)) {
+          tracer.summary(false, { reason: "no-§6-heading" });
           yield {
             type: "error",
             message:
@@ -1609,8 +1650,9 @@ export class AiAnalysisService {
           };
           return;
         }
-        const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
+        const metrics = await tracer.step("metrics", async () => this.estimationService.calculateLiveMetrics(markdown, regenEstOpts));
         const regenGate6 = mddStreamDeliveryGateFields(regenGateRef.current, metrics.status);
+        tracer.summary(true, { mddLen: markdown.length, precision: metrics.precision });
         yield {
           type: "done",
           markdown,
@@ -1629,19 +1671,21 @@ export class AiAnalysisService {
           softwareArchitectNode(state as MDDStateType),
           getAgentLabel("software_architect"),
           `Regenerando §${section}…`,
+          tracer,
         );
         const architectDraft = (result.mddDraft ?? "").trim();
-        const content25 = extractSections2To5Content(architectDraft);
+        const content25 = await tracer.step("extract-§2-5", async () => extractSections2To5Content(architectDraft), { draftLen: architectDraft.length });
         const finalDraft =
           content25 != null
             ? replaceSections2To5InDraft(mddContent, content25)
             : architectDraft || mddContent;
-        const markdown = await this.runPrepareMddForOutput(
+        const markdown = await tracer.step("prepare-output", async () => this.runPrepareMddForOutput(
           { mddStructured: result.mddStructured, mddDraft: finalDraft },
           regenPrepareOpts,
-        );
-        const metrics = this.estimationService.calculateLiveMetrics(markdown, regenEstOpts);
+        ), { draftLen: finalDraft.length });
+        const metrics = await tracer.step("metrics", async () => this.estimationService.calculateLiveMetrics(markdown, regenEstOpts));
         const regenGate25 = mddStreamDeliveryGateFields(regenGateRef.current, metrics.status);
+        tracer.summary(true, { mddLen: markdown.length, precision: metrics.precision });
         yield {
           type: "done",
           markdown,
@@ -1652,10 +1696,12 @@ export class AiAnalysisService {
         };
         return;
       }
+      tracer.summary(false, { reason: "section-not-supported" });
       yield { type: "error", message: "Sección no soportada para regeneración." };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`[MDD regenerate-section] error: ${message}`, err instanceof Error ? err.stack : undefined);
+      tracer.summary(false, { error: message });
       yield { type: "error", message: `Error al regenerar §${section}: ${message}` };
     }
   }
