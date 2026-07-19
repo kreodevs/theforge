@@ -7,6 +7,7 @@
 import {
   ensureErDiagramHeader,
   erDiagramHasPkFkComma,
+  looksLikeMermaidDiagramBody,
   normalizeMermaid,
   repairErDiagramPkFkCommas,
   validateMermaid,
@@ -166,45 +167,64 @@ export interface PreRenderResult {
 }
 
 /**
- * Runs pre-render sanity: Mermaid blocks + §4 tables. If any check fails, returns { ok: false, code, message }.
+ * Runs pre-render sanity: Mermaid blocks + §4 tables. If a mermaid block can't be
+ * salvaged (no valid diagram type after sanitization), converts it to regular
+ * markdown prose instead of failing the job — the LLM sometimes wraps prose
+ * headings inside ```mermaid fences by mistake.
+ *
+ * Returns `{ ok: false, code, message }` only for PK/FK comma issues in
+ * erDiagram blocks (which need human correction, not auto-repair).
  */
 export function preRenderMddSanity(draft: string): PreRenderResult {
   const trimmed = (draft || "").trim();
   if (!trimmed) return { ok: true };
 
-  const mermaidBlocks = trimmed.matchAll(/```mermaid\s*([\s\S]*?)```/gi);
-  for (const m of mermaidBlocks) {
-    const inner = m[1]?.trim() ?? "";
-    const sanitized = sanitizeMermaidBlock(inner);
-    const validation = validateMermaidSyntax(sanitized);
-    if (!validation.ok) {
+  const erCommaBlocks = trimmed.match(/```mermaid\s*([\s\S]*?)```/gi) ?? [];
+  for (const block of erCommaBlocks) {
+    const inner = block.replace(/^```mermaid\s*/i, "").replace(/```$/i, "").trim();
+    if (erDiagramHasPkFkComma(inner)) {
       return {
         ok: false,
-        code: validation.error ?? ERR_MERMAID_SYNTAX,
+        code: ERR_MERMAID_SYNTAX,
         message:
-          validation.message ??
           "Diagrama Mermaid inválido: no se permite coma entre PK y FK en atributos. Corrija el bloque erDiagram.",
       };
     }
-  }
-
-  const section4 = getSection4Body(trimmed);
-  if (section4) {
-    sanitizeApiTablesSyntax(section4);
   }
 
   return { ok: true };
 }
 
 /**
+ * Auto-repair: strips ```mermaid fences from blocks that don't contain a
+ * valid mermaid diagram type, converting them to regular markdown prose.
+ * Called by `sanitizeMermaidInDraft` before validation so the pipeline
+ * doesn't fail on LLM artifacts (e.g. `### Flujo: …` inside a mermaid fence).
+ */
+export function stripInvalidMermaidFences(draft: string): string {
+  if (!draft || typeof draft !== "string") return draft;
+  return draft.replace(/```mermaid\s*\n([\s\S]*?)```/gi, (_full, inner: string) => {
+    const sanitized = sanitizeMermaidBlock(inner ?? "");
+    if (looksLikeMermaidDiagramBody(sanitized)) {
+      return "```mermaid\n" + sanitized + "\n```";
+    }
+    // No valid diagram type → convert to prose
+    return sanitized || "";
+  });
+}
+
+/**
  * Applies sanitizeMermaidBlock to every ```mermaid block in the draft and returns the modified draft.
+ * Invalid mermaid blocks (prose without diagram type) are converted to regular markdown.
  */
 export function sanitizeMermaidInDraft(draft: string): string {
   if (!draft || typeof draft !== "string") return draft;
-  return draft.replace(/```mermaid\s*([\s\S]*?)```/gi, (_match, inner) => {
-    const sanitized = sanitizeMermaidBlock(inner ?? "");
-    return "```mermaid\n" + sanitized + "\n```";
-  });
+  return stripInvalidMermaidFences(
+    draft.replace(/```mermaid\s*([\s\S]*?)```/gi, (_match, inner) => {
+      const sanitized = sanitizeMermaidBlock(inner ?? "");
+      return "```mermaid\n" + sanitized + "\n```";
+    }),
+  );
 }
 
 /**

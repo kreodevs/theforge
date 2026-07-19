@@ -1042,3 +1042,38 @@ Esto no es mermaid`;
     assert.match(out, /### Solo prosa/);
   });
 });
+
+describe("normalizeMermaidInDocument convierte mermaid sin tipo válido a prosa", () => {
+  it("strips fence from prose-only mermaid block (### Flujo inside mermaid)", () => {
+    const doc = `## 5. Lógica y Edge Cases
+
+\`\`\`mermaid
+### Flujo: integración de nuevo MCP a skills
+
+Este flujo describe cómo integrar:
+- Paso 1: Registrar
+- Paso 2: Probar
+\`\`\`
+
+## 6. Seguridad
+`;
+    const out = normalizeMermaidInDocument(doc);
+    assert.doesNotMatch(out, /```mermaid/, "no debe quedar ningún fence ```mermaid");
+    assert.match(out, /### Flujo: integración de nuevo MCP a skills/, "el heading debe preservarse como markdown");
+    assert.match(out, /- Paso 1: Registrar/);
+    assert.match(out, /## 6\. Seguridad/);
+  });
+
+  it("preserves valid flowchart fence with leading ### heading stripped", () => {
+    const doc = `\`\`\`mermaid
+### Flujo de autenticación
+
+flowchart TD
+    A[Usuario] --> B[Servidor]
+\`\`\``;
+    const out = normalizeMermaidInDocument(doc);
+    assert.match(out, /```mermaid/);
+    assert.match(out, /^flowchart TD/m);
+    assert.doesNotMatch(out, /### Flujo/);
+  });
+});

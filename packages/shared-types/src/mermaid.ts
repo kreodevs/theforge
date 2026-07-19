@@ -2479,6 +2479,12 @@ export function normalizeMermaidInDocument(document: string): string {
     const body =
       repairFlattenedWebhookFlowchart(rawDiagram) ?? normalizeMermaidDiagramBody(rawDiagram);
     if (!body) return trailing ? `${trailing}\n` : "```mermaid\n```";
+    // Si tras normalizar el body no contiene ningún tipo de diagrama Mermaid válido,
+    // el LLM metió prosa/headings dentro del fence. Lo convertimos a markdown regular.
+    if (!looksLikeMermaidDiagramBody(body)) {
+      const asProse = body.replace(/^```mermaid\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+      return trailing ? `${asProse}\n\n${trailing}` : asProse;
+    }
     const fence = `\`\`\`mermaid\n${body}\n\`\`\``;
     return trailing ? `${fence}\n\n${trailing}` : fence;
   });
