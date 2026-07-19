@@ -2035,6 +2035,67 @@ Docker Compose con PostgreSQL 16 y Node 20-alpine en producción del sistema.
     assert.match(final, /## 2\. Arquitectura y Stack/);
   });
 
+  it("validateMddStructure detecta §7 con headings pegados --- ##", () => {
+    const glued =
+      "# Master Design Document --- ## 1. Contexto Texto --- ## 2. Arquitectura y Stack Stack --- ## 3. Modelo de Datos SQL --- ## 4. Contratos de API API --- ## 5. Lógica y Edge Cases Logica --- ## 6. Seguridad Sec --- ## 7. Infraestructura ### 7.1 Flujo contenido del manifest";
+    assert.deepEqual(validateMddStructure(glued).missingSections, []);
+  });
+
+  it("ensureMissingCanonicalSections: restaura §7 desde baseline cuando dedupe la eliminó", () => {
+    const baseline = `# Master Design Document
+
+## 6. Seguridad
+
+Políticas JWT RS256 y MFA obligatorio para operadores internos del sistema.
+
+## 7. Infraestructura
+
+### 7.1 Flujo de integración
+
+Webhook Wasender hacia NestJS con autenticación M2M y cola Redis.
+
+\`\`\`json
+{"stack":"node:20-alpine","database":"postgresql:16"}
+\`\`\`
+`;
+    const without7 = `# Master Design Document
+
+## 1. Contexto
+
+Alcance del copiloto multiempresa con más de ochenta caracteres de contexto técnico.
+
+## 2. Arquitectura y Stack
+
+NestJS y Redis.
+
+## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY);
+\`\`\`
+
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\`
+
+## 4. Contratos de API
+
+### GET /api/health
+
+## 5. Lógica y Edge Cases
+
+Reglas.
+
+## 6. Seguridad
+
+JWT.
+`;
+    const out = ensureMissingCanonicalSections(without7, baseline);
+    assert.deepEqual(validateMddStructure(out).missingSections, []);
+    assert.match(out, /## 7\. Infraestructura/);
+    assert.match(out, /7\.1 Flujo de integración/);
+  });
+
   it("ensureMissingCanonicalSections: restaura §1/§2 desde baseline cuando el Arquitecto emitió §3–§7", () => {
     const baseline = `# Master Design Document
 

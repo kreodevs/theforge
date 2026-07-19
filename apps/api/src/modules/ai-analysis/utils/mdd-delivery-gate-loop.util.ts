@@ -12,12 +12,20 @@ const INTEGRATION_BLOCKER_RE =
 const SECTION3_BLOCKER_RE =
   /§3|§4|sql|prosa inválida|create table|erdiagram|technicalmetadata|outbox-like|§6 menciona tabla|fences desbalanceados|tabla huérfana|json inválido/i;
 const CLARIFIER_BLOCKER_RE =
-  /§1\s*contexto|1\.\s*contexto|secciones obligatorias faltantes|placeholder.*guiones|objetivos comerciales/i;
+  /§1\s*contexto|1\.\s*contexto|2\.\s*arquitectura|secciones obligatorias faltantes:.*(?:1\.\s*contexto|2\.\s*arquitectura)|placeholder.*guiones|objetivos comerciales/i;
+
+const MISSING_SECTION7_BLOCKER_RE =
+  /secciones obligatorias faltantes:\s*7\.\s*infraestructura\b/i;
 
 /** Decide si el siguiente paso del auto-loop debe ser arquitecto (§3/§4), integración (§7) o clarifier (§1). */
 export function resolveDeliveryGateFixTarget(blockers: string[]): DeliveryGateFixTarget {
   const items = blockers.length > 0 ? blockers : [];
   const text = items.join(" ");
+
+  if (items.some((b) => MISSING_SECTION7_BLOCKER_RE.test(b))) {
+    return "integration";
+  }
+
   let integrationScore = 0;
   let architectScore = 0;
   let clarifierScore = 0;

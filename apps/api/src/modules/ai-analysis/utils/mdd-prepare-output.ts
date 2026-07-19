@@ -1,4 +1,5 @@
 import type { MddStructured } from "../state/mdd-structured.schema.js";
+import { repairInlineHorizontalRuleSectionBreaks } from "@theforge/shared-types";
 import { mddStructuredToMarkdown } from "../render/mdd-structured-to-markdown.js";
 import { injectProposedComponentDiagramIntoSection2 } from "./mdd-component-diagram.util.js";
 import {
@@ -112,12 +113,13 @@ export function draftHasSection6Heading(draft: string): boolean {
 function restoreSections6And7AfterNormalize(source: string, normalized: string): string {
   // No reinyectar desde un borrador con §5/§6/§7 repetidas (evita reintroducir el bucle de duplicación).
   if (mddHasDuplicateSectionHeadings(source)) return normalized;
+  const sourceRepaired = repairInlineHorizontalRuleSectionBreaks(source);
   let out = normalized;
   for (const section of [6, 7] as const) {
-    const srcRange = getSection6Or7Range(source, section);
+    const srcRange = getSection6Or7Range(sourceRepaired, section);
     if (!srcRange) continue;
     if (getSection6Or7Range(out, section)) continue;
-    const sectionMd = source.slice(srcRange.start, srcRange.end).trim();
+    const sectionMd = sourceRepaired.slice(srcRange.start, srcRange.end).trim();
     if (sectionMd.length > 0) out = replaceSection6Or7InDraft(out, section, sectionMd);
   }
   return out;

@@ -1,5 +1,5 @@
 import type { MddStructured } from "../state/mdd-structured.schema.js";
-import { formatDocumentMarkdown, repairGluedMarkdownHeadings, peelDocumentBodyForPersist } from "@theforge/shared-types";
+import { formatDocumentMarkdown, repairGluedMarkdownHeadings, peelDocumentBodyForPersist, repairInlineHorizontalRuleSectionBreaks } from "@theforge/shared-types";
 import { applyMddQualityAutoRepairs, collectMddQualityIssues } from "../../engine/mdd-quality-audit.util.js";
 import { sanitizeMermaidInDraft } from "../../engine/mdd-pre-render.js";
 import { sqlToErDiagramContent } from "./mdd-diagram-suggestions.js";
@@ -3956,7 +3956,7 @@ export function normalizeMddEnglishSubheadings(draft: string): string {
  */
 export function normalizeCanonicalMddSectionHeadings(draft: string): string {
   if (!draft?.trim()) return draft;
-  let out = draft;
+  let out = repairInlineHorizontalRuleSectionBreaks(draft);
   out = out.replace(/^##\s+Contexto(?:\s+y\s*alcance)?\s*$/gim, "## 1. Contexto");
   out = out.replace(
     /^##\s+2\.\s*Arquitectura(?!\s+y\s*Stack)\s*$/gim,
@@ -5202,7 +5202,7 @@ export function logMddNodeOutput(nodeName: string, draft: string): void {
  * Usado por tools del Auditor y Redactor.
  */
 export function validateMddStructure(draft: string): ValidateMddStructureResult {
-  const trimmed = (draft || "").trim();
+  const trimmed = repairInlineHorizontalRuleSectionBreaks((draft || "").trim());
   const issues: string[] = [];
   const missingSections: string[] = [];
   const foundOrder: string[] = [];
@@ -5299,6 +5299,29 @@ export function ensureMissingCanonicalSections(draft: string, baseline?: string)
     out = base
       ? restoreArquitecturaSectionFromBaselineIfMissing(base, out)
       : insertSectionBlockBeforeFirstCoreHeading(out, "## 2. Arquitectura y Stack", SECTION2_RESTORE_PLACEHOLDER);
+    missing = validateMddStructure(out).missingSections;
+  }
+  if (missing.includes("6. Seguridad") && base) {
+    const baseRepaired = repairInlineHorizontalRuleSectionBreaks(base);
+    const range = getSection6Or7Range(baseRepaired, 6);
+    if (range) {
+      const sectionMd = baseRepaired.slice(range.start, range.end).trim();
+      if (sectionMd.length > 100 && !isMddSectionPipelinePlaceholderBody(sectionMd.replace(/^##[^\n]+\n+/, ""))) {
+        out = replaceSection6Or7InDraft(out, 6, sectionMd);
+      }
+    }
+    missing = validateMddStructure(out).missingSections;
+  }
+  if (missing.includes("7. Infraestructura") && base) {
+    const baseRepaired = repairInlineHorizontalRuleSectionBreaks(base);
+    const range = getSection6Or7Range(baseRepaired, 7);
+    if (range) {
+      const sectionMd = baseRepaired.slice(range.start, range.end).trim();
+      const bodyOnly = sectionMd.replace(/^##[^\n]+\n+/, "").trim();
+      if (bodyOnly.length > 100 && !isMddSectionPipelinePlaceholderBody(bodyOnly)) {
+        out = replaceSection6Or7InDraft(out, 7, sectionMd);
+      }
+    }
   }
   return out;
 }

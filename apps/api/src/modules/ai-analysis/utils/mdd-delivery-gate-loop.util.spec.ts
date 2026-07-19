@@ -14,6 +14,13 @@ describe("mdd-delivery-gate-loop.util", () => {
     );
   });
 
+  it("resolveDeliveryGateFixTarget elige integration para §7 faltante", () => {
+    assert.equal(
+      resolveDeliveryGateFixTarget(["Secciones obligatorias faltantes: 7. Infraestructura"]),
+      "integration",
+    );
+  });
+
   it("resolveDeliveryGateFixTarget elige clarifier para secciones §1/§2 faltantes", () => {
     assert.equal(
       resolveDeliveryGateFixTarget([
