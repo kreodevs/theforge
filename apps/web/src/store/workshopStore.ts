@@ -191,6 +191,28 @@ function applyMddEditorBaselineToWorkshop(
   };
 }
 
+/** Aplica MDD de la etapa activa al editor tras regeneración en background (ignora merge conservador). */
+function applyMddFromFetchedProject(
+  get: () => WorkshopState,
+  set: (partial: Partial<WorkshopState> | ((state: WorkshopState) => Partial<WorkshopState>)) => void,
+  project: Project | null | undefined,
+): void {
+  if (!project) return;
+  const stageId = get().activeStageId;
+  const st = project.stages?.find((s) => s.id === stageId);
+  const raw = (st?.mddContent ?? project.mddContent ?? "").trim();
+  if (raw.length < 48) return;
+  const editorBaseline = normalizeWorkshopDocumentForEditor(raw) ?? raw;
+  if (editorBaseline.trim().length < 48) return;
+  const patch = applyMddEditorBaselineToWorkshop(
+    project,
+    get().workshopStages.length > 0 ? get().workshopStages : (project.stages ?? []),
+    stageId,
+    editorBaseline,
+  );
+  set(patch);
+}
+
 function patchAgentProgressFromMddEvent(
   set: (partial: Partial<WorkshopState> | ((state: WorkshopState) => Partial<WorkshopState>)) => void,
   raw: unknown,
@@ -1795,7 +1817,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       } else {
         stopGenerationStatusPolling();
         if (wasBusy) {
-          void get().fetchProject(requestedId, { preferServerMdd: true });
+          void get()
+            .fetchProject(requestedId, { preferServerMdd: true })
+            .then((project) => {
+              applyMddFromFetchedProject(get, set, project ?? get().project);
+            });
         }
       }
       return status;
@@ -3965,13 +3991,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             patchAgentProgressFromMddEvent(set, p);
             const ev = mddJobProgressEventFields(p);
             if (ev.phase === "persisted" || ev.phase === "draft") {
-              void get().fetchProject(pid);
+              void get().fetchProject(pid, { preferServerMdd: true });
             }
           },
         },
       );
       set({ mddJustGeneratedFromBenchmark: true, error: null });
-      const data = await get().fetchProject(pid);
+      const data = await get().fetchProject(pid, { preferServerMdd: true });
+      applyMddFromFetchedProject(get, set, data ?? get().project);
       await get().fetchEstimation(pid);
       await get().fetchGenerationStatus(pid);
       set({ loading: false, loadingReason: null, agentProgress: [] });
@@ -3995,6 +4022,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           loadingReason: null,
           agentProgress: [],
         });
+        const recovered = await get().fetchProject(pid, { preferServerMdd: true });
+        applyMddFromFetchedProject(get, set, recovered ?? get().project);
       }
       void get().fetchGenerationStatus(pid);
       return null;
@@ -4042,13 +4071,14 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
             patchAgentProgressFromMddEvent(set, p);
             const ev = mddJobProgressEventFields(p);
             if (ev.phase === "persisted" || ev.phase === "draft") {
-              void get().fetchProject(pid);
+              void get().fetchProject(pid, { preferServerMdd: true });
             }
           },
         },
       );
       set({ error: null });
-      const data = await get().fetchProject(pid);
+      const data = await get().fetchProject(pid, { preferServerMdd: true });
+      applyMddFromFetchedProject(get, set, data ?? get().project);
       await get().fetchEstimation(pid);
       await get().fetchGenerationStatus(pid);
       set({ loading: false, loadingReason: null, agentProgress: [] });
@@ -4072,6 +4102,8 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           loadingReason: null,
           agentProgress: [],
         });
+        const recovered = await get().fetchProject(pid, { preferServerMdd: true });
+        applyMddFromFetchedProject(get, set, recovered ?? get().project);
       }
       void get().fetchGenerationStatus(pid);
       return null;

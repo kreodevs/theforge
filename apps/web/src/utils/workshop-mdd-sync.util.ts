@@ -40,7 +40,6 @@ export function resolveMddFetchMerge(options: {
     preferServerMdd &&
     canPreserveLocalMdd &&
     serverMdd.trim().length > 0 &&
-    !serverDropsPatterns &&
     serverDiffersFromLocal &&
     !hasUnsavedEditorChanges
   ) {
@@ -53,12 +52,13 @@ export function resolveMddFetchMerge(options: {
 
   const preserveSavedLocalOverStaleServer =
     canPreserveLocalMdd &&
+    !preferServerMdd &&
     localHasMdd &&
     localMatchesPersisted &&
     serverDiffersFromLocal;
   const preserveMddLocal =
     (canPreserveLocalMdd && mddPersisting) ||
-    serverDropsPatterns ||
+    (!preferServerMdd && serverDropsPatterns) ||
     (hasUnsavedEditorChanges && serverDiffersFromLocal) ||
     preserveSavedLocalOverStaleServer;
   const nextMddContent = preserveMddLocal ? localMdd : serverMdd;

@@ -51,6 +51,41 @@ describe("resolveMddFetchMerge", () => {
     assert.equal(r.updatePersistedBaseline, true);
   });
 
+  it("regeneración MDD en background: servidor nuevo reemplaza local aunque falten patrones SSOT", () => {
+    const serverNew = `## [ARQUITECTURA - SECCIÓN INMUTABLE]
+
+- [ ] **Hexagonal:** …
+
+# Master Design Document
+
+## 1. Contexto
+
+Texto regenerado por worker con más de cien caracteres de contenido sustancial en el documento.
+`;
+    const localOld = `## [ARQUITECTURA - SECCIÓN INMUTABLE]
+
+- [X] **Hexagonal:** …
+- [X] **Monolito Modular:** …
+
+# Master Design Document
+
+## 1. Contexto
+
+Texto anterior.
+`;
+    const r = resolveMddFetchMerge({
+      switchingProject: false,
+      sameProjectLoaded: true,
+      mddPersisting: false,
+      preferServerMdd: true,
+      localMdd: localOld,
+      persistedMdd: localOld,
+      serverMdd: serverNew,
+    });
+    assert.equal(r.preserveMddLocal, false);
+    assert.equal(r.nextMddContent, serverNew);
+  });
+
   it("regeneración MDD en background: servidor nuevo reemplaza local guardado", () => {
     const serverNew =
       "# Master Design Document: Copiloto\n\n---\n\n## 1. Contexto\n\nTexto regenerado por worker.";
