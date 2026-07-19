@@ -1405,12 +1405,75 @@ function finalizeMddPersistFormatting(mddMarkdown: string): string {
 }
 
 /**
+ * Elimina líneas basura: `#` solo, `# ---` (HR confundido con heading),
+ * y headings vacíos sin texto (artefactos LLM).
+ */
+export function repairGarbageHeadings(draft: string): string {
+  if (!draft) return draft;
+  const lines = draft.split("\n");
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const t = (lines[i] ?? "").trim();
+    // Bare "#" alone
+    if (/^#\s*$/.test(t)) continue;
+    // "# ---" or "# --- --- ---" (horizontal rule rendered as heading)
+    if (/^#\s+[-\s]*-[-\s]*-[-\s]*[-\s]*$/.test(t)) continue;
+    // "### Heading.**Label:**" — heading glued to bold label (already split by repairGluedApiContractLines)
+    // but if the heading text is just punctuation, skip
+    if (/^#{1,6}\s+[.\-_=]{1,3}\s*$/.test(t)) continue;
+    out.push(lines[i]!);
+  }
+  return out.join("\n");
+}
+
+/**
+ * Cierra el JSON del manifest en §7 si falta la llave de cierre raíz.
+ * Patrones: último contenido antes de ``` es `}` de sub-objeto sin `}` raíz.
+ */
+export function repairManifestJsonClosing(draft: string): string {
+  const manifestIdx = draft.indexOf("### Manifest");
+  if (manifestIdx === -1) return draft;
+  const section7Idx = draft.indexOf("## 7.");
+  if (section7Idx === -1 || manifestIdx < section7Idx) {
+    // Manifest is in §7 area
+  }
+  // Find the ```json block after ### Manifest
+  const jsonFenceStart = draft.indexOf("```json", manifestIdx);
+  if (jsonFenceStart === -1) return draft;
+  const fenceClose = draft.indexOf("```", jsonFenceStart + 7);
+  if (fenceClose === -1) return draft;
+  const inner = draft.slice(jsonFenceStart + 7, fenceClose).trim();
+  if (!inner) return draft;
+  // Count brace balance
+  let braces = 0;
+  let inString = false;
+  let escape = false;
+  for (const ch of inner) {
+    if (escape) { escape = false; continue; }
+    if (inString) { if (ch === "\\") escape = true; else if (ch === '"') inString = false; continue; }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === "{") braces++;
+    if (ch === "}") braces--;
+  }
+  if (braces <= 0) return draft;
+  // Add missing closing braces
+  const closingBraces = "}".repeat(braces);
+  const before = draft.slice(0, fenceClose);
+  const after = draft.slice(fenceClose);
+  // Also strip any garbage between last `}` and the fence close
+  const lastBrace = before.lastIndexOf("}");
+  const cleaned = before.slice(0, lastBrace + 1) + closingBraces + "\n" + after;
+  return cleaned;
+}
+
+/**
  * SSOT al persistir MDD (Workshop, doc-gap reconcile, export/handoff).
  * Orden: headings pegados → coherencia cruzada → JSON §4 → UI/UX MVP → finalize (headings/HR).
  */
 export function sanitizeMddAtPersist(mddMarkdown: string): string {
   if (!mddMarkdown?.trim()) return mddMarkdown;
   let out = fixGluedSection6Heading(mddMarkdown);
+  out = repairGarbageHeadings(out);
   out = stripOrphanFenceWrappingProse(out);
   out = stripEmptyBareCodeFences(out);
   out = closeUnclosedCodeFencesInDraft(out);
@@ -1419,6 +1482,7 @@ export function sanitizeMddAtPersist(mddMarkdown: string): string {
   out = ensureSecurityLockoutInSection6(out);
   out = repairNestedJsonFencesInDraft(out);
   out = repairDisplacedJsonBracesInContratosSection(out);
+  out = repairManifestJsonClosing(out);
   out = stripStrayParenAfterJsonCodeBlocks(out);
   out = stripStrayBraceAfterJsonCodeBlocks(out);
   out = stripStrayParenBeforeH2(out);

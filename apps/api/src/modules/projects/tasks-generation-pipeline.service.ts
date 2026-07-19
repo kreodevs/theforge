@@ -261,9 +261,13 @@ export class TasksGenerationPipelineService {
             targetFilesHint: item.targetFilesHint ?? [],
           })),
         };
-        this.validatePlanCompleteness(plan, input);
-        this.logger.log(`[Tasks pipeline] planner OK (${label}, ${plan.items.length} items)`);
-        return plan;
+        try {
+          this.validatePlanCompleteness(plan, input);
+          this.logger.log(`[Tasks pipeline] planner OK (${label}, ${plan.items.length} items)`);
+          return plan;
+        } catch (validationErr) {
+          this.logger.warn(`[Tasks pipeline] planner plan rechazado (${label}): ${(validationErr as Error).message}`);
+        }
       }
       this.logger.warn(`[Tasks pipeline] planner JSON failed (${label})`);
     }
@@ -306,8 +310,15 @@ export class TasksGenerationPipelineService {
       this.logger.warn(
         `[Tasks pipeline] plan incompleto: blueprint tiene ${phaseCount} fases (~${phaseMatches.map((m) => m[0]?.trim()).join(", ")}) ` +
         `pero plan solo tiene ${planItemCount} items (mínimo esperado: ${minExpectedTasks}). ` +
-        `El repair loop intentará completar la cobertura.`,
+        `Falling back to heuristic plan.`,
       );
+      throw new BadRequestException({
+        code: "TASKS_PLAN_TOO_SMALL",
+        message: `Plan demasiado pequeño: ${planItemCount} items vs ${minExpectedTasks} esperados para ${phaseCount} fases del blueprint.`,
+        phaseCount,
+        coveredPhases: 0,
+        planItemCount,
+      });
     }
 
     // Check if plan covers at least 50% of blueprint phases

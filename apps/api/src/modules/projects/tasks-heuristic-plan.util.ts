@@ -75,7 +75,16 @@ export function buildHeuristicTasksPlan(input: HeuristicTasksPlanInput): TasksGe
   }
 
   // --- API endpoints → tasks por endpoint ---
-  const endpoints = extractHttpEndpointsFromMarkdown(input.apiContractsMarkdown ?? "");
+  // Try apiContractsMarkdown first, then fall back to raw MDD §4 section
+  let endpoints = extractHttpEndpointsFromMarkdown(input.apiContractsMarkdown ?? "");
+  if (endpoints.length === 0) {
+    const section4 = extractSectionByNumber(input.mddMarkdown ?? "", 4);
+    if (section4) {
+      endpoints = extractHttpEndpointsFromMarkdown(section4);
+      // eslint-disable-next-line no-console
+      if (endpoints.length > 0) console.log(`[heuristic] ${endpoints.length} endpoints extraídos de MDD §4 raw (apiContractsMarkdown vacío)`);
+    }
+  }
   for (const ep of endpoints) {
     items.push({
       id: nextTaskId(counter),
@@ -91,12 +100,15 @@ export function buildHeuristicTasksPlan(input: HeuristicTasksPlanInput): TasksGe
     });
   }
 
-  // --- Entidades MDD §3 → tasks por entidad (solo si no hay endpoints) ---
+  // --- Entidades MDD §3 → tasks por entidad ---
+  // Always generate entity tasks, even when endpoints exist (broken §4 may yield few endpoints)
   const mddEntities = extractEntities(
     extractSectionByNumber(input.mddMarkdown ?? "", 3) || input.mddMarkdown || "",
   );
-  if (endpoints.length === 0 && mddEntities.size > 0) {
+  if (mddEntities.size > 0) {
     for (const entity of [...mddEntities].slice(0, 30)) {
+      // Skip if an endpoint task already covers this entity
+      if (endpoints.length > 0 && endpoints.some((ep) => ep.path.toLowerCase().includes(entity.toLowerCase()))) continue;
       items.push({
         id: nextTaskId(counter),
         title: `Modelo y persistencia ${entity} (MDD §3)`,

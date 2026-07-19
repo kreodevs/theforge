@@ -2426,8 +2426,23 @@ export function normalizeMermaid(raw: string): string {
 /** Normaliza cada bloque mermaid del documento sin tocar el resto del markdown. */
 export function normalizeMermaidInDocument(document: string): string {
   if (!document?.trim()) return document ?? "";
+  // 0x) Palabras sueltas "text" y "mermaid" antes del fence (LLM artifacts).
+  let merged = document.replace(
+    /\n\s*text\s*\n\s*mermaid\s*\n\s*```mermaid/gi,
+    "\n```mermaid",
+  );
+  // 0xx) Bloques ```text que contienen sintaxis mermaid (flowchart/sequenceDiagram -->).
+  merged = merged.replace(
+    /```text\n([\s\S]*?)```/gi,
+    (_full: string, inner: string) => {
+      const hasMermaidSyntax = /(?:flowchart|graph|sequenceDiagram|erDiagram|stateDiagram)\b/i.test(inner)
+        && /(?:-->|-->>|--|-->|==>|---)/i.test(inner);
+      if (!hasMermaidSyntax) return _full;
+      return "```mermaid\n" + inner.trim() + "\n```";
+    },
+  );
   // 0a) Doble apertura ```mermaid seguida de ```mermaid (LLM / pipeline).
-  let merged = document.replace(/```mermaid\s*\n+\s*```mermaid/gi, "```mermaid");
+  merged = merged.replace(/```mermaid\s*\n+\s*```mermaid/gi, "```mermaid");
   // 0) Cierre erróneo ```mermaid en lugar de ``` (debe ir antes de unfenced repair).
   merged = repairMermaidFenceClosedWithMermaidTag(merged);
   // 0b) Diagramas volcados sin fence ```mermaid (texto plano + listas markdown).

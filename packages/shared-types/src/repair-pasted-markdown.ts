@@ -844,11 +844,174 @@ export function repairSplitJsonFragments(text: string): string {
   );
 }
 
+/**
+ * Separa líneas pegadas en §4 Contratos de API donde el LLM comprime
+ * Request body / Response / Errores / Nota en una sola línea.
+ * Patrones:
+ *   - `**Label:**{` → `**Label:**\n{`
+ *   - `"value"**Label:**{` → `"value"\n**Label:**\n{`
+ *   - `"value"**Label:**` → `"value"\n**Label:**`
+ *   - `}**Label:**` → `}\n**Label:**`
+ *   - `### Heading.**Label:**` → `### Heading.\n**Label:**`
+ */
+export function repairGluedApiContractLines(text: string): string {
+  const LABEL_RE = /\*\*(?:Request body[^*]*|Response\s+\d+[^*]*|Errores[^*]*|Nota[^*]*|Beneficios[^*]*|Headers?:[^*]*)\*\*/gi;
+  // 1. "}**Label:**" → "}\n**Label:**" — closing brace glued to next label
+  let out = text.replace(
+    /(\})\s*(\*\*(?:Request body|Response\s+\d+|Errores|Nota|Beneficios|Headers?)\b[^*]*\*\*)/gi,
+    "$1\n$2",
+  );
+  // 2. "**Label:**{" at start of line (no preceding content) → "**Label:**\n{"
+  out = out.replace(
+    /^(\*\*(?:Request body[^*]*|Response\s+\d+[^*]*|Errores[^*]*|Nota[^*]*)\*\*)\s*\{/gim,
+    "$1\n{",
+  );
+  // 3. Content before "**Label:**{" — "value"**Label:**{  or  ### Heading.**Label:**{
+  out = out.replace(
+    /([^\n{])\s*(\*\*(?:Request body|Response\s+\d+|Errores|Nota|Beneficios|Headers?)\b[^*]*\*\*)\s*\{/g,
+    "$1\n$2\n{",
+  );
+  // 4. Content before "**Label:**" without { — "value"**Label:**  or  ### Heading.**Label:**
+  out = out.replace(
+    /([^\n])\s*(\*\*(?:Request body|Response\s+\d+|Errores|Nota|Beneficios|Headers?)\b[^*]*\*\*)\s*$/gm,
+    "$1\n$2",
+  );
+  return out;
+}
+
+/**
+ * Elimina llaves `}` y `{` sueltas que quedan fuera de fences ```json en §4.
+ * Patrones:
+ *   - `}\n```json` → ` ```json` (llave de cierre suelta antes de fence)
+ *   - `**Response 200:**\n},\n{` → `**Response 200:**\n{` (doble llave suelta)
+ *   - Línea suelta `}` o `},`紧跟 antes de un heading o **Label**
+ */
+export function repairOrphanBracesInContratos(text: string): string {
+  const lines = text.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const t = lines[i]!.trim();
+    const next = (lines[i + 1] ?? "").trim();
+    const nextNext = (lines[i + 2] ?? "").trim();
+    // "}**Label:**" ya manejado por repairGluedApiContractLines
+    // "}\n```json" → remove lone "}"
+    if (/^\}\s*$/.test(t) && /^```json/i.test(next)) {
+      i++;
+      continue;
+    }
+    // "},\n{" → just "{"
+    if (/^\}\s*,\s*$/.test(t) && /^\{\s*$/.test(next)) {
+      out.push("{");
+      i += 2;
+      continue;
+    }
+    // "},\n```json" → "```json"
+    if (/^\}\s*,?\s*$/.test(t) && /^```json/i.test(next)) {
+      i++;
+      continue;
+    }
+    // Orphan "}" before heading or bold label
+    if (/^\}\s*$/.test(t) && (/^#{1,6}\s/.test(next) || /^\*\*/.test(next))) {
+      i++;
+      continue;
+    }
+    // Orphan lone "{" immediately after **Response:** or **Request body:** (already on prev line)
+    if (/^\{\s*$/.test(t) && i > 0) {
+      const prev = (out[out.length - 1] ?? "").trim();
+      if (/^\*\*(?:Response|Request body|Errores)/i.test(prev)) {
+        // Keep it — it's the start of the JSON block
+        out.push(lines[i]!);
+        i++;
+        continue;
+      }
+    }
+    out.push(lines[i]!);
+    i++;
+  }
+  return out.join("\n");
+}
+
+/**
+ * Envuelve en ```json los bloques de Request/Response que están como texto plano
+ * (sin fence) después de **Request body:** o **Response N:**.
+ * Solo aplica dentro de §4 Contratos de API.
+ */
+export function repairUnfencedJsonInContratos(text: string): string {
+  const lines = text.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const t = lines[i]!.trim();
+    // Detect **Response 200:** or **Request body:** followed by { on next line
+    const labelMatch = t.match(/^\*\*(Response\s+\d+[^*]*|Request body[^*]*)\*\*\s*$/i);
+    if (labelMatch && i + 1 < lines.length) {
+      const next = lines[i + 1]!.trim();
+      if (next === "{" || /^\{\s*$/.test(next)) {
+        // Check if this is already inside a ```json fence
+        const prevLine = (out[out.length - 1] ?? "").trim();
+        if (/^```json/i.test(prevLine)) {
+          out.push(lines[i]!);
+          i++;
+          continue;
+        }
+        // Collect JSON content until we hit a label, heading, fence, or blank line
+        const jsonLines: string[] = [];
+        let j = i + 1;
+        let depth = 0;
+        let closed = false;
+        while (j < lines.length) {
+          const jt = lines[j]!.trim();
+          jsonLines.push(lines[j]!);
+          // Count braces
+          for (const ch of jt) {
+            if (ch === "{") depth++;
+            if (ch === "}") depth--;
+          }
+          if (depth <= 0 && jsonLines.length > 0) {
+            closed = true;
+            j++;
+            break;
+          }
+          // Stop if we hit a label or heading (unclosed)
+          if (/^\*\*(?:Response|Request body|Errores|Nota|Beneficios|Headers?)\b/i.test(jt)) {
+            jsonLines.pop(); // remove the label line
+            break;
+          }
+          if (/^#{1,6}\s/.test(jt) && depth <= 0) {
+            jsonLines.pop();
+            break;
+          }
+          if (/^```/.test(jt)) {
+            jsonLines.pop();
+            break;
+          }
+          j++;
+        }
+        if (jsonLines.length >= 1) {
+          out.push(lines[i]!); // the label
+          out.push("```json");
+          out.push(...jsonLines);
+          if (closed) out.push("```");
+          i = j;
+          continue;
+        }
+      }
+    }
+    out.push(lines[i]!);
+    i++;
+  }
+  return out.join("\n");
+}
+
 export function repairPastedMarkdown(text: string): string {
   if (!text?.trim()) return text ?? "";
   let out = text.replace(/\r\n/g, "\n");
   out = repairMetadataCoverTable(out);
   out = repairGluedBoldFlowTitles(out);
+  out = repairGluedApiContractLines(out);
+  out = repairOrphanBracesInContratos(out);
+  out = repairUnfencedJsonInContratos(out);
   out = repairApiContractJsonFences(out);
   out = repairOrphanContratosApiFences(out);
   out = repairStackedCodeFences(out);
