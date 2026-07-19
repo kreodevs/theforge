@@ -2192,11 +2192,33 @@ export function classifyMermaidErrors(raw: string): MermaidClassifiedError[] {
   return errors;
 }
 
+/**
+ * Quita líneas de prólogo markdown (headings `### …`, viñetas, texto) que el LLM coloca
+ * ANTES del primer tipo de diagrama válido dentro de un fence ```mermaid.
+ * Típico: `### Flujo: integración de nuevo MCP a skills\nflowchart TD`.
+ * Preserva el diagrama a partir del primer header tipo Mermaid válido; si no encuentra
+ * ninguno devuelve el cuerpo intacto (lo deja para validateMermaid lo rechace con un mensaje útil).
+ */
+export function stripLeadingMarkdownPrologueFromMermaid(raw: string): string {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed) return trimmed;
+  const lines = trimmed.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    if (MERMAID_DIAGRAM_HEADER_LINE.test(lines[i]!.trim())) {
+      return lines.slice(i).join("\n").trim();
+    }
+  }
+  return trimmed;
+}
+
 export function normalizeMermaidDiagramBody(raw: string): string {
   let stripped = stripMermaidFenceWrappers(raw);
   // Strip %% comment lines early — they confuse downstream repairs
   stripped = stripMermaidComments(stripped);
   stripped = stripped.replace(/\bpar\s+ticipant\b/gi, "participant");
+  // Strip markdown headings/prose colados por el LLM ANTES del tipo de diagrama.
+  // Típico: ```mermaid\n### Flujo: integración de...\nflowchart TD\n```
+  stripped = stripLeadingMarkdownPrologueFromMermaid(stripped);
   stripped = normalizeGraphKeywordToFlowchart(stripped);
   stripped = ensureSequenceDiagramHeader(stripped);
   if (/^erDiagram\b/im.test(stripped.trim())) {

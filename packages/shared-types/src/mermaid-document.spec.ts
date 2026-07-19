@@ -23,6 +23,7 @@ import {
   quoteFlowchartEdgeLabels,
   repairFlowchartMissingTargetNodeIds,
   splitFlowchartMultiEdgeLines,
+  normalizeMermaidDiagramBody,
   validateMermaid,
 } from "./mermaid.js";
 import { formatDocumentMarkdown } from "./format-document-markdown.js";
@@ -1003,5 +1004,41 @@ ${BRD_COPILOTO_ER_DIAGRAM}
     assert.ok(out.length > 500);
     assert.match(out, /^erDiagram/);
     assert.match(out, /MCPPLUGIN \|\|--o\{ MCPTOOL/);
+  });
+});
+
+describe("stripLeadingMarkdownPrologueFromMermaid (LLM heading before diagram type)", () => {
+  it("strips ### heading before flowchart and passes validation", () => {
+    const raw = `### Flujo: integración de nuevo MCP a skills
+
+flowchart TD
+    A[Usuario] --> B[Skills Service]
+    B --> C[MCP Client]`;
+    const out = normalizeMermaidDiagramBody(raw);
+    assert.match(out, /^flowchart TD/);
+    assert.doesNotMatch(out, /### Flujo/);
+    assert.deepEqual(validateMermaid(out), []);
+  });
+
+  it("strips multiple prose lines before sequenceDiagram", () => {
+    const raw = `### Flujo de autenticación OAuth
+
+> Nota: este diagrama muestra el flujo completo.
+
+sequenceDiagram
+    participant U as Usuario
+    participant S as Servidor
+    U->>S: GET /auth/callback`;
+    const out = normalizeMermaidDiagramBody(raw);
+    assert.match(out, /^sequenceDiagram/);
+    assert.doesNotMatch(out, /### Flujo/);
+    assert.deepEqual(validateMermaid(out), []);
+  });
+
+  it("returns body unchanged when no diagram type header found", () => {
+    const raw = `### Solo prosa sin diagrama
+Esto no es mermaid`;
+    const out = normalizeMermaidDiagramBody(raw);
+    assert.match(out, /### Solo prosa/);
   });
 });
