@@ -855,7 +855,6 @@ export function repairSplitJsonFragments(text: string): string {
  *   - `### Heading.**Label:**` → `### Heading.\n**Label:**`
  */
 export function repairGluedApiContractLines(text: string): string {
-  const LABEL_RE = /\*\*(?:Request body[^*]*|Response\s+\d+[^*]*|Errores[^*]*|Nota[^*]*|Beneficios[^*]*|Headers?:[^*]*)\*\*/gi;
   // 1. "}**Label:**" → "}\n**Label:**" — closing brace glued to next label
   let out = text.replace(
     /(\})\s*(\*\*(?:Request body|Response\s+\d+|Errores|Nota|Beneficios|Headers?)\b[^*]*\*\*)/gi,
@@ -893,7 +892,6 @@ export function repairOrphanBracesInContratos(text: string): string {
   while (i < lines.length) {
     const t = lines[i]!.trim();
     const next = (lines[i + 1] ?? "").trim();
-    const nextNext = (lines[i + 2] ?? "").trim();
     // "}**Label:**" ya manejado por repairGluedApiContractLines
     // "}\n```json" → remove lone "}"
     if (/^\}\s*$/.test(t) && /^```json/i.test(next)) {
