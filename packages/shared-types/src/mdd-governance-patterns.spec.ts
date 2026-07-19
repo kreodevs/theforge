@@ -14,6 +14,7 @@ import {
   MDD_GOVERNANCE_WIZARD_BODY,
   parseActivePatternsFromMdd,
   selectedPatternIdsFromMdd,
+  resolveMddGovernancePreservation,
   stripGovernanceSection,
   updateMddGovernancePatterns,
   enforceMddGovernancePatternsOnPersist,
@@ -155,6 +156,23 @@ describe("mdd-governance-patterns", () => {
     const restored = ensureMddGovernanceSection(stripped, extractGovernanceSection(withS1));
     assert.ok(hasGovernanceSection(restored));
     assert.match(restored, /## 1\. Contexto/);
+  });
+
+  it("resolveMddGovernancePreservation prefiere patrones del editor cliente sobre BD", () => {
+    const hexId = optsId("Hexagonal");
+    const monoId = optsId("Monolito Modular");
+    const client = updateMddGovernancePatterns(
+      "# Master Design Document\n\n## 1. Contexto\n\nTexto.\n",
+      new Set([hexId]),
+    );
+    const db = updateMddGovernancePatterns(
+      "# Master Design Document\n\n## 1. Contexto\n\nTexto.\n",
+      new Set([monoId]),
+    );
+    const r = resolveMddGovernancePreservation(client, db);
+    assert.equal(r.lockedPatternIds.size, 1);
+    assert.ok(r.lockedPatternIds.has(hexId));
+    assert.ok(r.preservedGovernance?.includes("Hexagonal"));
   });
 });
 

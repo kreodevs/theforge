@@ -76,7 +76,9 @@ import {
   ensureMddGovernanceSection,
   extractGovernanceSection,
   mddHasSubstantialBody,
+  resolveMddGovernancePreservation,
 } from "@theforge/shared-types/mdd-governance-patterns";
+import { peelDocumentBodyForPersist } from "@theforge/shared-types/theforge-doc-stamp";
 import { mddDeliveryGateHasBlockers, mddStreamDeliveryGateFields } from "./utils/mdd-delivery-gate.util.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import type { MddJobData, MddJobProgress, MddJobResult } from "./mdd/mdd-queue.service.js";
@@ -560,6 +562,7 @@ export class AiAnalysisService {
     dbgaContent: string,
     projectId?: string,
     stageId?: string | null,
+    clientMddContent?: string,
   ): AsyncGenerator<StreamProgressEvent> {
     let estimationStage: string | undefined;
     let brdContent: string | null = null;
@@ -584,8 +587,11 @@ export class AiAnalysisService {
             select: { brdContent: true, mddContent: true },
           });
           brdContent = stage?.brdContent ?? null;
-          existingStageMdd = (stage?.mddContent ?? "").trim();
-          preservedGovernance = extractGovernanceSection(existingStageMdd);
+          existingStageMdd = peelDocumentBodyForPersist(stage?.mddContent ?? "").trim();
+          ({ preservedGovernance } = resolveMddGovernancePreservation(
+            clientMddContent,
+            existingStageMdd,
+          ));
         }
       }
     }
@@ -1909,6 +1915,19 @@ export class AiAnalysisService {
    * Ejecuta generación/regeneración MDD desacoplada del SSE (cola background).
    * Persiste borradores y resultado final en BD desde el servidor.
    */
+  private async resolveLockedPatternIdsForMddJob(data: MddJobData): Promise<Set<string>> {
+    const { projectId, stageId, mddContent } = data;
+    if (!projectId?.trim()) return new Set();
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId.trim() },
+      include: { stages: { orderBy: { ordinal: "asc" } } },
+    });
+    const sid = stageId?.trim();
+    const stage =
+      (sid && project?.stages?.find((s) => s.id === sid)) ?? pickPrimaryStage(project?.stages ?? []);
+    return resolveMddGovernancePreservation(mddContent, stage?.mddContent ?? "").lockedPatternIds;
+  }
+
   async runMddGenerationJob(
     data: MddJobData,
     onProgress: (p: MddJobProgress) => void,
@@ -1916,6 +1935,7 @@ export class AiAnalysisService {
   ): Promise<MddJobResult> {
     const { mode, projectId, stageId } = data;
     let lastPersistedLen = 0;
+    const lockedPatternIds = await this.resolveLockedPatternIdsForMddJob(data);
 
     const persistMarkdown = async (markdown: string, finalize: boolean): Promise<void> => {
       const cleaned = cleanDocumentContent(markdown);
@@ -1925,6 +1945,7 @@ export class AiAnalysisService {
       await this.projects.persistMddFromBackgroundJob(projectId, markdown, {
         stageId: stageId?.trim() || undefined,
         finalize,
+        lockedPatternIds: [...lockedPatternIds],
       });
       onProgress({ phase: finalize ? "persisted" : "draft", mddLength: cleaned.length });
     };
@@ -2043,7 +2064,12 @@ export class AiAnalysisService {
         }
 
         const jobResult = await consume(
-          this.streamMddAnalysis(data.dbgaContent ?? "", projectId, stageId) as AsyncGenerator<MddJobEvent>,
+          this.streamMddAnalysis(
+            data.dbgaContent ?? "",
+            projectId,
+            stageId,
+            data.mddContent,
+          ) as AsyncGenerator<MddJobEvent>,
         );
         if (jobResult.ok && jobResult.outcome === "done") {
           const docs = await this.mddUpstreamSync.loadUpstreamDocuments(projectId, stageId).catch((err) => {

@@ -11,6 +11,8 @@ import {
   repairTableBoundaries,
   repairTabSeparatedTables,
   repairUnclosedCodeFences,
+  repairIndentedProseBlocks,
+  repairMddInfraManifestJsonBlock,
 } from "./repair-pasted-markdown.js";
 import { formatDocumentMarkdown } from "./format-document-markdown.js";
 import { readFileSync } from "node:fs";
@@ -207,5 +209,36 @@ describe("repairOrphanContratosApiFences", () => {
     const out = repairOrphanContratosApiFences(raw);
     assert.match(out, /---\n\n### POST \/api\/v1\/auth\/sso\/login/);
     assert.doesNotMatch(out, /---\n```\n\n### POST/);
+  });
+});
+
+describe("repairMddInfraManifestJsonBlock", () => {
+  it("envuelve JSON suelto tras ### Manifest de Infraestructura", () => {
+    const raw = `## 7. Infraestructura
+
+### Manifest de Infraestructura
+
+{ "project_id": "copiloto", "stack": { "backend": "NestJS" }, "integration_metadata": { "api_prefix": "/api/v1" } }
+
+## UI/UX Design Intent
+
+### Personas y journeys
+`;
+    const out = repairMddInfraManifestJsonBlock(raw);
+    assert.match(out, /### Manifest de Infraestructura\n\n```json\n[\s\S]*"project_id"/);
+    assert.match(out, /```\n+## UI\/UX Design Intent/);
+  });
+});
+
+describe("repairIndentedProseBlocks", () => {
+  it("desindenta headings y tablas UI/UX en lugar de convertirlos a bullets", () => {
+    const raw = `    ### Personas y journeys
+    | Ruta | Componentes |
+    |------|---------------|
+    | /login | LoginForm |`;
+    const out = repairIndentedProseBlocks(raw);
+    assert.match(out, /^### Personas y journeys/m);
+    assert.match(out, /^\| Ruta \| Componentes \|/m);
+    assert.doesNotMatch(out, /^- ### Personas/m);
   });
 });

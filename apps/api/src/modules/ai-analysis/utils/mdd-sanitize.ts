@@ -3015,7 +3015,7 @@ export function ensureManifestInJsonBlock(draft: string): string {
   const rest = draft.slice(sectionStart);
   const nextH2 = rest.search(/\n##\s+/);
   const body = nextH2 !== -1 ? rest.slice(0, nextH2) : rest;
-  const manifestMatch = body.match(/\n(#{3,4})\s+Manifest\s*\n+/i);
+  const manifestMatch = body.match(/\n(#{3,4})\s+Manifest(?:\s+de\s+Infraestructura)?\s*\n+/i);
   if (!manifestMatch || manifestMatch.index == null) return draft;
   const manifestH3 = manifestMatch.index;
   const afterManifest = body.slice(manifestH3 + manifestMatch[0].length).trim();

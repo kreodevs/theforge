@@ -46,7 +46,10 @@ import { prependDocumentTimestamps, stampMarkdownIfBodyChanged } from "../engine
 import {
   enforceMddGovernancePatternsOnPersist,
   mddHasSubstantialBody,
+  selectedPatternIdsFromMdd,
+  updateMddGovernancePatterns,
 } from "@theforge/shared-types/mdd-governance-patterns";
+import { peelDocumentBodyForPersist } from "@theforge/shared-types/theforge-doc-stamp";
 import { loadProjectBorrador, hasBorradorContent } from "../ai-analysis/phase0/phase0-load-borrador.util.js";
 import { phase0ToMarkdown } from "../ai-analysis/phase0/phase0-to-markdown.js";
 import { ProjectEstimationRecalcService } from "./project-estimation-recalc.service.js";
@@ -2826,7 +2829,7 @@ name: ${JSON.stringify(name)}
   async persistMddFromBackgroundJob(
     projectId: string,
     rawMarkdown: string,
-    options?: { stageId?: string; finalize?: boolean },
+    options?: { stageId?: string; finalize?: boolean; lockedPatternIds?: readonly string[] },
   ): Promise<void> {
     const existing = await this.assertProjectAccess(projectId);
     const existingRaw = existing as Project & { stages: StageWithEst[] };
@@ -2835,15 +2838,22 @@ name: ${JSON.stringify(name)}
       pickPrimaryStage(existingRaw.stages);
     if (!targetStage) throw new BadRequestException("El proyecto no tiene etapas");
 
+    const lockedIds =
+      options?.lockedPatternIds?.length
+        ? new Set(options.lockedPatternIds)
+        : selectedPatternIdsFromMdd(peelDocumentBodyForPersist(targetStage.mddContent ?? ""));
+    const applyLockedPatterns = (md: string): string =>
+      lockedIds.size > 0 ? updateMddGovernancePatterns(md, lockedIds) : md;
+
     const cleaned = cleanDocumentContent(peelDocumentBodyForPersist(rawMarkdown));
     if (cleaned.trim().length < 48) return;
 
     const enforced = enforceMddGovernancePatternsOnPersist(cleaned, targetStage.mddContent, {});
-    const mddForPipeline = enforced.markdown;
+    const mddForPipeline = applyLockedPatterns(enforced.markdown);
 
     if (!options?.finalize) {
       const prepared = await prepareMddForOutput(mddForPipeline);
-      const stored = storeMddMarkdownForPersist(prepared);
+      const stored = storeMddMarkdownForPersist(applyLockedPatterns(prepared));
       await this.prisma.stage.update({
         where: { id: targetStage.id },
         data: { mddContent: stored },
@@ -2869,21 +2879,22 @@ name: ${JSON.stringify(name)}
       });
     }
 
+    const finalMdd = applyLockedPatterns(result.sanitizedMdd);
     await this.prisma.stage.update({
       where: { id: targetStage.id },
       data: {
-        mddContent: storeMddMarkdownForPersist(result.sanitizedMdd),
+        mddContent: storeMddMarkdownForPersist(finalMdd),
         status: result.status,
         precisionScore: result.precisionScore,
       },
     });
-    await this.changeLog.log(projectId, "mddContent", result.sanitizedMdd);
+    await this.changeLog.log(projectId, "mddContent", finalMdd);
     void this.persistMddDeliveryGateSnapshot(
       targetStage.id,
-      await evaluateMddDeliveryGatePrepared(result.sanitizedMdd),
+      await evaluateMddDeliveryGatePrepared(finalMdd),
     );
     await this.estimationRecalc.recalcAndUpsert(targetStage.id, {
-      mddContent: result.sanitizedMdd,
+      mddContent: finalMdd,
       infraContent: existingRaw.infraContent ?? null,
       status: result.status,
     });

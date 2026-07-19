@@ -184,6 +184,11 @@ export function repairIndentedProseBlocks(text: string): string {
       i--;
       if (block.some((l) => INDENTED_CODE_HINT.test(l))) {
         for (const l of block) out.push(`    ${l}`);
+      } else if (block.some((l) => /^#{1,6}\s/.test(l) || /^\|/.test(l))) {
+        for (const l of block) {
+          out.push(l.replace(/^ {4,}/, ""));
+        }
+        out.push("");
       } else {
         for (const l of block) {
           const item = l.replace(/^ {4,}/, "");
@@ -784,6 +789,69 @@ export function repairDemoteFalseApiHeadings(text: string): string {
   return out;
 }
 
+/** Envuelve manifest §7 suelto en ```json (incl. ### Manifest de Infraestructura). */
+export function repairMddInfraManifestJsonBlock(text: string): string {
+  const sectionRe = /(?:^|\n)(##\s+(?:7\.\s+)?(?:Infraestructura|Integración)\b[^\n]*)/i;
+  const sectionMatch = text.match(sectionRe);
+  if (!sectionMatch || sectionMatch.index === undefined) return text;
+
+  const sectionStart = sectionMatch.index + sectionMatch[1]!.length;
+  const rest = text.slice(sectionStart);
+  const nextH2 = rest.search(/\n##\s+/);
+  const sectionEnd = nextH2 === -1 ? text.length : sectionStart + nextH2;
+  const body = text.slice(sectionStart, sectionEnd);
+
+  const manifestRe = /\n#{3,4}\s+Manifest(?:\s+de\s+Infraestructura)?\s*\n+/i;
+  const manifestMatch = body.match(manifestRe);
+  if (!manifestMatch || manifestMatch.index === undefined) return text;
+
+  const afterHeadingStart = manifestMatch.index + manifestMatch[0].length;
+  let afterHeading = body.slice(afterHeadingStart).trimStart();
+
+  const tryFenceJson = (raw: string): string | null => {
+    const normalized = raw.replace(/^-\s+(")/gm, "$1");
+    const braceStart = normalized.indexOf("{");
+    if (braceStart === -1) return null;
+    const end = findBalancedJsonObjectEnd(normalized.slice(braceStart));
+    if (end === -1) return null;
+    const slice = normalized.slice(braceStart, braceStart + end + 1);
+    try {
+      return JSON.stringify(JSON.parse(slice) as unknown, null, 2);
+    } catch {
+      return null;
+    }
+  };
+
+  let pretty: string | null = null;
+  let tail = "";
+
+  if (/^```json\s*\n/i.test(afterHeading)) {
+    const inner = afterHeading.replace(/^```json\s*\n/i, "");
+    pretty = tryFenceJson(inner);
+    if (pretty) {
+      const normalized = inner.replace(/^-\s+(")/gm, "$1");
+      const braceStart = normalized.indexOf("{");
+      const end =
+        braceStart >= 0 ? findBalancedJsonObjectEnd(normalized.slice(braceStart)) : -1;
+      tail = end >= 0 ? inner.slice(braceStart + end + 1).replace(/^\s*```\s*/m, "").trim() : "";
+    }
+  } else {
+    pretty = tryFenceJson(afterHeading);
+    if (pretty) {
+      const normalized = afterHeading.replace(/^-\s+(")/gm, "$1");
+      const braceStart = normalized.indexOf("{");
+      const end = findBalancedJsonObjectEnd(normalized.slice(braceStart));
+      tail = end >= 0 ? normalized.slice(braceStart + end + 1).trim() : "";
+    }
+  }
+
+  if (!pretty) return text;
+
+  const headingPart = body.slice(0, afterHeadingStart);
+  const newBody = `${headingPart}\`\`\`json\n${pretty}\n\`\`\`${tail ? `\n\n${tail}` : ""}`;
+  return text.slice(0, sectionStart) + newBody + text.slice(sectionEnd);
+}
+
 /** Bloques JSON sueltos (webhook / Odoo) → fence json. */
 export function repairLooseJsonBlocks(text: string): string {
   const lines = text.split("\n");
@@ -1025,6 +1093,7 @@ export function repairPastedMarkdown(text: string): string {
   out = repairOrphanSqlBlocks(out);
   out = repairFragmentedSqlFences(out);
   out = repairLooseJsonBlocks(out);
+  out = repairMddInfraManifestJsonBlock(out);
   out = repairJsonFenceIntegrity(out);
   out = repairGluedSqlTokens(out);
   out = repairApiContractJsonFences(out);

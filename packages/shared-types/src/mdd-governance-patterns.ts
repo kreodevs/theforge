@@ -2,6 +2,8 @@
  * Gobernanza de patrones del MDD (SSOT). Sección inmutable bajo el título principal.
  */
 
+import { peelDocumentBodyForPersist } from "./theforge-doc-stamp.js";
+
 export const MDD_GOVERNANCE_HEADING_MARKER = "[ARQUITECTURA - SECCIÓN INMUTABLE]";
 
 /** Cuerpo del wizard (sin título H1 del documento). Fuente: prompts/mdd/mdd-governance-patterns-wizard.md */
@@ -438,4 +440,21 @@ export function selectedPatternIdsFromMdd(md: string): Set<string> {
     ids.add(slugifyPatternLabel(p.label));
   }
   return ids;
+}
+
+/** Patrones y sección SSOT a conservar al regenerar MDD (editor cliente > BD). */
+export function resolveMddGovernancePreservation(
+  clientMdd: string | null | undefined,
+  dbMdd: string | null | undefined,
+): { preservedGovernance: string | null; lockedPatternIds: Set<string> } {
+  const client = peelDocumentBodyForPersist((clientMdd ?? "").trim());
+  const db = peelDocumentBodyForPersist((dbMdd ?? "").trim());
+  const clientIds = selectedPatternIdsFromMdd(client);
+  const dbIds = selectedPatternIdsFromMdd(db);
+  const lockedPatternIds = clientIds.size > 0 ? clientIds : dbIds;
+  const preservedGovernance =
+    (clientIds.size > 0 ? extractGovernanceSection(client) : null) ??
+    extractGovernanceSection(db) ??
+    null;
+  return { preservedGovernance, lockedPatternIds };
 }
