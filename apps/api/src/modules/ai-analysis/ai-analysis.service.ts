@@ -37,7 +37,7 @@ import { pickPrimaryStage } from "../projects/stage-helpers.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
 import { AgentSupervisorService } from "../agent-supervisor/agent-supervisor.service.js";
 import { EpisodicMemoryKind, type ComplexityLevel } from "@theforge/database";
-import { contentIncludesVisionBlock, peelDocumentBodyForPersist, type ChatImagePart, type MddDeliveryGateResult, expandMddSectionsForSync, MDD_SECTION_TITLES, type MddUpstreamSyncStatus } from "@theforge/shared-types";
+import { contentIncludesVisionBlock, peelDocumentBodyForPersist, type ChatImagePart, type MddDeliveryGateResult, expandMddSectionsForSync, MDD_SECTION_TITLES } from "@theforge/shared-types";
 import { formatVisionContextBlock, mergeUserTextWithVisionBlock } from "../ai/utils/vision-context.util.js";
 import { markdownToMddStructured } from "./utils/mdd-markdown-to-structured.js";
 import { HumanMessage } from "@langchain/core/messages";
@@ -2182,8 +2182,8 @@ export class AiAnalysisService {
   private async finalizeMddJobUpstreamBaseline(
     projectId: string,
     stageId: string | null | undefined,
-    jobResult: { ok: boolean; outcome?: string; stageId?: string; mddLength?: number; mode: string; projectId: string },
-  ): Promise<typeof jobResult & { mddUpstreamSync?: MddUpstreamSyncStatus }> {
+    jobResult: MddJobResult,
+  ): Promise<MddJobResult> {
     const sid =
       stageId?.trim() ||
       jobResult.stageId?.trim() ||
