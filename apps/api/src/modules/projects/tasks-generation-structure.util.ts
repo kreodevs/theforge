@@ -41,8 +41,20 @@ export function isTasksDocumentTruncated(markdown: string): boolean {
   const tail = trimmed.split("\n").filter((l) => l.trim()).slice(-3).join("\n");
   if (/^target_files:\s*$/m.test(tail)) return true;
   if (/^\s+-\s+apps\/backend\/src\/application\/?\s*$/m.test(tail)) return true;
-  if (/^id:\s*T-\d+[\s\S]*^title:\s*[^\n]+[\s\S]*^target_files:\s*$/m.test(trimmed.slice(-800))) {
-    return true;
+
+  // Detect unclosed YAML block: last task block has id/title/target_files but no closing ---
+  // Pattern: id: T-xxx ... title: ... target_files: - file1 - file2 ... (end of document)
+  // A complete block ends with "---" after the file list
+  const lastTaskIdx = trimmed.lastIndexOf("id: T-");
+  if (lastTaskIdx >= 0) {
+    const tailFromLastTask = trimmed.slice(lastTaskIdx);
+    // Has id: T-xxx, title:, and target_files: but no --- after target_files section
+    if (
+      /^id:\s*T-\d+[\s\S]*^title:\s*[^\n]+[\s\S]*^target_files:\s*$/m.test(tailFromLastTask.slice(0, 2_000)) &&
+      !/\n---\s*\n/m.test(tailFromLastTask)
+    ) {
+      return true;
+    }
   }
 
   return false;

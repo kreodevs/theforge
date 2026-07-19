@@ -118,9 +118,20 @@ export class TasksGenerationPipelineService {
     let llmAuditor = await this.runLlmAuditor(tasksMarkdown, input);
     let quality = this.evaluateQuality(tasksMarkdown, input);
     let repairAttempts = 0;
-    const maxRepairs = isTasksDocumentTruncated(tasksMarkdown)
+    const isTruncated = isTasksDocumentTruncated(tasksMarkdown);
+    const taskDeficitRatio = plan.items.length > 0 && quality.taskCount > 0
+      ? quality.taskCount / plan.items.length
+      : 1;
+    // Adaptive repairs: more when truncated OR when task count far below plan
+    let maxRepairs = isTruncated
       ? TASKS_PIPELINE_MAX_REPAIRS_TRUNCATED
       : TASKS_PIPELINE_MAX_REPAIRS;
+    if (taskDeficitRatio < 0.5 && quality.taskCount > 0) {
+      maxRepairs = Math.max(maxRepairs, 5);
+      this.logger.warn(
+        `[Tasks pipeline] task deficit: ${quality.taskCount}/${plan.items.length} (${Math.round(taskDeficitRatio * 100)}%) — allowing ${maxRepairs} repair attempts`,
+      );
+    }
 
     while (
       repairAttempts < maxRepairs &&
@@ -273,14 +284,14 @@ export class TasksGenerationPipelineService {
 
   /**
    * Valida que el plan cubra todas las fases/roadmap del blueprint.
-   * Si el blueprint tiene 8 fases pero el plan solo cubre 3, logea un warning
-   * para que el repair loop pueda corregir la cobertura.
+   * Si el blueprint tiene 8 fases pero el plan solo cubre 3, rechaza el plan
+   * para forzar reintentos con el planner o el fallback heurístico.
    */
   private validatePlanCompleteness(plan: TasksGenerationPlan, input: TasksPipelineInput): void {
     const blueprint = (input.blueprintMarkdown ?? "").trim();
     if (blueprint.length < 200) return; // No hay blueprint significativo
 
-    // Extract phase/roadmap headings from blueprint (## Fase N, ## Phase N, ## Roadmap N, ## Milestone N, ## Sprint N, ## Hitos)
+    // Extract phase/roadmap headings from blueprint
     const phaseRegex = /^##\s+(?:(?:Fase|Phase|Roadmap|Milestone|Sprint|Hitos|Etapa)\s+\d+[^#\n]*)/gim;
     const phaseMatches = [...blueprint.matchAll(phaseRegex)];
 
@@ -289,7 +300,7 @@ export class TasksGenerationPipelineService {
     const phaseCount = phaseMatches.length;
     const planItemCount = plan.items.length;
 
-    // Heuristic: each phase should generate at least 2-3 tasks
+    // Heuristic: each phase should generate at least 2 tasks
     const minExpectedTasks = phaseCount * 2;
     if (planItemCount < minExpectedTasks) {
       this.logger.warn(
@@ -297,6 +308,38 @@ export class TasksGenerationPipelineService {
         `pero plan solo tiene ${planItemCount} items (mínimo esperado: ${minExpectedTasks}). ` +
         `El repair loop intentará completar la cobertura.`,
       );
+    }
+
+    // Check if plan covers at least 50% of blueprint phases
+    // Extract phase keywords from blueprint headings
+    const blueprintPhaseKeywords = phaseMatches.map((m) => {
+      const heading = m[0]?.trim() ?? "";
+      // Extract meaningful words from heading (e.g., "Fase 1" → ["fase", "1"], "Hitos de seguridad" → ["seguridad"])
+      return heading.toLowerCase().replace(/^##\s+/, "").split(/\s+/);
+    });
+
+    // Check how many blueprint phases are referenced in plan items
+    let coveredPhases = 0;
+    for (const keywords of blueprintPhaseKeywords) {
+      const isCovered = plan.items.some((item) => {
+        const itemText = `${item.title} ${item.upstreamRefs.join(" ")}`.toLowerCase();
+        return keywords.some((kw) => kw.length > 2 && itemText.includes(kw));
+      });
+      if (isCovered) coveredPhases += 1;
+    }
+
+    const coverageRatio = blueprintPhaseKeywords.length > 0
+      ? coveredPhases / blueprintPhaseKeywords.length
+      : 1;
+
+    if (coverageRatio < 0.5) {
+      throw new BadRequestException({
+        code: "TASKS_PLAN_INCOMPLETE",
+        message: `El plan solo cubre ${Math.round(coverageRatio * 100)}% de las fases del blueprint (${coveredPhases}/${blueprintPhaseKeywords.length}). Regenerar con cobertura completa.`,
+        phaseCount,
+        coveredPhases,
+        planItemCount,
+      });
     }
 
     // Log phase headings for traceability
@@ -479,6 +522,7 @@ export class TasksGenerationPipelineService {
       apiContractsMarkdown: input.taskOpts.apiContractsContent,
       infraMarkdown: input.taskOpts.infraContent,
       userStoriesMarkdown: input.taskOpts.userStoriesContent,
+      blueprintMarkdown: input.blueprintMarkdown,
     });
   }
 
