@@ -106,7 +106,7 @@ export function buildHeuristicTasksPlan(input: HeuristicTasksPlanInput): TasksGe
     extractSectionByNumber(input.mddMarkdown ?? "", 3) || input.mddMarkdown || "",
   );
   if (mddEntities.size > 0) {
-    for (const entity of [...mddEntities].slice(0, 30)) {
+    for (const entity of [...mddEntities]) {
       // Skip if an endpoint task already covers this entity
       if (endpoints.length > 0 && endpoints.some((ep) => ep.path.toLowerCase().includes(entity.toLowerCase()))) continue;
       items.push({
@@ -123,7 +123,7 @@ export function buildHeuristicTasksPlan(input: HeuristicTasksPlanInput): TasksGe
   }
 
   // --- Capabilidades del inventario → tasks por capacidad ---
-  for (const cap of input.inventory?.capabilities.filter((c) => !c.isAuthRelated).slice(0, 15) ?? []) {
+  for (const cap of input.inventory?.capabilities.filter((c) => !c.isAuthRelated) ?? []) {
     if (items.some((i) => i.title.toLowerCase().includes(cap.title.toLowerCase().slice(0, 24)))) continue;
     items.push({
       id: nextTaskId(counter),
@@ -141,7 +141,7 @@ export function buildHeuristicTasksPlan(input: HeuristicTasksPlanInput): TasksGe
   const routes = filterPlannerRoutes(extractPantallaRoutes(input.uiScreensMarkdown ?? ""));
   if (routes.length > 0 || input.hasUxTeam) {
     sections.add("Frontend");
-    for (const route of routes.slice(0, 50)) {
+    for (const route of routes) {
       items.push({
         id: nextTaskId(counter),
         title: `Implementar pantalla ${route}`,
