@@ -242,3 +242,116 @@ describe("repairIndentedProseBlocks", () => {
     assert.doesNotMatch(out, /^- ### Personas/m);
   });
 });
+
+describe("Copiloto MDD format repairs", () => {
+  it("quita --- pegado al final de prosa en riesgos §1", () => {
+    const raw =
+      "- **Bucle Infinito de Agentes:** Riesgo de ciclos. **Mitigación:** límite de iteraciones en el agente. ---\n\n---\n\n## 2. Arquitectura";
+    const out = repairPastedMarkdown(raw);
+    assert.match(out, /agente\.\n[\s\S]*---[\s\S]*## 2\. Arquitectura/);
+    assert.doesNotMatch(out, /agente\. ---/);
+  });
+
+  it("elimina línea basura # ``` tras erDiagram §3", () => {
+    const raw = "```mermaid\nerDiagram\n  tenants ||--o{ companies : tenant\n```\n# ```\n\n---\n\n## 4.";
+    const out = repairPastedMarkdown(raw);
+    assert.doesNotMatch(out, /^#\s*```/m);
+    assert.match(out, /```[\s\S]*## 4\./);
+  });
+
+  it("repara JSON §4 sin cierre antes del siguiente endpoint", () => {
+    const raw = `### POST /api/v1/auth/m2m/token
+Intercambia credenciales.
+**Response 200:**
+\`\`\`json
+{
+  "access_token": "jwt_string",
+  "expires_in": 3600,
+  "token_type": "Bearer"
+
+### POST /api/v1/chat/message
+Recibe el mensaje.
+**Request body:**
+\`\`\`json
+{ "device_token": "string" }
+\`\`\`
+`;
+    const out = repairPastedMarkdown(raw);
+    assert.match(out, /"token_type": "Bearer"\n}\n```\n\n### POST \/api\/v1\/chat\/message/);
+    assert.doesNotMatch(out, /\n}\n```\n\n\*\*Request body:\*\*/);
+  });
+
+  it("elimina } y fence huérfanos entre descripción y Request body", () => {
+    const raw = `### POST /api/v1/chat/message
+Recibe el mensaje del webhook.
+}
+\`\`\`
+
+**Request body:**
+\`\`\`json
+{ "ok": true }
+\`\`\`
+`;
+    const out = repairPastedMarkdown(raw);
+    assert.match(out, /webhook\.\n+\*\*Request body:\*\*/);
+    assert.doesNotMatch(out, /webhook\.\n}\n```/);
+  });
+
+  it("normaliza Response 204 sin # No Content", () => {
+    const raw = `**Response 204:**
+# \`No Content\`
+`;
+    const out = repairPastedMarkdown(raw);
+    assert.match(out, /\*\*Response 204:\*\*\n\n_No Content_/);
+    assert.doesNotMatch(out, /# `No Content`/);
+  });
+
+  it("fusiona Matriz UI/UX partida por heading erróneo", () => {
+    const raw = `### Matriz pantalla→componente
+
+### Detalle ejecutable en
+
+**\`pantallas.md\`** (spec-kit). Resumen:`;
+    const out = repairPastedMarkdown(raw);
+    assert.match(out, /### Matriz pantalla→componente\n\nDetalle ejecutable en \*\*`pantallas\.md`\*\*/);
+    assert.doesNotMatch(out, /### Detalle ejecutable en/);
+  });
+
+  it("formatDocumentMarkdown aplica todas las reparaciones Copiloto", () => {
+    const raw = `## 1. Contexto
+
+- **Riesgo:** bucle. **Mitigación:** timeout. ---
+
+---
+
+## 4. Contratos de API
+
+### POST /api/v1/auth/m2m/token
+**Response 200:**
+\`\`\`json
+{ "access_token": "x", "token_type": "Bearer"
+
+### POST /api/v1/chat/message
+}
+\`\`\`
+
+**Request body:**
+\`\`\`json
+{ "msg": "hi" }
+\`\`\`
+
+## UI/UX Design Intent
+
+### Matriz pantalla→componente
+
+### Detalle ejecutable en
+
+**\`pantallas.md\`**
+`;
+    const out = formatDocumentMarkdown(raw);
+    assert.doesNotMatch(out, /timeout\. ---/);
+    assert.match(out, /"token_type": "Bearer"\n}\n```/);
+    assert.match(out, /Detalle ejecutable en \*\*`pantallas\.md`\*\*/);
+    assert.doesNotMatch(out, /### Detalle ejecutable en/);
+  });
+});
