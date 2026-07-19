@@ -78,7 +78,6 @@ import {
   mddHasSubstantialBody,
   resolveMddGovernancePreservation,
 } from "@theforge/shared-types/mdd-governance-patterns";
-import { peelDocumentBodyForPersist } from "@theforge/shared-types/theforge-doc-stamp";
 import { mddDeliveryGateHasBlockers, mddStreamDeliveryGateFields } from "./utils/mdd-delivery-gate.util.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import type { MddJobData, MddJobProgress, MddJobResult } from "./mdd/mdd-queue.service.js";
@@ -1923,8 +1922,8 @@ export class AiAnalysisService {
       include: { stages: { orderBy: { ordinal: "asc" } } },
     });
     const sid = stageId?.trim();
-    const stage =
-      (sid && project?.stages?.find((s) => s.id === sid)) ?? pickPrimaryStage(project?.stages ?? []);
+    const byId = sid ? project?.stages?.find((s) => s.id === sid) : undefined;
+    const stage = byId ?? pickPrimaryStage(project?.stages ?? []);
     return resolveMddGovernancePreservation(mddContent, stage?.mddContent ?? "").lockedPatternIds;
   }
 
