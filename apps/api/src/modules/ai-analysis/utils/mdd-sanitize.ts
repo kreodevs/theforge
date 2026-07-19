@@ -5351,7 +5351,7 @@ export function validateMddStructure(draft: string): ValidateMddStructureResult 
 
 /** Títulos canónicos en orden para reordenar y deduplicar el MDD (7 secciones). */
 const SECTION_ORDER = [
-  { pattern: /^##\s+1\.\s*Contexto/i, heading: "## 1. Contexto" },
+  { pattern: /^##\s+1\.\s*Contexto\b/i, heading: "## 1. Contexto" },
   { pattern: /^##\s+2\.\s*(?:Arquitectura(?:\s+y\s*Stack)?|Stack(?:\s+t[eé]cnico)?)\b/i, heading: "## 2. Arquitectura y Stack" },
   { pattern: /^##\s+3\.\s*Modelo\s+(?:de\s+)?datos/i, heading: "## 3. Modelo de Datos" },
   { pattern: /^##\s+4\.\s*Contratos\s+de\s+API/i, heading: "## 4. Contratos de API" },
