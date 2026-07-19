@@ -203,4 +203,14 @@ describe("theforge-doc-stamp", () => {
     assert.match(out, /\[ARQUITECTURA - SECCIÓN INMUTABLE\]/);
     assert.equal(selectedPatternIdsFromMdd(out).size, 1);
   });
+
+  it("extractCanonicalMddBody no salta a §3 cuando falta §1/§2 (evita gate §1+§2 missing)", async () => {
+    const { extractCanonicalMddBody } = await import("./theforge-doc-stamp.js");
+    const raw =
+      "Última modificación: 2026-07-19T06:00:00.000Z --> 📅 Creado: 19 de julio de 2026, 06:00:00 UTC --- ## 3. Modelo de Datos\n\nCREATE TABLE x (id int);\n";
+    const out = extractCanonicalMddBody(raw);
+    assert.match(out, /## 3\. Modelo de Datos/);
+    assert.doesNotMatch(out, /^## 3\./);
+    assert.match(out, /📅|Última modificación:/);
+  });
 });

@@ -115,11 +115,11 @@ export function extractCanonicalMddBody(body: string): string {
     return trimmed.slice(sec1Match.index).trimStart();
   }
 
-  // Fallback: cualquier ## N. (§2–§7) cuando el stamp pegó contenido antes del primer heading canónico.
-  // Típico al regenerar §2–§7 sin §1 en el borrador.
-  const anySectionMatch = trimmed.match(/(?:^|\n)(##\s*[2-7]\.\s[^\n]+)/im);
-  if (anySectionMatch?.index != null && anySectionMatch.index > 0) {
-    return trimmed.slice(anySectionMatch.index).trimStart();
+  // Fallback: solo §2 (regeneración parcial §2–§7 sin §1). Nunca saltar a §3+ — eso elimina §1/§2
+  // válidos y deja pasar al gate un MDD que empieza en §3.
+  const sec2Match = trimmed.match(/(?:^|\n)(##\s*2\.\s[^\n]+)/im);
+  if (sec2Match?.index != null && sec2Match.index > 0) {
+    return trimmed.slice(sec2Match.index).trimStart();
   }
 
   return trimmed;

@@ -35,6 +35,7 @@ import {
   finalizeMddDeliverable,
   fixDualApprovalSchemaInDraft,
   getSectionsToPreserveFromExecutorPlan,
+  normalizeCanonicalMddSectionHeadings,
   stripMeshDirectivesFromDraft,
   stripStrayParenAfterJsonCodeBlocks,
   repairNestedJsonFencesInDraft,
@@ -1984,5 +1985,52 @@ Stack.
     const out = prepareMddMarkdownForPersist(md);
     assert.equal(selectedPatternIdsFromMdd(out).size, 1);
     assert.doesNotMatch(out, /^# - \[[xX]\]/m);
+  });
+
+  it("normalizeCanonicalMddSectionHeadings: ## 2. Arquitectura sin y Stack pasa gate tras finalize", () => {
+    const raw = `# Master Design Document
+
+## 1. Contexto y alcance
+
+Objetivo comercial del sistema con más de ochenta caracteres para pasar validaciones del gate de entrega MDD.
+
+## 2. Arquitectura
+
+Stack Node.js y PostgreSQL con despliegue en Docker Compose para el MVP del producto.
+
+## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY, email TEXT NOT NULL);
+\`\`\`
+
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\`
+
+## 4. Contratos de API
+
+### POST /api/users
+\`\`\`json
+{"path":"/api/users","method":"POST"}
+\`\`\`
+
+## 5. Lógica y Edge Cases
+
+Reglas de negocio y casos borde del dominio con viñetas sustantivas.
+
+## 6. Seguridad
+
+JWT RS256 y control de acceso basado en roles para usuarios internos del sistema.
+
+## 7. Infraestructura
+
+Docker Compose con PostgreSQL 16 y Node 20-alpine en producción del sistema.
+`;
+    const normalized = normalizeCanonicalMddSectionHeadings(raw);
+    assert.match(normalized, /## 2\. Arquitectura y Stack/);
+    const final = finalizeMddDeliverable(normalized);
+    assert.deepEqual(validateMddStructure(final).missingSections, []);
+    assert.match(final, /## 2\. Arquitectura y Stack/);
   });
 });

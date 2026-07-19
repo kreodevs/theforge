@@ -1059,7 +1059,8 @@ export function ensureTechnicalMetadataBlockInDraft(draft: string): string {
 
 /** Pasada final antes del delivery gate: alinea Node §2↔§7, calidad MDD, JSON §4 y duplicados (idempotente). */
 export function applyPreDeliveryGateFixes(draft: string): string {
-  let out = alignInfraNodeVersionWithSection2(draft ?? "");
+  let out = normalizeCanonicalMddSectionHeadings(draft ?? "");
+  out = alignInfraNodeVersionWithSection2(out);
   out = repairNestedJsonFencesInDraft(out);
   out = repairDisplacedJsonBracesInContratosSection(out);
   out = closeUnclosedCodeFencesInDraft(out);
@@ -3880,10 +3881,27 @@ export function normalizeMddEnglishSubheadings(draft: string): string {
   return out;
 }
 
+/**
+ * Normaliza headings H2 frecuentes del LLM al formato canónico del gate (§1–§7).
+ * Debe ejecutarse antes de deduplicateAndReorderMddSections / validateMddStructure.
+ */
+export function normalizeCanonicalMddSectionHeadings(draft: string): string {
+  if (!draft?.trim()) return draft;
+  let out = draft;
+  out = out.replace(/^##\s+Contexto(?:\s+y\s*alcance)?\s*$/gim, "## 1. Contexto");
+  out = out.replace(
+    /^##\s+2\.\s*Arquitectura(?!\s+y\s*Stack)\s*$/gim,
+    "## 2. Arquitectura y Stack",
+  );
+  out = out.replace(/^##\s+Stack\s*$/gim, "## 2. Arquitectura y Stack");
+  return out;
+}
+
 /** Títulos canónicos del MDD (7 secciones). */
 const CANONICAL_HEADINGS: Array<{ pattern: RegExp; replacement: string }> = [
   { pattern: /^#+\s*Contexto\s*y\s*alcance\s*$/im, replacement: "## 1. Contexto" },
   { pattern: /^#+\s*Arquitectura\s+y\s*Stack\s*$/im, replacement: "## 2. Arquitectura y Stack" },
+  { pattern: /^##\s+2\.\s*Arquitectura\s*$/im, replacement: "## 2. Arquitectura y Stack" },
   { pattern: /^#+\s*schemaSQL\s*$/im, replacement: "## 3. Modelo de Datos" },
   { pattern: /^#+\s*Schema\s*SQL\s*$/im, replacement: "## 3. Modelo de Datos" },
   { pattern: /^#+\s*\d\.\s*Modelo\s+(?:de\s+)?datos\s*$/im, replacement: "## 3. Modelo de Datos" },
@@ -4256,7 +4274,7 @@ export function unescapeMermaidLiteralNewlines(draft: string): string {
  * Se aplica al draft antes de mostrarlo para que cada regeneración se vea consistente.
  */
 export function normalizeMddFormat(draft: string): string {
-  let out = stripTrailingDuplicateMddSections((draft || "").trim());
+  let out = normalizeCanonicalMddSectionHeadings(stripTrailingDuplicateMddSections((draft || "").trim()));
   out = fixGluedSection6Heading(out);
   if (!out) return draft;
   // Muy al inicio: §6 pegada a ### (evita que deduplicateAndReorderMddSections tome heading+subheading como una línea)
@@ -5176,7 +5194,7 @@ export function validateMddStructure(draft: string): ValidateMddStructureResult 
 /** Títulos canónicos en orden para reordenar y deduplicar el MDD (7 secciones). */
 const SECTION_ORDER = [
   { pattern: /^##\s+1\.\s*Contexto/i, heading: "## 1. Contexto" },
-  { pattern: /^##\s+2\.\s*Arquitectura\s+y\s*Stack/i, heading: "## 2. Arquitectura y Stack" },
+  { pattern: /^##\s+2\.\s*Arquitectura(?:\s+y\s*Stack)?/i, heading: "## 2. Arquitectura y Stack" },
   { pattern: /^##\s+3\.\s*Modelo\s+(?:de\s+)?datos/i, heading: "## 3. Modelo de Datos" },
   { pattern: /^##\s+4\.\s*Contratos\s+de\s+API/i, heading: "## 4. Contratos de API" },
   { pattern: /^##\s+5\.\s*Lógica\s+y\s*Edge\s+Cases/i, heading: "## 5. Lógica y Edge Cases" },
