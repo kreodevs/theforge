@@ -1957,7 +1957,12 @@ export class AiAnalysisService {
           };
         } else if (event.type === "done" && event.markdown) {
           finalMarkdown = event.markdown;
-          await persistMarkdown(event.markdown, true);
+          // Section regen: persist without hard delivery gate. The gate is designed for
+          // full pipeline runs; a single-section regen shouldn't be blocked because other
+          // sections are missing/corrupt (that's exactly what the user is trying to fix
+          // by regenerating individual sections).
+          const isSectionRegen = mode === "section" || mode === "upstream-sync";
+          await persistMarkdown(event.markdown, !isSectionRegen);
           if (projectId?.trim()) {
             this.estimationService.clearLiveDraft(projectId.trim(), stageId ?? undefined);
           }
