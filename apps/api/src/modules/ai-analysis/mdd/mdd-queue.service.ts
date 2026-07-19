@@ -11,7 +11,7 @@ import {
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { Queue, Worker, type Job } from "bullmq";
-import type { MddJobSnapshot } from "@theforge/shared-types";
+import type { MddJobSnapshot, MddUpstreamSyncStatus } from "@theforge/shared-types";
 import {
   applyMddJobProgress,
   createEmptyMddJobProgressState,
@@ -97,6 +97,8 @@ export type MddJobResult = {
     questions?: string[];
     planMessage?: string;
   };
+  /** Estado upstream tras capturar baseline (jobs section / upstream-sync). */
+  mddUpstreamSync?: MddUpstreamSyncStatus;
 };
 
 export interface MddJobStatus {

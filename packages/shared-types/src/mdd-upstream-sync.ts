@@ -50,6 +50,29 @@ export type MddUpstreamSyncAnalysis = {
   pendingSync: boolean;
 };
 
+/** Subconjunto de análisis expuesto al Workshop / generation-status. */
+export function toMddUpstreamSyncStatus(analysis: MddUpstreamSyncAnalysis): Pick<
+  MddUpstreamSyncAnalysis,
+  | "pendingSync"
+  | "changedSources"
+  | "recommendedSections"
+  | "expandedSections"
+  | "canSync"
+  | "needsFullRegen"
+  | "hasBaseline"
+> & { changes: MddUpstreamSyncAnalysis["changes"] } {
+  return {
+    pendingSync: analysis.pendingSync,
+    changedSources: analysis.changedSources,
+    recommendedSections: analysis.recommendedSections,
+    expandedSections: analysis.expandedSections,
+    canSync: analysis.canSync,
+    needsFullRegen: analysis.needsFullRegen,
+    hasBaseline: analysis.hasBaseline,
+    changes: analysis.changes,
+  };
+}
+
 export const MDD_SECTION_TITLES: Record<number, string> = {
   1: "§1 Contexto y alcance",
   2: "§2 Arquitectura y stack",

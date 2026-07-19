@@ -3,6 +3,7 @@ import type {
   ChatImagePart,
   CodebaseDocResponseMode,
   MddDeliveryGateResult,
+  MddUpstreamSyncStatus,
   PlanValidationPersisted,
   ProjectGenerationStatus,
   TraceabilityGapInput,
@@ -132,6 +133,25 @@ function selectRawMddFromStage(s: WorkshopState): string {
 /** Comparación estable para evitar PATCH cuando el markdown ya coincide con el baseline persistido. */
 function normalizedMddForPersistCompare(content: string | null | undefined): string {
   return normalizeWorkshopDocumentForEditor(content) ?? "";
+}
+
+function mergeGenerationStatusWithMddUpstreamSync(
+  status: ProjectGenerationStatus | null | undefined,
+  sync: MddUpstreamSyncStatus | null | undefined,
+): ProjectGenerationStatus | null {
+  if (!sync) return status ?? null;
+  if (!status) {
+    return {
+      busy: false,
+      mddStreamActive: false,
+      mddJobs: [],
+      activeJob: null,
+      queuedJobs: [],
+      gates: {},
+      mddUpstreamSync: sync,
+    };
+  }
+  return { ...status, mddUpstreamSync: sync };
 }
 
 /** Texto del textarea MDD: sin stamp API (fechas solo en WorkshopDocumentStampBar). */
@@ -2489,7 +2509,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         const mddContent = effectiveMddContentForSectionRegen(get);
         const regStage = get().activeStageId;
         void get().fetchGenerationStatus(requestProjectId);
-        await enqueueAndPollMddJob(
+        const pollResult = await enqueueAndPollMddJob(
           {
             mode: "section",
             projectId: requestProjectId,
@@ -2538,6 +2558,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         await fetchEstimation(requestProjectId, merged).catch(() => {});
         fetchConformance(requestProjectId).catch(() => {});
         await get().fetchGenerationStatus(requestProjectId, regStage ?? undefined);
+        const syncFromJob = (pollResult.result as { mddUpstreamSync?: MddUpstreamSyncStatus } | undefined)
+          ?.mddUpstreamSync;
+        if (syncFromJob) {
+          set((s) => ({
+            generationStatus: mergeGenerationStatusWithMddUpstreamSync(s.generationStatus, syncFromJob),
+          }));
+        }
         const editorMerged = mddContentForEditor(merged);
         const stateAfterFetch = get();
         const mddPatch =

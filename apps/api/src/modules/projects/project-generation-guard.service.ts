@@ -4,6 +4,7 @@ import {
   buildDeliverableReadiness,
   buildGenerationGates,
   evaluateGenerationGate,
+  toMddUpstreamSyncStatus,
   type GenerationJobSnapshot,
   type GenerationJobType,
   type ProjectGenerationStatus,
@@ -120,16 +121,7 @@ export class ProjectGenerationGuardService {
     let mddUpstreamSync = null;
     try {
       const analysis = await this.mddUpstreamSync.analyze(projectId, stageId);
-      mddUpstreamSync = {
-        pendingSync: analysis.pendingSync,
-        changedSources: analysis.changedSources,
-        recommendedSections: analysis.recommendedSections,
-        expandedSections: analysis.expandedSections,
-        canSync: analysis.canSync,
-        needsFullRegen: analysis.needsFullRegen,
-        hasBaseline: analysis.hasBaseline,
-        changes: analysis.changes,
-      };
+      mddUpstreamSync = toMddUpstreamSyncStatus(analysis);
     } catch {
       mddUpstreamSync = null;
     }

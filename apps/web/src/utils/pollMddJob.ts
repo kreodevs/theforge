@@ -30,6 +30,14 @@ export type MddJobStatusResponse = {
     outcome?: "done" | "interrupt";
     threadId?: string;
     mddLength?: number;
+    mddUpstreamSync?: {
+      pendingSync?: boolean;
+      changedSources?: string[];
+      expandedSections?: number[];
+      canSync?: boolean;
+      hasBaseline?: boolean;
+      changes?: unknown[];
+    };
     interrupt?: {
       reply?: string;
       questions?: string[];

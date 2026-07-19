@@ -76,4 +76,44 @@ describe("mdd-upstream-sync", () => {
     assert.equal(analysis.pendingSync, false);
     assert.deepEqual(analysis.changedSources, []);
   });
+
+  it("no marca pendingSync con snapshot legacy con stamp si el cuerpo DBGA no cambió", () => {
+    const body = "# DBGA\n\nContenido estable del proyecto.";
+    const stamped = `<!-- theforge-doc:created=2024-01-01T00:00:00.000Z|updated=2024-06-01T00:00:00.000Z -->\n> 📅 Creado: 1 de enero de 2024\n\n---\n\n${body}`;
+    const legacyBaseline = buildMddUpstreamBaseline({
+      dbgaContent: stamped,
+      brdContent: "brd",
+      benchmarkContent: "{}",
+      mddContent: "# MDD\n\n## 1. Contexto\n\nx".repeat(30),
+    });
+    // Simula baseline capturado con algoritmo anterior (hash incoherente con cuerpo actual).
+    legacyBaseline.dbgaContentHash = "legacy".padEnd(64, "0");
+    const analysis = analyzeMddUpstreamChanges({
+      baseline: legacyBaseline,
+      dbgaContent: body,
+      brdContent: "brd",
+      benchmarkContent: "{}",
+      mddContent: "# MDD\n\n## 1. Contexto\n\nx".repeat(30),
+    });
+    assert.equal(analysis.pendingSync, false);
+  });
+
+  it("no marca pendingSync en DBGA grande si solo cambió el algoritmo de hash", () => {
+    const prefix = "# DBGA\n\n" + "Línea de contenido estable.\n".repeat(1200);
+    const baseline = buildMddUpstreamBaseline({
+      dbgaContent: prefix,
+      brdContent: "brd",
+      benchmarkContent: "{}",
+      mddContent: "# MDD\n\n## 1. Contexto\n\nx".repeat(30),
+    });
+    baseline.dbgaContentHash = "legacy-large".padEnd(64, "0");
+    const analysis = analyzeMddUpstreamChanges({
+      baseline,
+      dbgaContent: prefix,
+      brdContent: "brd",
+      benchmarkContent: "{}",
+      mddContent: "# MDD\n\n## 1. Contexto\n\n" + "y".repeat(30),
+    });
+    assert.equal(analysis.pendingSync, false);
+  });
 });

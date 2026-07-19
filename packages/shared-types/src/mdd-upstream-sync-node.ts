@@ -16,24 +16,39 @@ function normalizeUpstreamSourceBody(source: MddUpstreamSource, text: string | n
   return source === "benchmark" ? normalizeBenchmarkDocumentBody(text) : normalizeUpstreamDocumentBody(text);
 }
 
-/** Evita falsos positivos cuando el hash del baseline es legacy pero el cuerpo no cambió. */
-function upstreamSourceUnchanged(
+function hashUpstreamSourceBody(source: MddUpstreamSource, text: string | null | undefined): string {
+  const body = normalizeUpstreamSourceBody(source, text);
+  return createHash("sha256").update(body, "utf8").digest("hex");
+}
+
+/** true si el upstream realmente cambió (hash distinto y cuerpo normalizado distinto). */
+function upstreamSourceActuallyChanged(
   baseline: MddUpstreamBaseline,
   source: MddUpstreamSource,
   currentRaw: string | null | undefined,
-  currentHash: string,
 ): boolean {
   const hashKey = `${source}ContentHash` as keyof MddUpstreamBaseline;
-  if ((baseline[hashKey] as string) === currentHash) return true;
-
-  const lenKey = `${source}Length` as keyof MddUpstreamBaseline;
   const snapKey = `${source}ContentSnapshot` as keyof MddUpstreamBaseline;
-  const docLen = baseline[lenKey] as number;
-  if (docLen > SNAPSHOT_MAX) return false;
+  const lenKey = `${source}Length` as keyof MddUpstreamBaseline;
 
-  const beforeNorm = (baseline[snapKey] as string) ?? "";
   const afterNorm = normalizeUpstreamSourceBody(source, currentRaw);
-  return beforeNorm.length > 0 && beforeNorm === afterNorm;
+  const currentHash = hashUpstreamSourceBody(source, currentRaw);
+  if ((baseline[hashKey] as string) === currentHash) return false;
+
+  // Re-normalizar snapshot (migración de baselines legacy con stamps u otro algoritmo).
+  const beforeNorm = normalizeUpstreamSourceBody(source, (baseline[snapKey] as string) ?? "");
+  const docLen = baseline[lenKey] as number;
+
+  if (docLen <= SNAPSHOT_MAX) {
+    return beforeNorm !== afterNorm;
+  }
+
+  // Documento grande: el snapshot guardado es prefijo del cuerpo normalizado al capturar.
+  if (docLen === afterNorm.length && beforeNorm.length > 0 && beforeNorm === afterNorm.slice(0, beforeNorm.length)) {
+    return false;
+  }
+
+  return true;
 }
 
 export function hashUpstreamDocumentBody(text: string | null | undefined): string {
@@ -54,9 +69,9 @@ export function buildMddUpstreamBaseline(input: {
   const mdd = normalizeUpstreamDocumentBody(input.mddContent);
   return {
     capturedAt: (input.capturedAt ?? new Date()).toISOString(),
-    dbgaContentHash: hashUpstreamDocumentBody(dbga),
-    brdContentHash: hashUpstreamDocumentBody(brd),
-    benchmarkContentHash: hashUpstreamDocumentBody(benchmark),
+    dbgaContentHash: hashUpstreamSourceBody("dbga", input.dbgaContent),
+    brdContentHash: hashUpstreamSourceBody("brd", input.brdContent),
+    benchmarkContentHash: hashUpstreamSourceBody("benchmark", input.benchmarkContent),
     mddContentHash: hashUpstreamDocumentBody(mdd),
     dbgaLength: dbga.length,
     brdLength: brd.length,
@@ -133,12 +148,6 @@ export function analyzeMddUpstreamChanges(input: {
 }): MddUpstreamSyncAnalysis {
   const mddBody = normalizeUpstreamDocumentBody(input.mddContent);
   const hasMdd = mddBody.length >= 200;
-  const current = buildMddUpstreamBaseline({
-    dbgaContent: input.dbgaContent,
-    brdContent: input.brdContent,
-    benchmarkContent: input.benchmarkContent,
-    mddContent: input.mddContent,
-  });
 
   if (!hasMdd) {
     return {
@@ -176,47 +185,40 @@ export function analyzeMddUpstreamChanges(input: {
 
   const pairs: Array<{
     source: MddUpstreamSource;
-    before: string;
-    after: string;
+    raw: string | null | undefined;
     hashKey: keyof MddUpstreamBaseline;
+    lenKey: keyof MddUpstreamBaseline;
     snapshotKey: keyof MddUpstreamBaseline;
   }> = [
     {
       source: "dbga",
-      before: baseline.dbgaContentSnapshot ?? "",
-      after: normalizeUpstreamDocumentBody(input.dbgaContent),
+      raw: input.dbgaContent,
       hashKey: "dbgaContentHash",
       snapshotKey: "dbgaContentSnapshot",
+      lenKey: "dbgaLength",
     },
     {
       source: "brd",
-      before: baseline.brdContentSnapshot ?? "",
-      after: normalizeUpstreamDocumentBody(input.brdContent),
+      raw: input.brdContent,
       hashKey: "brdContentHash",
       snapshotKey: "brdContentSnapshot",
+      lenKey: "brdLength",
     },
     {
       source: "benchmark",
-      before: baseline.benchmarkContentSnapshot ?? "",
-      after: normalizeBenchmarkDocumentBody(input.benchmarkContent),
+      raw: input.benchmarkContent,
       hashKey: "benchmarkContentHash",
       snapshotKey: "benchmarkContentSnapshot",
+      lenKey: "benchmarkLength",
     },
   ];
 
   for (const p of pairs) {
-    const currentHash = current[p.hashKey] as string;
-    const baseHash = baseline[p.hashKey] as string;
-    if (currentHash === baseHash) continue;
-    const rawInput =
-      p.source === "dbga"
-        ? input.dbgaContent
-        : p.source === "brd"
-          ? input.brdContent
-          : input.benchmarkContent;
-    if (upstreamSourceUnchanged(baseline, p.source, rawInput, currentHash)) continue;
+    if (!upstreamSourceActuallyChanged(baseline, p.source, p.raw)) continue;
+    const beforeNorm = normalizeUpstreamSourceBody(p.source, (baseline[p.snapshotKey] as string) ?? "");
+    const afterNorm = normalizeUpstreamSourceBody(p.source, p.raw);
     changedSources.push(p.source);
-    const stats = diffLineStats(p.before, p.after);
+    const stats = diffLineStats(beforeNorm, afterNorm);
     const summary =
       stats.added + stats.removed > 0
         ? `${stats.added} líneas nuevas, ${stats.removed} eliminadas respecto al baseline.`
@@ -233,7 +235,10 @@ export function analyzeMddUpstreamChanges(input: {
   let recommendedSections: number[] = [];
   for (const change of changes) {
     const pair = pairs.find((p) => p.source === change.source);
-    const diffText = pair ? diffLineStats(pair.before, pair.after).diffText : change.summary;
+    if (!pair) continue;
+    const beforeNorm = normalizeUpstreamSourceBody(pair.source, (baseline[pair.snapshotKey] as string) ?? "");
+    const afterNorm = normalizeUpstreamSourceBody(pair.source, pair.raw);
+    const diffText = diffLineStats(beforeNorm, afterNorm).diffText;
     recommendedSections.push(...inferSectionsFromDiff(change.source, diffText, change.label));
   }
   recommendedSections = [...new Set(recommendedSections)].sort((a, b) => a - b);

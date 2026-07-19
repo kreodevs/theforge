@@ -6,6 +6,7 @@ import {
 import {
   buildUpstreamChangeSummaryForPipeline,
   expandMddSectionsForSync,
+  toMddUpstreamSyncStatus,
   type MddUpstreamBaseline,
   type MddUpstreamSyncAnalysis,
 } from "@theforge/shared-types";
@@ -119,6 +120,16 @@ export class MddUpstreamSyncService {
     });
     this.logger.log(`Baseline upstream MDD capturado stageId=${stageId} projectId=${projectId}`);
     return baseline;
+  }
+
+  /** Captura baseline tras job MDD y devuelve análisis actualizado para la UI. */
+  async captureBaselineAndAnalyze(
+    projectId: string,
+    stageId: string,
+  ): Promise<{ baseline: MddUpstreamBaseline; analysis: MddUpstreamSyncAnalysis; syncStatus: ReturnType<typeof toMddUpstreamSyncStatus> }> {
+    const baseline = await this.captureBaseline(projectId, stageId);
+    const analysis = await this.analyze(projectId, stageId);
+    return { baseline, analysis, syncStatus: toMddUpstreamSyncStatus(analysis) };
   }
 
   buildSyncSummary(analysis: MddUpstreamSyncAnalysis): string {

@@ -37,7 +37,7 @@ import { pickPrimaryStage } from "../projects/stage-helpers.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
 import { AgentSupervisorService } from "../agent-supervisor/agent-supervisor.service.js";
 import { EpisodicMemoryKind, type ComplexityLevel } from "@theforge/database";
-import { contentIncludesVisionBlock, peelDocumentBodyForPersist, type ChatImagePart, type MddDeliveryGateResult, expandMddSectionsForSync, MDD_SECTION_TITLES } from "@theforge/shared-types";
+import { contentIncludesVisionBlock, peelDocumentBodyForPersist, type ChatImagePart, type MddDeliveryGateResult, expandMddSectionsForSync, MDD_SECTION_TITLES, type MddUpstreamSyncStatus } from "@theforge/shared-types";
 import { formatVisionContextBlock, mergeUserTextWithVisionBlock } from "../ai/utils/vision-context.util.js";
 import { markdownToMddStructured } from "./utils/mdd-markdown-to-structured.js";
 import { HumanMessage } from "@langchain/core/messages";
@@ -2140,15 +2140,7 @@ export class AiAnalysisService {
           ),
         );
         if (jobResult.ok && jobResult.outcome === "done") {
-          const docs = await this.mddUpstreamSync.loadUpstreamDocuments(projectId, stageId).catch((err) => {
-            this.logger.warn(`[MDD section] loadUpstreamDocuments for baseline failed: ${err instanceof Error ? err.message : String(err)}`);
-            return null;
-          });
-          if (docs?.stageId) {
-            await this.mddUpstreamSync.captureBaseline(projectId, docs.stageId).catch((err) => {
-              this.logger.warn(`[MDD section] capture baseline failed: ${err instanceof Error ? err.message : String(err)}`);
-            });
-          }
+          return this.finalizeMddJobUpstreamBaseline(projectId, stageId, jobResult);
         }
         return jobResult;
       }
@@ -2183,6 +2175,33 @@ export class AiAnalysisService {
       }
       default:
         throw new Error(`Modo MDD no soportado en job: ${mode}`);
+    }
+  }
+
+  /** Captura baseline upstream y adjunta estado de sync al resultado del job para el Workshop. */
+  private async finalizeMddJobUpstreamBaseline(
+    projectId: string,
+    stageId: string | null | undefined,
+    jobResult: { ok: boolean; outcome?: string; stageId?: string; mddLength?: number; mode: string; projectId: string },
+  ): Promise<typeof jobResult & { mddUpstreamSync?: MddUpstreamSyncStatus }> {
+    const sid =
+      stageId?.trim() ||
+      jobResult.stageId?.trim() ||
+      (await this.mddUpstreamSync.loadUpstreamDocuments(projectId, stageId).catch(() => null))?.stageId;
+    if (!sid) return jobResult;
+    try {
+      const { syncStatus } = await this.mddUpstreamSync.captureBaselineAndAnalyze(projectId, sid);
+      if (syncStatus.pendingSync) {
+        this.logger.warn(
+          `[MDD ${jobResult.mode}] baseline capturado pero pendingSync=true projectId=${projectId} stageId=${sid} sources=${syncStatus.changedSources.join(",")}`,
+        );
+      }
+      return { ...jobResult, mddUpstreamSync: syncStatus };
+    } catch (err) {
+      this.logger.warn(
+        `[MDD ${jobResult.mode}] capture baseline failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return jobResult;
     }
   }
 
