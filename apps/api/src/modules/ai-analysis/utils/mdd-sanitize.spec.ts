@@ -54,6 +54,7 @@ import {
   normalizeMddEnglishSubheadings,
   parseCrossConsistencyPatches,
   preserveUntouchedMddSectionsFromBaseline,
+  restoreMddSectionsFromBaselineStrict,
   demoteProseHeadingsInSections,
   repairDisplacedJsonBracesInContratos,
   sanitizeSeguridadIntegracionRawJson,
@@ -292,6 +293,54 @@ Docker legacy.
     );
     assert.match(out, /MFA TOTP obligatorio/);
     assert.doesNotMatch(out, /Pendiente:\s*Arquitecto de Seguridad/);
+  });
+});
+
+describe("restoreMddSectionsFromBaselineStrict", () => {
+  it("restaura §6 aunque el sync upstream haya inyectado otro contenido", () => {
+    const baseline = `# MDD
+
+## 1. Contexto
+
+Contexto largo con alcance del producto y requisitos no funcionales descritos.
+
+## 2. Arquitectura y Stack
+
+Stack.
+
+## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users ( id UUID PRIMARY KEY );
+\`\`\`
+
+## 4. Contratos de API
+
+### GET /api/v1/health
+
+OK.
+
+## 5. Lógica y Edge Cases
+
+Reglas.
+
+## 6. Seguridad
+
+### A. Autenticación
+
+- MFA TOTP obligatorio para administradores con contenido detallado.
+
+## 7. Infraestructura
+
+Docker legacy con variables de entorno documentadas.
+`;
+    const corrupted = baseline.replace(
+      /## 6\. Seguridad[\s\S]*?(?=\n## 7\.)/,
+      "## 6. Seguridad\n\nContenido genérico OAuth sin relación con el proyecto.\n\n",
+    );
+    const out = restoreMddSectionsFromBaselineStrict(corrupted, baseline, [6]);
+    assert.match(out, /MFA TOTP obligatorio/);
+    assert.doesNotMatch(out, /Contenido genérico OAuth/);
   });
 });
 

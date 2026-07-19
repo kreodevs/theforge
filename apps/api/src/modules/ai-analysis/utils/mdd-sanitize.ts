@@ -4997,6 +4997,46 @@ export function preserveUntouchedMddSectionsFromBaseline(
   return out;
 }
 
+/**
+ * Restaura secciones desde el borrador baseline sin heurística de placeholder.
+ * Usado en upstream-sync para no tocar §6 (u otras) fuera del alcance solicitado.
+ */
+export function restoreMddSectionsFromBaselineStrict(
+  currentDraft: string,
+  baselineDraft: string,
+  sectionsToRestore: readonly number[],
+): string {
+  if (!baselineDraft.trim() || !sectionsToRestore.length) return currentDraft;
+  let out = currentDraft;
+  for (const n of sectionsToRestore) {
+    const prevBody =
+      n === 1
+        ? extractContextSectionBody(baselineDraft)
+        : n === 2
+          ? extractArquitecturaSectionBody(baselineDraft)
+          : n === 3
+            ? extractSection3Body(baselineDraft)
+            : n === 4
+              ? extractSection4Body(baselineDraft)
+              : n === 5
+                ? getSectionBody(baselineDraft.trim(), /##\s*5\.\s*Lógica\s+y\s*Edge\s+Cases/i)
+                : n === 6
+                  ? extractSection6Body(baselineDraft)
+                  : n === 7
+                    ? extractSection7Body(baselineDraft)
+                    : null;
+    if (!prevBody?.trim()) continue;
+    if (n === 1) out = replaceContextSectionBody(out, prevBody);
+    else if (n === 2) out = replaceArquitecturaSectionBody(out, prevBody);
+    else if (n === 3) out = replaceSection3Body(out, prevBody);
+    else if (n === 4) out = replaceSection4Body(out, prevBody);
+    else if (n === 5) out = replaceSection5Body(out, prevBody);
+    else if (n === 6) out = replaceSection6Or7InDraft(out, 6, `## 6. Seguridad\n\n${prevBody}`);
+    else if (n === 7) out = replaceSection6Or7InDraft(out, 7, `## 7. Infraestructura\n\n${prevBody}`);
+  }
+  return out;
+}
+
 /** Línea que es solo el título de la sección (evitar duplicar "6. Seguridad" en el cuerpo). */
 const reSection6TitleOnly = /^\s*(###?\s*)?6\.\s*Seguridad\s*$/i;
 

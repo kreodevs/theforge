@@ -4067,7 +4067,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         : undefined;
 
     set({ loading: true, loadingReason: "mdd", error: null, agentProgress: [] });
-    void get().fetchGenerationStatus(pid);
+    void get().fetchGenerationStatus(pid, stageId);
 
     try {
       await enqueueAndPollMddJob(
@@ -4095,11 +4095,11 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       const data = await get().fetchProject(pid, { preferServerMdd: true });
       applyMddFromFetchedProject(get, set, data ?? get().project);
       await get().fetchEstimation(pid);
-      await get().fetchGenerationStatus(pid);
+      await get().fetchGenerationStatus(pid, stageId);
       set({ loading: false, loadingReason: null, agentProgress: [] });
       return data ?? get().project;
     } catch (e) {
-      const status = await get().fetchGenerationStatus(pid);
+      const status = await get().fetchGenerationStatus(pid, stageId);
       const stillRunning = Boolean(status?.busy || status?.mddStreamActive);
       const friendly = friendlyFetchError(e);
       if (stillRunning) {

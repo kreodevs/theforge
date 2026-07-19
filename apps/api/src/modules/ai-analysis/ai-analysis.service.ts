@@ -29,6 +29,7 @@ import {
   replaceSection1BodyFromAnyHeading,
   replaceSections2To5InDraft,
   restoreContextSectionFromBaselineIfMissing,
+  restoreMddSectionsFromBaselineStrict,
 } from "./utils/mdd-sanitize.js";
 import { GraphMemoryService } from "./graph-memory/graph-memory.service.js";
 import { ProjectsService } from "../projects/projects.service.js";
@@ -1764,6 +1765,8 @@ export class AiAnalysisService {
 
     // Quitar stamp antes de procesar (mismo motivo que streamMddRegenerateSection).
     mddContent = peelDocumentBodyForPersist(mddContent);
+    const baselineMddBeforeSync = mddContent;
+    const sectionsToPreserve = [1, 2, 3, 4, 5, 6, 7].filter((n) => !ordered.includes(n));
 
     const brdContent = sid
       ? (await this.prisma.stage.findUnique({ where: { id: sid }, select: { brdContent: true } }))?.brdContent ?? null
@@ -1845,8 +1848,17 @@ export class AiAnalysisService {
       };
     }
 
+    if (sectionsToPreserve.length > 0) {
+      mddContent = restoreMddSectionsFromBaselineStrict(
+        mddContent,
+        baselineMddBeforeSync,
+        sectionsToPreserve,
+      );
+    }
+
     const { opts: prepareOpts } = createPrepareOptsWithGate({
       preservedGovernance: extractGovernanceSection(mddContent),
+      baselineDraft: baselineMddBeforeSync,
     });
     let markdown = await this.runPrepareMddForOutput(mddContent, prepareOpts);
     markdown = await this.reviewMddConsistency(pid, markdown);

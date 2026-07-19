@@ -31,10 +31,6 @@ describe("mdd-upstream-sync", () => {
     assert.equal(analysis.pendingSync, true);
   });
 
-  it("hash estable para mismo contenido", () => {
-    assert.equal(hashUpstreamDocumentBody(" a \n"), hashUpstreamDocumentBody("a"));
-  });
-
   it("ignora cabecera de fechas al comparar upstream (sin pendingSync por stamp)", () => {
     const body = "# DBGA\n\nContenido estable del benchmark.";
     const stampedV1 = `<!-- theforge-doc:created=2024-01-01T00:00:00.000Z|updated=2024-06-01T00:00:00.000Z -->\n> 📅 Creado: 1 de enero de 2024 · Última modificación: 1 de junio de 2024\n\n---\n\n${body}`;
@@ -50,6 +46,31 @@ describe("mdd-upstream-sync", () => {
       dbgaContent: stampedV2,
       brdContent: "brd",
       benchmarkContent: "bench",
+      mddContent: "# MDD\n\n## 1. Contexto\n\nx".repeat(30),
+    });
+    assert.equal(analysis.pendingSync, false);
+    assert.deepEqual(analysis.changedSources, []);
+  });
+
+  it("hash estable para mismo contenido", () => {
+    assert.equal(hashUpstreamDocumentBody(" a \n"), hashUpstreamDocumentBody("a"));
+  });
+
+  it("no marca pendingSync si el hash baseline es legacy pero el cuerpo DBGA no cambió", () => {
+    const body = "# DBGA\n\nContenido estable.";
+    const baseline = buildMddUpstreamBaseline({
+      dbgaContent: body,
+      brdContent: "brd",
+      benchmarkContent: "{}",
+      mddContent: "# MDD\n\n## 1. Contexto\n\nx".repeat(30),
+    });
+    const legacyHash = "deadbeef".padEnd(64, "0");
+    const legacyBaseline = { ...baseline, dbgaContentHash: legacyHash };
+    const analysis = analyzeMddUpstreamChanges({
+      baseline: legacyBaseline,
+      dbgaContent: body,
+      brdContent: "brd",
+      benchmarkContent: "{}",
       mddContent: "# MDD\n\n## 1. Contexto\n\nx".repeat(30),
     });
     assert.equal(analysis.pendingSync, false);

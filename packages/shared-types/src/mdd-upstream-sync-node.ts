@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   expandMddSectionsForSync,
   MDD_UPSTREAM_SOURCE_LABELS,
+  normalizeBenchmarkDocumentBody,
   normalizeUpstreamDocumentBody,
   type MddUpstreamBaseline,
   type MddUpstreamChangeItem,
@@ -10,6 +11,30 @@ import {
 } from "./mdd-upstream-sync.js";
 
 const SNAPSHOT_MAX = 32_000;
+
+function normalizeUpstreamSourceBody(source: MddUpstreamSource, text: string | null | undefined): string {
+  return source === "benchmark" ? normalizeBenchmarkDocumentBody(text) : normalizeUpstreamDocumentBody(text);
+}
+
+/** Evita falsos positivos cuando el hash del baseline es legacy pero el cuerpo no cambió. */
+function upstreamSourceUnchanged(
+  baseline: MddUpstreamBaseline,
+  source: MddUpstreamSource,
+  currentRaw: string | null | undefined,
+  currentHash: string,
+): boolean {
+  const hashKey = `${source}ContentHash` as keyof MddUpstreamBaseline;
+  if ((baseline[hashKey] as string) === currentHash) return true;
+
+  const lenKey = `${source}Length` as keyof MddUpstreamBaseline;
+  const snapKey = `${source}ContentSnapshot` as keyof MddUpstreamBaseline;
+  const docLen = baseline[lenKey] as number;
+  if (docLen > SNAPSHOT_MAX) return false;
+
+  const beforeNorm = (baseline[snapKey] as string) ?? "";
+  const afterNorm = normalizeUpstreamSourceBody(source, currentRaw);
+  return beforeNorm.length > 0 && beforeNorm === afterNorm;
+}
 
 export function hashUpstreamDocumentBody(text: string | null | undefined): string {
   const body = normalizeUpstreamDocumentBody(text);
@@ -25,7 +50,7 @@ export function buildMddUpstreamBaseline(input: {
 }): MddUpstreamBaseline {
   const dbga = normalizeUpstreamDocumentBody(input.dbgaContent);
   const brd = normalizeUpstreamDocumentBody(input.brdContent);
-  const benchmark = normalizeUpstreamDocumentBody(input.benchmarkContent);
+  const benchmark = normalizeBenchmarkDocumentBody(input.benchmarkContent);
   const mdd = normalizeUpstreamDocumentBody(input.mddContent);
   return {
     capturedAt: (input.capturedAt ?? new Date()).toISOString(),
@@ -173,7 +198,7 @@ export function analyzeMddUpstreamChanges(input: {
     {
       source: "benchmark",
       before: baseline.benchmarkContentSnapshot ?? "",
-      after: normalizeUpstreamDocumentBody(input.benchmarkContent),
+      after: normalizeBenchmarkDocumentBody(input.benchmarkContent),
       hashKey: "benchmarkContentHash",
       snapshotKey: "benchmarkContentSnapshot",
     },
@@ -183,6 +208,13 @@ export function analyzeMddUpstreamChanges(input: {
     const currentHash = current[p.hashKey] as string;
     const baseHash = baseline[p.hashKey] as string;
     if (currentHash === baseHash) continue;
+    const rawInput =
+      p.source === "dbga"
+        ? input.dbgaContent
+        : p.source === "brd"
+          ? input.brdContent
+          : input.benchmarkContent;
+    if (upstreamSourceUnchanged(baseline, p.source, rawInput, currentHash)) continue;
     changedSources.push(p.source);
     const stats = diffLineStats(p.before, p.after);
     const summary =

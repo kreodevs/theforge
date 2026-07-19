@@ -16,7 +16,7 @@ Cola de generación/regeneración del MDD desacoplada del SSE del navegador.
 | `pipeline` | Greenfield — benchmark → MDD | `streamMddAnalysis` |
 | `manager` | Greenfield — chat Manager (arranque) | `streamMddAnalysisWithManager` |
 | `section` | Greenfield — `/seguridad`, etc. | `streamMddRegenerateSection` |
-| `upstream-sync` | Greenfield — cambios DBGA/BRD/Benchmark | `streamMddUpstreamSync` (§1–§7 selectivas) |
+| `upstream-sync` | Greenfield — cambios DBGA/BRD/Benchmark | `streamMddUpstreamSync` (§1–§7 selectivas; restaura estrictamente las secciones fuera de alcance) |
 | `legacy` | Proyectos `LEGACY` | `LegacyCoordinatorService.generateMdd` |
 
 Un solo job MDD activo o en cola por proyecto (`assertCanEnqueue` → 409 si busy).

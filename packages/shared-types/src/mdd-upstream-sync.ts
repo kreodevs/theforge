@@ -75,6 +75,19 @@ export function normalizeUpstreamDocumentBody(text: string | null | undefined): 
   return body.trim();
 }
 
+/** Normaliza JSON de benchmark/phase0Summary para hashing estable (orden de claves). */
+export function normalizeBenchmarkDocumentBody(text: string | null | undefined): string {
+  const body = normalizeUpstreamDocumentBody(text);
+  if (!body) return body;
+  const first = body.trimStart()[0];
+  if (first !== "{" && first !== "[") return body;
+  try {
+    return JSON.stringify(JSON.parse(body));
+  } catch {
+    return body;
+  }
+}
+
 /** Expande dependencias entre secciones MDD antes de ejecutar agentes. */
 export function expandMddSectionsForSync(sections: readonly number[]): number[] {
   const set = new Set(sections.filter((n) => n >= 1 && n <= 7));
