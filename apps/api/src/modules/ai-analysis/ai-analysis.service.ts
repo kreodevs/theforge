@@ -35,7 +35,7 @@ import { pickPrimaryStage } from "../projects/stage-helpers.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
 import { AgentSupervisorService } from "../agent-supervisor/agent-supervisor.service.js";
 import { EpisodicMemoryKind, type ComplexityLevel } from "@theforge/database";
-import { contentIncludesVisionBlock, type ChatImagePart, type MddDeliveryGateResult, expandMddSectionsForSync, MDD_SECTION_TITLES } from "@theforge/shared-types";
+import { contentIncludesVisionBlock, peelDocumentBodyForPersist, type ChatImagePart, type MddDeliveryGateResult, expandMddSectionsForSync, MDD_SECTION_TITLES } from "@theforge/shared-types";
 import { formatVisionContextBlock, mergeUserTextWithVisionBlock } from "../ai/utils/vision-context.util.js";
 import { markdownToMddStructured } from "./utils/mdd-markdown-to-structured.js";
 import { HumanMessage } from "@langchain/core/messages";
@@ -1474,6 +1474,11 @@ export class AiAnalysisService {
       return;
     }
 
+    // Qitar stamp (cabecera Creado/Última modificación) antes de procesar.
+    // Si el MDD viene de BD trae el stamp; si no se peela, llega al LLM como contexto
+    // y las funciones de reemplazo de sección pueden insertar contenido dentro del bloque de fechas.
+    mddContent = peelDocumentBodyForPersist(mddContent);
+
     const { opts: regenPrepareOpts, gateRef: regenGateRef } = createPrepareOptsWithGate({
       preservedGovernance: extractGovernanceSection(mddContent),
     });
@@ -1692,6 +1697,9 @@ export class AiAnalysisService {
       yield { type: "error", message: "No hay MDD suficiente para sincronizar. Genera el MDD completo primero." };
       return;
     }
+
+    // Quitar stamp antes de procesar (mismo motivo que streamMddRegenerateSection).
+    mddContent = peelDocumentBodyForPersist(mddContent);
 
     const brdContent = sid
       ? (await this.prisma.stage.findUnique({ where: { id: sid }, select: { brdContent: true } }))?.brdContent ?? null

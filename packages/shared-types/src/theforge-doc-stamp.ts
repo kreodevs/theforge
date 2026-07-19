@@ -115,6 +115,13 @@ export function extractCanonicalMddBody(body: string): string {
     return trimmed.slice(sec1Match.index).trimStart();
   }
 
+  // Fallback: cualquier ## N. (§2–§7) cuando el stamp pegó contenido antes del primer heading canónico.
+  // Típico al regenerar §2–§7 sin §1 en el borrador.
+  const anySectionMatch = trimmed.match(/(?:^|\n)(##\s*[2-7]\.\s[^\n]+)/im);
+  if (anySectionMatch?.index != null && anySectionMatch.index > 0) {
+    return trimmed.slice(anySectionMatch.index).trimStart();
+  }
+
   return trimmed;
 }
 
@@ -256,6 +263,9 @@ export function peelDocumentBodyForPersist(text: string): string {
     if (!next || next === body) break;
     body = next;
   }
+  // Reparar `--- ##` pegado antes de extractCanonicalMddBody para que los headings §2–§7
+  // sean detectables tras residuo de stamp (típico al regenerar secciones sin §1).
+  body = repairInlineHorizontalRuleSectionBreaks(body);
   body = extractCanonicalMddBody(body);
   body = repairInlineHorizontalRuleSectionBreaks(body);
   body = promoteBareDocumentTitleBeforeH2(body);

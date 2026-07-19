@@ -132,6 +132,16 @@ describe("theforge-doc-stamp", () => {
     assert.doesNotMatch(body, /📅/);
   });
 
+  it("peelDocumentBodyForPersist trims stamp residue before §2–§7 when §1 is absent", () => {
+    // Caso típico al regenerar §2–§7: el borrador puede no tener §1 pero sí §2,
+    // y el stamp de BD queda pegado antes del primer heading.
+    const raw =
+      "Última modificación: 2026-07-19T06:00:00.000Z --> 📅 Creado: 19 de julio de 2026, 06:00:00 UTC · Última modificación: 19 de julio de 2026, 06:00:00 UTC --- ## 2. Arquitectura y Stack ### 2.1 Visión";
+    const body = peelDocumentBodyForPersist(raw);
+    assert.match(body, /^## 2\. Arquitectura y Stack/);
+    assert.doesNotMatch(body, /📅|Última modificación:/);
+  });
+
   it("mddMarkdownNeedsStructuralRepair detects inline sections in stamp zone", () => {
     const raw =
       "Última modificación: 2026-07-18T06:43:07.391Z --> 📅 Creado: 18 de julio de 2026, 06:43:07 UTC --- # Master Design Document --- ## 1. Contexto --- ## 2. Stack\n\n## 3. Modelo";
