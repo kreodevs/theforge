@@ -297,6 +297,21 @@ Recibe el mensaje del webhook.
     assert.doesNotMatch(out, /webhook\.\n}\n```/);
   });
 
+  it("elimina fence huérfano antes de Request body (Copiloto §4)", () => {
+    const raw = `### POST /api/v1/chat/message
+Recibe el mensaje del webhook de WhatsApp y orquesta la respuesta.
+\`\`\`
+
+**Request body:**
+\`\`\`json
+{ "device_token": "string" }
+\`\`\`
+`;
+    const out = repairPastedMarkdown(raw);
+    assert.match(out, /respuesta\.\n+\*\*Request body:\*\*/);
+    assert.doesNotMatch(out, /respuesta\.\n```\n\n\*\*Request body/);
+  });
+
   it("normaliza Response 204 sin # No Content", () => {
     const raw = `**Response 204:**
 # \`No Content\`
@@ -304,6 +319,15 @@ Recibe el mensaje del webhook.
     const out = repairPastedMarkdown(raw);
     assert.match(out, /\*\*Response 204:\*\*\n\n_No Content_/);
     assert.doesNotMatch(out, /# `No Content`/);
+  });
+
+  it("normaliza Response 204 con # _No Content_", () => {
+    const raw = `**Response 204:**
+# _No Content_
+`;
+    const out = repairPastedMarkdown(raw);
+    assert.match(out, /\*\*Response 204:\*\*\n\n_No Content_/);
+    assert.doesNotMatch(out, /# _No Content_/);
   });
 
   it("fusiona Matriz UI/UX partida por heading erróneo", () => {

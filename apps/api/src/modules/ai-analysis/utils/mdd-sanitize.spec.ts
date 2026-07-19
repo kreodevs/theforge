@@ -1988,6 +1988,63 @@ Stack.
     assert.doesNotMatch(out, /^# - \[[xX]\]/m);
   });
 
+  it("prepareMddMarkdownForPersist mantiene SSOT aunque peel recorte stamp previo", () => {
+    const base =
+      "# Master Design Document\n\n## 1. Contexto\n\nCuerpo §1 con más de ochenta caracteres para el MDD canónico de prueba.\n";
+    const id = listGovernancePatternOptions().find((o) => o.label.includes("Singleton"))!.id;
+    const md = updateMddGovernancePatterns(base, new Set([id]));
+    const withStamp = `<!-- theforge-doc:created=2026-01-01T00:00:00.000Z|updated=2026-01-01T00:00:00.000Z -->\n> 📅 Creado: 1 ene 2026\n\n${md}`;
+    const out = prepareMddMarkdownForPersist(withStamp);
+    assert.equal(selectedPatternIdsFromMdd(out).size, 1);
+    assert.match(out, /\[ARQUITECTURA - SECCIÓN INMUTABLE\]/);
+  });
+
+  it("prepareMddMarkdownForPersist repara §4 Copiloto (fence huérfano y JSON sin cierre)", () => {
+    const raw = `# Master Design Document
+
+## 1. Contexto
+
+Cuerpo §1 con más de ochenta caracteres para el MDD canónico de prueba del copiloto.
+
+## 4. Contratos de API
+
+### POST /api/v1/chat/message
+Recibe el mensaje del webhook de WhatsApp y orquesta la respuesta.
+\`\`\`
+
+**Request body:**
+\`\`\`json
+{ "device_token": "string" }
+\`\`\`
+
+**Response 202:**
+\`\`\`json
+{
+  "status": "accepted",
+  "task_id": "uuid",
+  "message": "El agente está procesando tu solicitud."
+
+### POST /api/v1/chat/switch-company
+Cambia la empresa activa.
+\`\`\`
+
+**Response 204:**
+# _No Content_
+
+## 5. Lógica y Edge Cases
+
+Reglas de negocio con más de ochenta caracteres para cumplir el gate de entrega del MDD canónico.
+## 6. Seguridad
+
+Autenticación M2M con JWT RS256 y aislamiento multitenant obligatorio en todas las consultas.
+`;
+    const out = prepareMddMarkdownForPersist(raw);
+    assert.doesNotMatch(out, /respuesta\.\n```\n\n\*\*Request body/);
+    assert.match(out, /"message": "El agente está procesando tu solicitud."\n}\n```/);
+    assert.match(out, /\*\*Response 204:\*\*\n+_No Content_/);
+    assert.match(out, /Edge Cases[\s\S]*---[\s\S]*## 6\. Seguridad/);
+  });
+
   it("normalizeCanonicalMddSectionHeadings: ## 2. Arquitectura sin y Stack pasa gate tras finalize", () => {
     const raw = `# Master Design Document
 

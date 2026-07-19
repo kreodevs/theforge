@@ -477,6 +477,7 @@ export function repairPromoteBareSectionHeadings(text: string): string {
     if (/^(GET|POST|PUT|PATCH|DELETE)\s+\//.test(t)) return false;
     if (/^Módulo \d+ —/.test(t)) return false;
     if (/^contexto:/i.test(t)) return false;
+    if (/[.!?]\s*$/.test(t) && t.length > 40) return false;
     if (/:$/.test(t) && t.length < 60) return false;
     if (!/^[A-ZÁÉÍÓÚÑ0-9]/.test(t)) return false;
     if (/^[{\[]/.test(next)) return true;
@@ -1165,7 +1166,27 @@ export function repairSplitUiUxMatrizHeading(text: string): string {
 export function repairStrayHashFenceLines(text: string): string {
   let out = text.replace(/^\s*#\s*```+\s*$/gm, "");
   out = out.replace(/(\n```\s*\n)#\s*```+\s*\n/g, "$1");
+  out = out.replace(/(\*\*Response\s+204:\*\*)\s*\n+#\s+_No Content_/gim, "$1\n\n_No Content_");
   return out;
+}
+
+/** Quita fences ``` huérfanos antes de **Request body:** / **Response N:** en §4. */
+export function repairOrphanFenceBeforeContractLabels(text: string): string {
+  const lines = text.split("\n");
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i]!.trim();
+    if (t === "```") {
+      let k = i + 1;
+      while (k < lines.length && lines[k]!.trim() === "") k++;
+      const after = (lines[k] ?? "").trim();
+      if (/^\*\*(?:Request body|Response\s+\d+)/i.test(after)) {
+        continue;
+      }
+    }
+    out.push(lines[i]!);
+  }
+  return out.join("\n");
 }
 
 /** Quita ` ---` pegado al final de prosa antes de un separador horizontal. */
@@ -1192,10 +1213,10 @@ export function repairUnclosedJsonBeforeApiEndpoint(text: string): string {
   );
 }
 
-/** Normaliza Response 204 con `# `No Content`` erróneo. */
+/** Normaliza Response 204 con `# No Content` / `# _No Content_` erróneo. */
 export function repairApiResponse204NoContent(text: string): string {
   return text.replace(
-    /(\*\*Response\s+204:\*\*)\s*\n+#\s+`No Content`/gim,
+    /(\*\*Response\s+204:\*\*)\s*\n+#\s+(?:`No Content`|_No Content_)/gim,
     "$1\n\n_No Content_",
   );
 }
@@ -1208,6 +1229,7 @@ export function repairPastedMarkdown(text: string): string {
   out = repairGluedHrSuffixInProse(out);
   out = repairSplitUiUxMatrizHeading(out);
   out = repairStrayHashFenceLines(out);
+  out = repairOrphanFenceBeforeContractLabels(out);
   out = repairGluedApiContractLines(out);
   out = repairOrphanBracesInContratos(out);
   out = repairUnclosedJsonBeforeApiEndpoint(out);

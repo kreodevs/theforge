@@ -1,5 +1,12 @@
 import type { MddStructured } from "../state/mdd-structured.schema.js";
-import { formatDocumentMarkdown, repairGluedMarkdownHeadings, peelDocumentBodyForPersist, repairInlineHorizontalRuleSectionBreaks } from "@theforge/shared-types";
+import { formatDocumentMarkdown, repairGluedMarkdownHeadings, peelDocumentBodyForPersist, repairInlineHorizontalRuleSectionBreaks, repairApiResponse204NoContent, repairOrphanFenceBeforeContractLabels } from "@theforge/shared-types";
+import {
+  ensureMddGovernanceSection,
+  extractGovernanceSection,
+  hasGovernanceSection,
+  selectedPatternIdsFromMdd,
+  updateMddGovernancePatterns,
+} from "@theforge/shared-types/mdd-governance-patterns";
 import { applyMddQualityAutoRepairs, collectMddQualityIssues } from "../../engine/mdd-quality-audit.util.js";
 import { sanitizeMermaidInDraft } from "../../engine/mdd-pre-render.js";
 import { sqlToErDiagramContent } from "./mdd-diagram-suggestions.js";
@@ -1402,6 +1409,8 @@ function finalizeMddPersistFormatting(mddMarkdown: string): string {
   if (!mddMarkdown?.trim()) return mddMarkdown;
   let out = repairGluedMarkdownHeadings(mddMarkdown);
   out = collapseInlineHorizontalRules(out);
+  out = ensureHorizontalRuleBeforeH2(out);
+  out = collapseConsecutiveHorizontalRules(out);
   return out;
 }
 
@@ -1411,7 +1420,8 @@ function finalizeMddPersistFormatting(mddMarkdown: string): string {
  */
 export function repairGarbageHeadings(draft: string): string {
   if (!draft) return draft;
-  const lines = draft.split("\n");
+  let text = draft.replace(/^#\s+([A-ZÁÉÍÓÚÑ][^\n#]{40,})$/gm, "$1");
+  const lines = text.split("\n");
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     const t = (lines[i] ?? "").trim();
@@ -1498,11 +1508,22 @@ export function sanitizeMddAtPersist(mddMarkdown: string): string {
  */
 export function prepareMddMarkdownForPersist(mddMarkdown: string): string {
   if (!mddMarkdown?.trim()) return mddMarkdown;
+  const preservedGov = extractGovernanceSection(mddMarkdown);
+  const lockedPatternIds = selectedPatternIdsFromMdd(mddMarkdown);
   const body = peelDocumentBodyForPersist(mddMarkdown);
-  const formatted = formatDocumentMarkdown(body);
-  const sanitized = sanitizeMddAtPersist(formatted);
-  // Segunda pasada estructural: sanitize puede reintroducir fences rotos en §3/§4.
-  return formatDocumentMarkdown(sanitized);
+  let formatted = formatDocumentMarkdown(body);
+  let sanitized = sanitizeMddAtPersist(formatted);
+  formatted = formatDocumentMarkdown(sanitized);
+  if (lockedPatternIds.size > 0) {
+    formatted = updateMddGovernancePatterns(formatted, lockedPatternIds);
+  } else if (preservedGov && !hasGovernanceSection(formatted)) {
+    formatted = ensureMddGovernanceSection(formatted, preservedGov);
+  }
+  formatted = repairGarbageHeadings(formatted);
+  formatted = repairOrphanFenceBeforeContractLabels(formatted);
+  formatted = repairApiResponse204NoContent(formatted);
+  formatted = finalizeMddPersistFormatting(formatted);
+  return formatted;
 }
 
 /**

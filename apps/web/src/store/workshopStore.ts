@@ -4980,9 +4980,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     const before = selectPersistedMddBaseline(get()) || content;
     set({ mddReapplyingFormat: true, error: null, notice: null });
     try {
-      const formatted = formatDocumentMarkdown(content);
-      set({ mddContent: formatted });
-      await persistMddContent(formatted, { force: true, mddFormatOnly: true });
+      await persistMddContent(content, { force: true, mddFormatOnly: true });
       const after = selectPersistedMddBaseline(get());
       set({
         notice:
