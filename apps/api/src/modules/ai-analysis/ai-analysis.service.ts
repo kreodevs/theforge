@@ -77,7 +77,7 @@ import {
   extractGovernanceSection,
   mddHasSubstantialBody,
 } from "@theforge/shared-types/mdd-governance-patterns";
-import { mddStreamDeliveryGateFields } from "./utils/mdd-delivery-gate.util.js";
+import { mddDeliveryGateHasBlockers, mddStreamDeliveryGateFields } from "./utils/mdd-delivery-gate.util.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import type { MddJobData, MddJobProgress, MddJobResult } from "./mdd/mdd-queue.service.js";
 import { MddUpstreamSyncService } from "./mdd/mdd-upstream-sync.service.js";
@@ -2005,7 +2005,21 @@ export class AiAnalysisService {
     switch (mode) {
       case "pipeline": {
         const cache = await this.mddUpstreamSync.tryRestoreFromUpstreamCache(projectId, stageId).catch(() => null);
-        if (cache?.canRestore && cache.mddContent.trim().length >= 48) {
+        const forceFull = data.forceFullPipeline === true;
+        const gateBlockers =
+          cache?.canRestore && cache.mddContent.trim().length >= 48
+            ? mddDeliveryGateHasBlockers(peelDocumentBodyForPersist(cache.mddContent))
+            : false;
+        const useUpstreamCache =
+          !forceFull &&
+          !gateBlockers &&
+          cache?.canRestore &&
+          cache.mddContent.trim().length >= 48;
+
+        if (useUpstreamCache) {
+          this.logger.log(
+            `[MDD pipeline] upstream sin cambios — reutilizando MDD guardado (len=${cache.mddContent.length}), sin LLM`,
+          );
           onProgress({
             phase: "cache",
             message:
@@ -2020,6 +2034,12 @@ export class AiAnalysisService {
             mddLength: cache.mddContent.length,
             outcome: "done",
           };
+        }
+
+        if (cache?.canRestore) {
+          this.logger.log(
+            `[MDD pipeline] omitiendo caché upstream (forceFullPipeline=${forceFull} gateBlockers=${gateBlockers}) — pipeline LLM completo`,
+          );
         }
 
         const jobResult = await consume(

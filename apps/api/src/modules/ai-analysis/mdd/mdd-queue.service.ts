@@ -49,6 +49,8 @@ export interface MddJobData {
   /** Secciones MDD 1–7 para mode upstream-sync. */
   upstreamSections?: number[];
   upstreamChangeSummary?: string;
+  /** Si true, omite caché upstream y ejecuta siempre el pipeline LLM (Regenerar MDD completo). */
+  forceFullPipeline?: boolean;
 }
 
 export type MddJobProgress = {

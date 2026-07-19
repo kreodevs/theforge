@@ -69,6 +69,11 @@ Modo `pipeline`: antes de ejecutar el grafo LLM, `MddUpstreamSyncService.tryRest
 
 Progreso del job: `phase: "cache"`. Requiere haber completado al menos una generación previa que capturó baseline (primera regeneración tras el deploy sigue siendo pipeline completo).
 
+**No aplica caché** cuando:
+
+- `forceFullPipeline: true` en el job (Workshop «Regenerar MDD completo» / `generateMddFromBenchmark`).
+- El MDD guardado falla el delivery gate (p. ej. §1/§2 faltantes) — se fuerza pipeline LLM para reconstruirlo.
+
 ## Gates
 
 `ProjectGenerationGuardService` incluye `mddQueue.isProjectBusy()` en `mddStreamActive` para bloquear entregables downstream mientras corre un job MDD.

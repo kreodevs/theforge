@@ -284,6 +284,7 @@ export class AiAnalysisController {
         : undefined,
       upstreamChangeSummary:
         typeof body?.upstreamChangeSummary === "string" ? body.upstreamChangeSummary.trim() : undefined,
+      forceFullPipeline: body?.forceFullPipeline === true,
     };
     if (mode === "section") {
       const section = data.section;

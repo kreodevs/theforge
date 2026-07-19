@@ -3950,6 +3950,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           mode: "pipeline",
           projectId: pid,
           dbgaContent: dbgaContent || undefined,
+          forceFullPipeline: true,
           ...(benchStage ? { stageId: benchStage } : {}),
         },
         pid,
