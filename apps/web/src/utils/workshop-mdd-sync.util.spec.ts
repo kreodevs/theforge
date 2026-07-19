@@ -51,6 +51,24 @@ describe("resolveMddFetchMerge", () => {
     assert.equal(r.updatePersistedBaseline, true);
   });
 
+  it("regeneración MDD en background: servidor nuevo reemplaza local guardado", () => {
+    const serverNew =
+      "# Master Design Document: Copiloto\n\n---\n\n## 1. Contexto\n\nTexto regenerado por worker.";
+    const localOld = "# Master Design Document\n\n## 1. Contexto\n\nTexto anterior.";
+    const r = resolveMddFetchMerge({
+      switchingProject: false,
+      sameProjectLoaded: true,
+      mddPersisting: false,
+      preferServerMdd: true,
+      localMdd: localOld,
+      persistedMdd: localOld,
+      serverMdd: serverNew,
+    });
+    assert.equal(r.preserveMddLocal, false);
+    assert.equal(r.nextMddContent, serverNew);
+    assert.equal(r.updatePersistedBaseline, true);
+  });
+
   it("mismo proyecto con cambios sin guardar → conserva local sin actualizar baseline", () => {
     const r = resolveMddFetchMerge({
       switchingProject: false,

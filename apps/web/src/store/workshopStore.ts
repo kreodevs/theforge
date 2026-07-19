@@ -1140,7 +1140,7 @@ interface WorkshopState {
   fetchPlanValidation: (projectId: string, stageId?: string) => Promise<PlanValidationPersisted | null>;
   validateChangePlan: (projectId: string, stageId?: string) => Promise<PlanValidationPersisted | null>;
 
-  fetchProject: (projectId: string) => Promise<Project | null>;
+  fetchProject: (projectId: string, options?: { preferServerMdd?: boolean }) => Promise<Project | null>;
   fetchWelcome: (projectId: string, activeTab?: string) => Promise<void>;
   clearChat: (projectId: string, activeTab?: string) => Promise<void>;
   /** options.regenerateSection (1–7): regenerar solo esa sección del MDD (comando / en chat). §1 = solo sintetizador de contexto. */
@@ -1795,7 +1795,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       } else {
         stopGenerationStatusPolling();
         if (wasBusy) {
-          void get().fetchProject(requestedId);
+          void get().fetchProject(requestedId, { preferServerMdd: true });
         }
       }
       return status;
@@ -1912,7 +1912,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     });
   },
 
-  fetchProject: async (projectId) => {
+  fetchProject: async (projectId, options) => {
     const requestedId = projectId.trim();
     if (!requestedId) return null;
     try {
@@ -1953,10 +1953,16 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       const serverMdd = focused.mddContent ?? "";
       const sameProjectLoaded =
         get().project?.id === requestedId && workshopScopeProjectId(get) === requestedId;
+      const preferServerMdd =
+        options?.preferServerMdd === true ||
+        get().loadingReason === "mdd" ||
+        get().loadingReason === "mdd-section" ||
+        get().loadingReason === "legacy-mdd";
       const { nextMddContent, updatePersistedBaseline } = resolveMddFetchMerge({
         switchingProject,
         sameProjectLoaded,
         mddPersisting: get().mddPersisting,
+        preferServerMdd,
         localMdd,
         persistedMdd,
         serverMdd,

@@ -6,6 +6,8 @@ export function resolveMddFetchMerge(options: {
   switchingProject: boolean;
   sameProjectLoaded: boolean;
   mddPersisting: boolean;
+  /** Job MDD en background: aplicar servidor aunque local === baseline guardado. */
+  preferServerMdd?: boolean;
   localMdd: string;
   persistedMdd: string;
   serverMdd: string;
@@ -18,6 +20,7 @@ export function resolveMddFetchMerge(options: {
     switchingProject,
     sameProjectLoaded,
     mddPersisting,
+    preferServerMdd = false,
     localMdd,
     persistedMdd,
     serverMdd,
@@ -32,6 +35,22 @@ export function resolveMddFetchMerge(options: {
     !workshopDocumentBodiesEqual(localMdd, persistedMdd);
   const serverDiffersFromLocal = !workshopDocumentBodiesEqual(localMdd, serverMdd);
   const localMatchesPersisted = workshopDocumentBodiesEqual(localMdd, persistedMdd);
+
+  if (
+    preferServerMdd &&
+    canPreserveLocalMdd &&
+    serverMdd.trim().length > 0 &&
+    !serverDropsPatterns &&
+    serverDiffersFromLocal &&
+    !hasUnsavedEditorChanges
+  ) {
+    return {
+      preserveMddLocal: false,
+      nextMddContent: serverMdd,
+      updatePersistedBaseline: true,
+    };
+  }
+
   const preserveSavedLocalOverStaleServer =
     canPreserveLocalMdd &&
     localHasMdd &&
