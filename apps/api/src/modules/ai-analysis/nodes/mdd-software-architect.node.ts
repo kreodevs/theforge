@@ -20,6 +20,7 @@ import {
   normalizeMddFormat,
   parseModeloDatosFromSection3Markdown,
   preserveContextSectionIfSubstantial,
+  restoreArquitecturaSectionFromBaselineIfMissing,
   preserveUntouchedMddSectionsFromBaseline,
   replaceContextWhenOnlyMetadata,
   sanitizeContextSection,
@@ -885,6 +886,7 @@ export function createMddSoftwareArchitectNode(
       }
       if (draftTrimmed.length >= minLength) {
         mddDraft = preserveContextSectionIfSubstantial(draftTrimmed, mddDraft);
+        mddDraft = restoreArquitecturaSectionFromBaselineIfMissing(draftTrimmed, mddDraft);
       }
       mddDraft = sanitizeContextSection(mddDraft);
       mddDraft = replaceContextWhenOnlyMetadata(mddDraft);

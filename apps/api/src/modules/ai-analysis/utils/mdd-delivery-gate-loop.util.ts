@@ -11,7 +11,8 @@ const INTEGRATION_BLOCKER_RE =
   /§7|infraestructura|jwt|manifest|node:|microservicios|hashing_algorithm|jwks|api_prefix|tabla\s+outbox\b/i;
 const SECTION3_BLOCKER_RE =
   /§3|§4|sql|prosa inválida|create table|erdiagram|technicalmetadata|outbox-like|§6 menciona tabla|fences desbalanceados|tabla huérfana|json inválido/i;
-const CLARIFIER_BLOCKER_RE = /§1\s*contexto|placeholder.*guiones|objetivos comerciales/i;
+const CLARIFIER_BLOCKER_RE =
+  /§1\s*contexto|1\.\s*contexto|secciones obligatorias faltantes|placeholder.*guiones|objetivos comerciales/i;
 
 /** Decide si el siguiente paso del auto-loop debe ser arquitecto (§3/§4), integración (§7) o clarifier (§1). */
 export function resolveDeliveryGateFixTarget(blockers: string[]): DeliveryGateFixTarget {

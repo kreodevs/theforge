@@ -36,6 +36,7 @@ import {
   fixDualApprovalSchemaInDraft,
   getSectionsToPreserveFromExecutorPlan,
   normalizeCanonicalMddSectionHeadings,
+  ensureMissingCanonicalSections,
   stripMeshDirectivesFromDraft,
   stripStrayParenAfterJsonCodeBlocks,
   repairNestedJsonFencesInDraft,
@@ -2032,5 +2033,58 @@ Docker Compose con PostgreSQL 16 y Node 20-alpine en producción del sistema.
     const final = finalizeMddDeliverable(normalized);
     assert.deepEqual(validateMddStructure(final).missingSections, []);
     assert.match(final, /## 2\. Arquitectura y Stack/);
+  });
+
+  it("ensureMissingCanonicalSections: restaura §1/§2 desde baseline cuando el Arquitecto emitió §3–§7", () => {
+    const baseline = `# Master Design Document
+
+## 1. Contexto
+
+Contexto sustancial del clarificador con más de ochenta caracteres de alcance técnico del producto.
+
+## 2. Arquitectura y Stack
+
+NestJS con PostgreSQL 16 y Redis para colas de mensajería del copiloto.
+
+## 3. Modelo de Datos
+
+(Pendiente)
+`;
+    const architectOnly = `# Master Design Document
+
+## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY, email TEXT NOT NULL);
+\`\`\`
+
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\`
+
+## 4. Contratos de API
+
+### POST /api/users
+\`\`\`json
+{"path":"/api/users","method":"POST"}
+\`\`\`
+
+## 5. Lógica y Edge Cases
+
+Reglas de negocio del dominio.
+
+## 6. Seguridad
+
+JWT RS256 y RBAC.
+
+## 7. Infraestructura
+
+Docker Compose con PostgreSQL 16.
+`;
+    const restored = ensureMissingCanonicalSections(architectOnly, baseline);
+    assert.deepEqual(validateMddStructure(restored).missingSections, []);
+    assert.match(restored, /## 1\. Contexto/);
+    assert.match(restored, /## 2\. Arquitectura y Stack/);
+    assert.match(restored, /NestJS con PostgreSQL 16/);
   });
 });

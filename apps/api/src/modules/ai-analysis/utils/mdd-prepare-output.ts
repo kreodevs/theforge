@@ -143,6 +143,8 @@ export type PrepareMddForOutputOptions = {
   /** BRD/DBGA for domain fidelity blockers inside validateMddForDelivery. */
   brdMarkdown?: string | null;
   dbgaMarkdown?: string | null;
+  /** Borrador pre-regen / Clarificador para restaurar §1–§2 si el pipeline los omitió. */
+  baselineDraft?: string | null;
 };
 
 export async function prepareMddForOutput(
@@ -190,7 +192,12 @@ export async function prepareMddForOutput(
       : withComponentDiagram;
   const enriched = await enrichMddWithUiUxDesignIntent(withUiMcpFrontend, resolver);
   const withGovernance = ensureMddGovernanceSection(enriched, preserved);
-  const reconciled = await reconcileUiUxDesignIntent(finalizeMddDeliverable(withGovernance), resolver);
+  const reconciled = await reconcileUiUxDesignIntent(
+    finalizeMddDeliverable(withGovernance, {
+      baseline: options?.baselineDraft?.trim() || raw,
+    }),
+    resolver,
+  );
   const markdown = applyPreDeliveryGateFixes(reconciled);
   let finalMarkdown = markdown;
   if (options?.brdMarkdown?.trim() || options?.dbgaMarkdown?.trim()) {

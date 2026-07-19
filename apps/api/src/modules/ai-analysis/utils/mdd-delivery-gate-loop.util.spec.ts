@@ -14,6 +14,15 @@ describe("mdd-delivery-gate-loop.util", () => {
     );
   });
 
+  it("resolveDeliveryGateFixTarget elige clarifier para secciones §1/§2 faltantes", () => {
+    assert.equal(
+      resolveDeliveryGateFixTarget([
+        "Secciones obligatorias faltantes: 1. Contexto, 2. Arquitectura y Stack",
+      ]),
+      "clarifier",
+    );
+  });
+
   it("resolveDeliveryGateFixTarget elige software_architect para blockers §3/SQL", () => {
     assert.equal(
       resolveDeliveryGateFixTarget(["§3: tablas outbox-like duplicadas (eventos, outbox)"]),

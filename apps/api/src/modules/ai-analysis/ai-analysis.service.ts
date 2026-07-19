@@ -28,6 +28,7 @@ import {
   logSection3Debug,
   replaceSection1BodyFromAnyHeading,
   replaceSections2To5InDraft,
+  restoreContextSectionFromBaselineIfMissing,
 } from "./utils/mdd-sanitize.js";
 import { GraphMemoryService } from "./graph-memory/graph-memory.service.js";
 import { ProjectsService } from "../projects/projects.service.js";
@@ -1508,10 +1509,12 @@ export class AiAnalysisService {
     // Si el MDD viene de BD trae el stamp; si no se peela, llega al LLM como contexto
     // y las funciones de reemplazo de sección pueden insertar contenido dentro del bloque de fechas.
     mddContent = await tracer.step("peel-stamp", async () => peelDocumentBodyForPersist(mddContent), { inputLen: mddContent.length });
+    const regenBaselineMdd = mddContent;
 
     const preservedGov = extractGovernanceSection(mddContent);
     const { opts: regenPrepareOpts, gateRef: regenGateRef } = createPrepareOptsWithGate({
       preservedGovernance: preservedGov,
+      baselineDraft: regenBaselineMdd,
     });
 
     // regenEstimationStage desde pid + stageId (To-Be/As-Is eliminados)
@@ -1566,7 +1569,12 @@ export class AiAnalysisService {
           .replace(/^```[\w]*\s*\n?/, "")
           .replace(/\n?```\s*$/, "")
           .trim() || newBody;
-        const finalDraft = replaceSection1BodyFromAnyHeading(mddContent, newBody);
+        const finalDraft = extractContextSectionBody(mddContent)
+          ? replaceSection1BodyFromAnyHeading(mddContent, newBody)
+          : restoreContextSectionFromBaselineIfMissing(
+              `## 1. Contexto\n\n${newBody}`,
+              mddContent,
+            );
         const markdown = await tracer.step("prepare-output", async () => this.runPrepareMddForOutput(finalDraft, regenPrepareOpts), { draftLen: finalDraft.length });
         const metrics = await tracer.step("metrics", async () => this.estimationService.calculateLiveMetrics(markdown, regenEstOpts));
         const regenGate1 = mddStreamDeliveryGateFields(regenGateRef.current, metrics.status);

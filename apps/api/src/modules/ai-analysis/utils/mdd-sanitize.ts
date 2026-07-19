@@ -3675,12 +3675,69 @@ export function replaceContextWhenOnlyMetadata(draft: string): string {
   return replaceContextSectionBody(draft, "(Contexto pendiente de definir según alcance.)");
 }
 
+/** Inserta un bloque ## antes del primer heading núcleo (§2–§7). */
+function insertSectionBlockBeforeFirstCoreHeading(
+  draft: string,
+  heading: string,
+  body: string,
+): string {
+  const coreRe =
+    /\n##\s+(?:[2-7]\.\s|Modelo\s+(?:de\s+)?datos|Contratos|Lógica|Seguridad|Infraestructura|Integraci[oó]n)/i;
+  const m = draft.match(coreRe);
+  const at = m?.index ?? draft.length;
+  const block = `\n\n---\n\n${heading}\n\n${body.trim()}\n`;
+  return draft.slice(0, at) + block + draft.slice(at);
+}
+
+function hasContextSectionHeading(draft: string): boolean {
+  return CONTEXTO_HEADINGS_EXTRACT.some((h) => draft.includes(h));
+}
+
+function hasArquitecturaSectionHeading(draft: string): boolean {
+  return /^##\s+2\.\s*(?:Arquitectura(?:\s+y\s*Stack)?|Stack)\b/im.test("\n" + draft);
+}
+
+const SECTION1_RESTORE_PLACEHOLDER =
+  "(Pendiente: Clarificador — contexto y alcance del sistema.)";
+const SECTION2_RESTORE_PLACEHOLDER =
+  "(Pendiente: Arquitecto de Software — stack y arquitectura.)";
+
+/** Restaura §1 desde baseline cuando el Arquitecto omitió el heading o el cuerpo. */
+export function restoreContextSectionFromBaselineIfMissing(
+  baseline: string,
+  draft: string,
+): string {
+  const currentBody = extractContextSectionBody(draft);
+  if (currentBody?.trim() && currentBody.length >= 20) return draft;
+  const baselineBody = extractContextSectionBody(baseline);
+  const body = baselineBody?.trim() || SECTION1_RESTORE_PLACEHOLDER;
+  if (hasContextSectionHeading(draft)) {
+    return replaceSection1BodyFromAnyHeading(draft, body);
+  }
+  return insertSectionBlockBeforeFirstCoreHeading(draft, "## 1. Contexto", body);
+}
+
+/** Restaura §2 desde baseline cuando el Arquitecto omitió el heading o el cuerpo. */
+export function restoreArquitecturaSectionFromBaselineIfMissing(
+  baseline: string,
+  draft: string,
+): string {
+  const currentBody = extractArquitecturaSectionBody(draft);
+  if (currentBody?.trim() && currentBody.length >= 20) return draft;
+  const baselineBody = extractArquitecturaSectionBody(baseline);
+  const body = baselineBody?.trim() || SECTION2_RESTORE_PLACEHOLDER;
+  if (hasArquitecturaSectionHeading(draft)) {
+    return replaceArquitecturaSectionBody(draft, body);
+  }
+  return insertSectionBlockBeforeFirstCoreHeading(draft, "## 2. Arquitectura y Stack", body);
+}
+
 /** Si el draft anterior tiene Contexto sustancial y el nuevo tiene uno peor (metadatos/key-value o más corto), preserva el anterior. */
 export function preserveContextSectionIfSubstantial(previousDraft: string, newDraft: string): string {
   const prevBody = extractContextSectionBody(previousDraft);
   const newBody = extractContextSectionBody(newDraft);
   if (!prevBody || prevBody.length < 100) return newDraft;
-  if (!newBody) return newDraft;
+  if (!newBody) return restoreContextSectionFromBaselineIfMissing(previousDraft, newDraft);
   if (newBody.length >= prevBody.length * 0.8) return newDraft;
   const looksLikeMetadata = /\b(section3|toolPreference|section\d|tool\s*:)\s*[:=]/i.test(newBody) || (newBody.split(/\n/).length <= 3 && newBody.length < 200);
   if (looksLikeMetadata || newBody.length < 80) {
@@ -3689,7 +3746,11 @@ export function preserveContextSectionIfSubstantial(previousDraft: string, newDr
   return newDraft;
 }
 
-const ARQUITECTURA_HEADINGS = [/^##\s+2\.\s*Arquitectura\s+y\s*Stack\s*$/im, /^##\s+2\.\s*Arquitectura\s*$/im];
+const ARQUITECTURA_HEADINGS = [
+  /^##\s+2\.\s*Arquitectura\s+y\s*Stack\s*$/im,
+  /^##\s+2\.\s*Arquitectura\s*$/im,
+  /^##\s+2\.\s*Stack(?:\s+t[eé]cnico)?\s*$/im,
+];
 
 /** Extrae el cuerpo de la sección "## 2. Arquitectura y Stack" (hasta el siguiente ## o fin). */
 export function extractArquitecturaSectionBody(draft: string): string | null {
@@ -3893,6 +3954,7 @@ export function normalizeCanonicalMddSectionHeadings(draft: string): string {
     /^##\s+2\.\s*Arquitectura(?!\s+y\s*Stack)\s*$/gim,
     "## 2. Arquitectura y Stack",
   );
+  out = out.replace(/^##\s+2\.\s*Stack(?:\s+t[eé]cnico)?\s*$/gim, "## 2. Arquitectura y Stack");
   out = out.replace(/^##\s+Stack\s*$/gim, "## 2. Arquitectura y Stack");
   return out;
 }
@@ -3902,6 +3964,7 @@ const CANONICAL_HEADINGS: Array<{ pattern: RegExp; replacement: string }> = [
   { pattern: /^#+\s*Contexto\s*y\s*alcance\s*$/im, replacement: "## 1. Contexto" },
   { pattern: /^#+\s*Arquitectura\s+y\s*Stack\s*$/im, replacement: "## 2. Arquitectura y Stack" },
   { pattern: /^##\s+2\.\s*Arquitectura\s*$/im, replacement: "## 2. Arquitectura y Stack" },
+  { pattern: /^##\s+2\.\s*Stack(?:\s+t[eé]cnico)?\s*$/im, replacement: "## 2. Arquitectura y Stack" },
   { pattern: /^#+\s*schemaSQL\s*$/im, replacement: "## 3. Modelo de Datos" },
   { pattern: /^#+\s*Schema\s*SQL\s*$/im, replacement: "## 3. Modelo de Datos" },
   { pattern: /^#+\s*\d\.\s*Modelo\s+(?:de\s+)?datos\s*$/im, replacement: "## 3. Modelo de Datos" },
@@ -4458,7 +4521,10 @@ export function normalizeMddFormat(draft: string): string {
  * Pasada final antes de entregar al usuario: sin directivas mesh; deduplica y reordena §1–§7.
  * Preserva bloques añadidos tras §7 (p. ej. UI/UX) salvo que sean repetición de secciones núcleo.
  */
-export function finalizeMddDeliverable(draft: string): string {
+export function finalizeMddDeliverable(
+  draft: string,
+  options?: { baseline?: string | null },
+): string {
   let out = sanitizeMddAtPersist(stripMeshDirectivesFromDraft(draft));
 
   const uiUxRe = /\n##\s+UI\/UX\s+Design\s+Intent\b[\s\S]*$/i;
@@ -4466,7 +4532,11 @@ export function finalizeMddDeliverable(draft: string): string {
   const uiUxSuffix = uiUxMatch?.[0]?.trim() ?? "";
   const core = uiUxSuffix ? out.slice(0, out.length - uiUxMatch![0].length).trim() : out;
 
-  let fixedCore = deduplicateAndReorderMddSections(stripTrailingDuplicateMddSections(core));
+  let fixedCore = ensureMissingCanonicalSections(
+    stripTrailingDuplicateMddSections(core),
+    options?.baseline?.trim() || undefined,
+  );
+  fixedCore = deduplicateAndReorderMddSections(fixedCore);
   if (mddHasDuplicateSectionHeadings(fixedCore)) {
     fixedCore = deduplicateAndReorderMddSections(stripTrailingDuplicateMddSections(fixedCore));
   }
@@ -5194,7 +5264,7 @@ export function validateMddStructure(draft: string): ValidateMddStructureResult 
 /** Títulos canónicos en orden para reordenar y deduplicar el MDD (7 secciones). */
 const SECTION_ORDER = [
   { pattern: /^##\s+1\.\s*Contexto/i, heading: "## 1. Contexto" },
-  { pattern: /^##\s+2\.\s*Arquitectura(?:\s+y\s*Stack)?/i, heading: "## 2. Arquitectura y Stack" },
+  { pattern: /^##\s+2\.\s*(?:Arquitectura(?:\s+y\s*Stack)?|Stack(?:\s+t[eé]cnico)?)\b/i, heading: "## 2. Arquitectura y Stack" },
   { pattern: /^##\s+3\.\s*Modelo\s+(?:de\s+)?datos/i, heading: "## 3. Modelo de Datos" },
   { pattern: /^##\s+4\.\s*Contratos\s+de\s+API/i, heading: "## 4. Contratos de API" },
   { pattern: /^##\s+5\.\s*Lógica\s+y\s*Edge\s+Cases/i, heading: "## 5. Lógica y Edge Cases" },
@@ -5203,6 +5273,27 @@ const SECTION_ORDER = [
   // §7: acepta Infraestructura o Integración, con o sin número
   { pattern: /^##\s+(?:7\.\s*)?(?:Infraestructura|Integración)\b/i, heading: "## 7. Infraestructura" },
 ];
+
+/** Safety net: reinserta §1/§2 desde baseline (p. ej. Clarificador) antes del gate/dedupe. */
+export function ensureMissingCanonicalSections(draft: string, baseline?: string): string {
+  let out = normalizeCanonicalMddSectionHeadings((draft ?? "").trim());
+  if (!out) return draft;
+  const base = baseline?.trim() ? normalizeCanonicalMddSectionHeadings(baseline) : "";
+
+  let missing = validateMddStructure(out).missingSections;
+  if (missing.includes("1. Contexto")) {
+    out = base
+      ? restoreContextSectionFromBaselineIfMissing(base, out)
+      : insertSectionBlockBeforeFirstCoreHeading(out, "## 1. Contexto", SECTION1_RESTORE_PLACEHOLDER);
+    missing = validateMddStructure(out).missingSections;
+  }
+  if (missing.includes("2. Arquitectura y Stack")) {
+    out = base
+      ? restoreArquitecturaSectionFromBaselineIfMissing(base, out)
+      : insertSectionBlockBeforeFirstCoreHeading(out, "## 2. Arquitectura y Stack", SECTION2_RESTORE_PLACEHOLDER);
+  }
+  return out;
+}
 
 /**
  * Índice del siguiente ## que NO está dentro de un bloque con fences (```...```).
