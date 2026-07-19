@@ -1547,11 +1547,16 @@ export class AiAnalysisService {
           tracer,
         );
         const text = (typeof response.content === "string" ? response.content : "").trim();
-        let newBody = (text && extractContextSectionBody(text)) || text || "(Contexto sintetizado desde el documento.)";
+        // Peel stamps y residuo de stamp del output del LLM antes de usarlo como body de §1.
+        // El LLM a veces copia el stamp del documento de contexto o genera `# Master Design Document`.
+        const cleanedText = peelDocumentBodyForPersist(text);
+        let newBody = (cleanedText && extractContextSectionBody(cleanedText)) || cleanedText || "(Contexto sintetizado desde el documento.)";
         const firstOtherSection = newBody.search(/\n##\s+(?:2|3|4|5|6|7)[.\s]/);
         if (firstOtherSection !== -1) {
           newBody = newBody.slice(0, firstOtherSection).trim();
         }
+        // Strip `# Master Design Document` heading que el LLM copia del contexto
+        newBody = newBody.replace(/^#\s*Master\s+Design\s+Document\s*\n+/im, "").trim();
         const headingFragmentLine = /^\s*(?:y|and)\s+alcance\s*(?:del\s+)?mdd\s*\.?\s*$/i;
         newBody = newBody
           .split(/\r?\n/)
