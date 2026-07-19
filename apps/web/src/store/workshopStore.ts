@@ -10,6 +10,7 @@ import type {
 } from "@theforge/shared-types";
 import {
   buildUpstreamChangeSummaryForPipeline,
+  mddMarkdownHasKnownFormatCorruption,
   mddMarkdownNeedsStructuralRepair,
 } from "@theforge/shared-types";
 import {
@@ -1152,7 +1153,7 @@ interface WorkshopState {
 
   /** Gate de cola: jobs activos, MDD en stream y dependencias upstream. */
   generationStatus: ProjectGenerationStatus | null;
-  fetchGenerationStatus: (projectId: string) => Promise<ProjectGenerationStatus | null>;
+  fetchGenerationStatus: (projectId: string, stageId?: string | null) => Promise<ProjectGenerationStatus | null>;
   cancelMddJob: (projectId: string, jobId: string) => Promise<boolean>;
   /** Datos por pluginId (`project.pluginData` sincronizado desde API). */
   pluginData: Record<string, unknown>;
@@ -1780,11 +1781,13 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     }
   },
 
-  fetchGenerationStatus: async (projectId) => {
+  fetchGenerationStatus: async (projectId, stageId) => {
     const requestedId = projectId.trim();
     if (!requestedId) return null;
+    const sid = stageId?.trim() || get().activeStageId?.trim();
+    const qs = sid ? `?stageId=${encodeURIComponent(sid)}` : "";
     try {
-      const r = await apiFetch(`${API_BASE}/projects/${requestedId}/generation-status`);
+      const r = await apiFetch(`${API_BASE}/projects/${requestedId}/generation-status${qs}`);
       if (!r.ok) return null;
       const raw = (await r.json()) as ProjectGenerationStatus;
       const status: ProjectGenerationStatus = { ...raw, mddJobs: raw.mddJobs ?? [] };
@@ -2349,18 +2352,30 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
           mddMarkdownNeedsStructuralRepair(repairInput) ||
           mddMarkdownNeedsStructuralRepair(rawFromDb) ||
           mddMarkdownNeedsStructuralRepair(source);
+        const hadFormatCorruption =
+          mddMarkdownHasKnownFormatCorruption(repairInput) ||
+          mddMarkdownHasKnownFormatCorruption(rawFromDb) ||
+          mddMarkdownHasKnownFormatCorruption(source);
         const before = normalizedMddForPersistCompare(source);
         await get().persistMddContent(repairInput, { force: true, mddFormatOnly: true });
         const saved = selectPersistedMddBaseline(get());
         set({ mddContent: saved });
         const after = normalizedMddForPersistCompare(saved);
-        if (!needsStructuralRepair && after === before) {
+        const stillCorrupt = mddMarkdownHasKnownFormatCorruption(saved);
+        if (!needsStructuralRepair && !hadFormatCorruption && after === before) {
           return { ok: true, message: "MDD: ya estaba bien formateado (sin cambios)." };
+        }
+        if (stillCorrupt) {
+          return {
+            ok: true,
+            message:
+              "MDD: se aplicó formato pero aún hay bloques §4 o secciones por revisar manualmente.",
+          };
         }
         return {
           ok: true,
-          message: needsStructuralRepair
-            ? "MDD reparado (stamp y secciones despegadas). Revisa el panel."
+          message: needsStructuralRepair || hadFormatCorruption
+            ? "MDD reparado (JSON §4, secciones y fences). Revisa el panel."
             : "MDD formateado (headings, fences, tablas y Mermaid). Revisa el panel.",
         };
       }
@@ -2522,7 +2537,7 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         }
         await fetchEstimation(requestProjectId, merged).catch(() => {});
         fetchConformance(requestProjectId).catch(() => {});
-        void get().fetchGenerationStatus(requestProjectId);
+        await get().fetchGenerationStatus(requestProjectId, regStage ?? undefined);
         const editorMerged = mddContentForEditor(merged);
         const stateAfterFetch = get();
         const mddPatch =
@@ -4976,15 +4991,19 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     const content = (mddContent ?? project.mddContent ?? "").trim();
     if (!content) return;
     const before = selectPersistedMddBaseline(get()) || content;
+    const hadCorruption = mddMarkdownHasKnownFormatCorruption(content);
     set({ mddReapplyingFormat: true, error: null, notice: null });
     try {
       await persistMddContent(content, { force: true, mddFormatOnly: true });
       const after = selectPersistedMddBaseline(get());
+      const stillCorrupt = mddMarkdownHasKnownFormatCorruption(after);
       set({
         notice:
-          after.trim() !== before.trim()
-            ? "MDD reformateado: se aplicaron correcciones deterministas (headings, JSON §4, SQL, coherencia)."
-            : "MDD revisado: la pasada de formato no detectó cambios adicionales.",
+          stillCorrupt
+            ? "MDD: se aplicó formato pero aún hay bloques §4 o secciones por revisar manualmente."
+            : after.trim() !== before.trim() || hadCorruption
+              ? "MDD reformateado: se aplicaron correcciones deterministas (headings, JSON §4, SQL, coherencia)."
+              : "MDD revisado: la pasada de formato no detectó cambios adicionales.",
       });
     } finally {
       set({ mddReapplyingFormat: false });

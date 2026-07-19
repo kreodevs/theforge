@@ -293,6 +293,25 @@ export function mddMarkdownNeedsStructuralRepair(text: string | null | undefined
   return false;
 }
 
+/** Corrupción de formato §4 / headings que el pipeline determinista debe corregir. */
+export function mddMarkdownHasKnownFormatCorruption(text: string | null | undefined): boolean {
+  const raw = (text ?? "").trim();
+  if (!raw) return false;
+  if (/^#\s+_/m.test(raw)) return true;
+  if (/\n```\s*\n\n\*\*(?:Request body|Response\s+\d+)/i.test(raw)) return true;
+  const jsonClosedBefore = /```json[\s\S]*?}\s*\n```/;
+  if (/```json\n[\s\S]*?\n\*\*(?:Request body|Response\s+\d+)/i.test(raw)) {
+    if (!jsonClosedBefore.test(raw)) return true;
+  }
+  if (/```json\n[\s\S]*?\n###\s+(?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s/i.test(raw)) {
+    if (!/```json[\s\S]*?}\s*\n```[\s\S]*?\n###\s+(?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s/m.test(raw)) {
+      return true;
+    }
+  }
+  if (/[^\n]\n##\s+(?:[1-7]\.|UI\/UX\s+Design\s+Intent)/.test(raw)) return true;
+  return false;
+}
+
 export function reattachTheforgeDocStamp(stamp: string, body: string): string {
   if (!stamp) return body;
   if (!body) return stamp.replace(/\n+$/, "\n");

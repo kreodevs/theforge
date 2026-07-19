@@ -77,7 +77,7 @@ export class ProjectGenerationGuardService {
     }
   }
 
-  async getStatus(projectId: string): Promise<
+  async getStatus(projectId: string, stageId?: string | null): Promise<
     ProjectGenerationStatus & {
       complexity: ComplexityLevel;
       contentReady: ReturnType<typeof buildDeliverableReadiness>;
@@ -119,7 +119,7 @@ export class ProjectGenerationGuardService {
 
     let mddUpstreamSync = null;
     try {
-      const analysis = await this.mddUpstreamSync.analyze(projectId);
+      const analysis = await this.mddUpstreamSync.analyze(projectId, stageId);
       mddUpstreamSync = {
         pendingSync: analysis.pendingSync,
         changedSources: analysis.changedSources,

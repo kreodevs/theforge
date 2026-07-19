@@ -34,4 +34,25 @@ describe("mdd-upstream-sync", () => {
   it("hash estable para mismo contenido", () => {
     assert.equal(hashUpstreamDocumentBody(" a \n"), hashUpstreamDocumentBody("a"));
   });
+
+  it("ignora cabecera de fechas al comparar upstream (sin pendingSync por stamp)", () => {
+    const body = "# DBGA\n\nContenido estable del benchmark.";
+    const stampedV1 = `<!-- theforge-doc:created=2024-01-01T00:00:00.000Z|updated=2024-06-01T00:00:00.000Z -->\n> 📅 Creado: 1 de enero de 2024 · Última modificación: 1 de junio de 2024\n\n---\n\n${body}`;
+    const stampedV2 = `<!-- theforge-doc:created=2024-01-01T00:00:00.000Z|updated=2025-07-01T00:00:00.000Z -->\n> 📅 Creado: 1 de enero de 2024 · Última modificación: 1 de julio de 2025\n\n---\n\n${body}`;
+    const baseline = buildMddUpstreamBaseline({
+      dbgaContent: stampedV1,
+      brdContent: "brd",
+      benchmarkContent: "bench",
+      mddContent: "# MDD\n\n## 1. Contexto\n\nx".repeat(30),
+    });
+    const analysis = analyzeMddUpstreamChanges({
+      baseline,
+      dbgaContent: stampedV2,
+      brdContent: "brd",
+      benchmarkContent: "bench",
+      mddContent: "# MDD\n\n## 1. Contexto\n\nx".repeat(30),
+    });
+    assert.equal(analysis.pendingSync, false);
+    assert.deepEqual(analysis.changedSources, []);
+  });
 });

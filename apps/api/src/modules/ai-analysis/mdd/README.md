@@ -57,7 +57,7 @@ El job guarda `MddJobProgressState` (`steps[]` completados + `active` en curso).
 
 ## Baseline upstream
 
-Tras `pipeline` o `upstream-sync` exitoso, `MddUpstreamSyncService.captureBaseline` persiste en `Stage.mddUpstreamBaseline` (hashes + snapshots 32k de DBGA/BRD/Benchmark) para detectar cambios posteriores.
+Tras `pipeline`, `section`, `upstream-sync` o restauración desde caché upstream exitosa, `MddUpstreamSyncService.captureBaseline` persiste en `Stage.mddUpstreamBaseline` (hashes + snapshots 32k de DBGA/BRD/Benchmark) para detectar cambios posteriores. Los hashes ignoran la cabecera de fechas (`theforge-doc`) para no marcar desincronización por metadatos solamente.
 
 ## Caché documento (upstream sin cambios)
 
@@ -66,6 +66,7 @@ Modo `pipeline`: antes de ejecutar el grafo LLM, `MddUpstreamSyncService.tryRest
 1. Se omite el pipeline LLM (~45 min).
 2. Se reutiliza `stage.mddContent` existente.
 3. `persistMddFromBackgroundJob` repara formato (`peelDocumentBodyForPersist` → `prepareMddForOutput` → `storeMddMarkdownForPersist`) y ejecuta el pipeline determinista de entrega (gate + semáforo). **Sin cabecera de fechas** en el markdown del MDD.
+4. Se actualiza `mddUpstreamBaseline` (mismo criterio que pipeline LLM completo).
 
 Progreso del job: `phase: "cache"`. Requiere haber completado al menos una generación previa que capturó baseline (primera regeneración tras el deploy sigue siendo pipeline completo).
 

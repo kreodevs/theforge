@@ -2046,6 +2046,11 @@ export class AiAnalysisService {
               "DBGA, BRD y Benchmark sin cambios — recuperando el último MDD guardado (reparando formato y fechas)…",
           });
           await persistMarkdown(cache.mddContent, true);
+          await this.mddUpstreamSync.captureBaseline(projectId, cache.stageId).catch((err) => {
+            this.logger.warn(
+              `[MDD pipeline] capture baseline after upstream cache failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          });
           return {
             ok: true,
             mode,

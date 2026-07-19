@@ -162,6 +162,32 @@ describe("theforge-doc-stamp", () => {
     );
   });
 
+  it("mddMarkdownHasKnownFormatCorruption detecta §4 sin cierre y H1 _prosa_", async () => {
+    const { mddMarkdownHasKnownFormatCorruption } = await import("./theforge-doc-stamp.js");
+    const corrupt = `## 4. Contratos de API
+
+### POST /api/v1/chat/message
+Recibe el mensaje.
+\`\`\`json
+{ "x": 1 }
+
+### POST /api/v1/chat/switch-company
+Texto.
+`;
+    const fixed = `## 4. Contratos de API
+
+### POST /api/v1/chat/message
+\`\`\`json
+{ "x": 1 }
+\`\`\`
+
+### POST /api/v1/chat/switch-company
+`;
+    assert.equal(mddMarkdownHasKnownFormatCorruption(corrupt), true);
+    assert.equal(mddMarkdownHasKnownFormatCorruption(fixed), false);
+    assert.equal(mddMarkdownHasKnownFormatCorruption("# _Prosa en cursiva que no es heading._\n"), true);
+  });
+
   it("formatDocumentMarkdown preserves stamp ISO and human header", () => {
     const out = formatDocumentMarkdown(STAMPED);
     assert.ok(out.includes("<!-- theforge-doc:created=2026-07-15T10:30:45.000Z|updated="));

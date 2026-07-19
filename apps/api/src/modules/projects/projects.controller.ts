@@ -233,8 +233,8 @@ export class ProjectsController {
   }
 
   @Get(":id/generation-status")
-  async generationStatus(@Param("id") id: string) {
-    const status = await this.generationGuard.getStatus(id);
+  async generationStatus(@Param("id") id: string, @Query("stageId") stageId?: string) {
+    const status = await this.generationGuard.getStatus(id, stageId?.trim() || undefined);
     const { complexity: _c, contentReady: _r, ...publicStatus } = status;
     return publicStatus;
   }

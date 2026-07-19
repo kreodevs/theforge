@@ -1,5 +1,14 @@
 import type { MddStructured } from "../state/mdd-structured.schema.js";
-import { formatDocumentMarkdown, repairGluedMarkdownHeadings, peelDocumentBodyForPersist, repairInlineHorizontalRuleSectionBreaks, repairApiResponse204NoContent, repairOrphanFenceBeforeContractLabels } from "@theforge/shared-types";
+import {
+  formatDocumentMarkdown,
+  repairGluedMarkdownHeadings,
+  peelDocumentBodyForPersist,
+  repairInlineHorizontalRuleSectionBreaks,
+  repairApiResponse204NoContent,
+  repairOrphanFenceBeforeContractLabels,
+  repairUnclosedJsonBeforeApiEndpoint,
+  repairApiContractJsonFences,
+} from "@theforge/shared-types";
 import {
   ensureMddGovernanceSection,
   extractGovernanceSection,
@@ -1424,6 +1433,8 @@ function finalizeMddPersistFormatting(mddMarkdown: string): string {
 export function repairGarbageHeadings(draft: string): string {
   if (!draft) return draft;
   let text = draft.replace(/^#\s+([A-ZÁÉÍÓÚÑ][^\n#]{40,})$/gm, "$1");
+  text = text.replace(/^#\s+(_[^\n]+_\.?)\s*$/gm, "$1");
+  text = text.replace(/^#\s+(_[^\n]+)$/gm, "$1");
   const lines = text.split("\n");
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
@@ -1525,6 +1536,8 @@ export function prepareMddMarkdownForPersist(mddMarkdown: string): string {
   }
   formatted = repairGarbageHeadings(formatted);
   formatted = repairOrphanFenceBeforeContractLabels(formatted);
+  formatted = repairUnclosedJsonBeforeApiEndpoint(formatted);
+  formatted = repairApiContractJsonFences(formatted);
   formatted = repairApiResponse204NoContent(formatted);
   formatted = normalizeCanonicalMddSectionHeadings(formatted);
   formatted = finalizeMddPersistFormatting(formatted);

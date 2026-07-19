@@ -1,3 +1,5 @@
+import { peelTheforgeDocStamp } from "./theforge-doc-stamp.js";
+
 /** Documentos upstream que alimentan el MDD greenfield. */
 export type MddUpstreamSource = "dbga" | "brd" | "benchmark";
 
@@ -58,9 +60,19 @@ export const MDD_SECTION_TITLES: Record<number, string> = {
   7: "§7 Infraestructura",
 };
 
-/** Normaliza texto para hashing estable (trim, finales de línea). */
+/**
+ * Normaliza texto para hashing estable: finales de línea, trim y sin cabecera de fechas
+ * (stamp `theforge-doc`) para no marcar desincronización por metadatos solamente.
+ */
 export function normalizeUpstreamDocumentBody(text: string | null | undefined): string {
-  return (text ?? "").replace(/\r\n/g, "\n").trim();
+  let body = (text ?? "").replace(/\r\n/g, "\n").trim();
+  if (!body) return body;
+  for (let i = 0; i < 4; i++) {
+    const next = peelTheforgeDocStamp(body).body.trim();
+    if (!next || next === body) break;
+    body = next;
+  }
+  return body.trim();
 }
 
 /** Expande dependencias entre secciones MDD antes de ejecutar agentes. */

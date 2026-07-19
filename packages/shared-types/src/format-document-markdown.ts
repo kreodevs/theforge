@@ -9,10 +9,15 @@ import { normalizeMermaidInDocument } from "./mermaid.js";
 import { splitEmbeddedMddFromDbga } from "./dbga-document-structure.js";
 import { repairFragmentedSqlFences } from "./repair-collapsed-sql.js";
 import {
+  repairApiContractJsonFences,
+  repairApiResponse204NoContent,
+  repairOrphanContratosApiFences,
+  repairOrphanFenceBeforeContractLabels,
   repairOrphanSqlBlocks,
   repairPastedMarkdown,
   repairStrayCodeFences,
   repairTableBoundaries,
+  repairUnclosedJsonBeforeApiEndpoint,
 } from "./repair-pasted-markdown.js";
 import { repairDirectoryTreeBlocks } from "./repair-directory-tree.js";
 import {
@@ -72,6 +77,11 @@ export function formatDocumentMarkdown(text: string): string {
     }
   }
   cleaned = repairMarkdownFences(cleaned.trim());
+  cleaned = repairOrphanFenceBeforeContractLabels(cleaned);
+  cleaned = repairUnclosedJsonBeforeApiEndpoint(cleaned);
+  cleaned = repairApiContractJsonFences(cleaned);
+  cleaned = repairOrphanContratosApiFences(cleaned);
+  cleaned = repairApiResponse204NoContent(cleaned);
   cleaned = repairDbgaMarkdown(cleaned);
   cleaned = repairSplitOrderedListItems(cleaned);
   cleaned = repairGluedMarkdownHeadings(cleaned);

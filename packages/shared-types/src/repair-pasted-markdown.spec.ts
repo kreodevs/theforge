@@ -7,7 +7,9 @@ import {
   repairMetadataCoverTable,
   repairOrphanSqlBlocks,
   repairOrphanContratosApiFences,
+  repairOrphanFenceBeforeContractLabels,
   repairPastedMarkdown,
+  repairJsonFenceIntegrity,
   repairTableBoundaries,
   repairTabSeparatedTables,
   repairUnclosedCodeFences,
@@ -243,7 +245,7 @@ describe("repairIndentedProseBlocks", () => {
   });
 });
 
-describe("Copiloto MDD format repairs", () => {
+describe("MDD §4 API contract format repairs (patrones genéricos)", () => {
   it("quita --- pegado al final de prosa en riesgos §1", () => {
     const raw =
       "- **Bucle Infinito de Agentes:** Riesgo de ciclos. **Mitigación:** límite de iteraciones en el agente. ---\n\n---\n\n## 2. Arquitectura";
@@ -297,7 +299,7 @@ Recibe el mensaje del webhook.
     assert.doesNotMatch(out, /webhook\.\n}\n```/);
   });
 
-  it("elimina fence huérfano antes de Request body (Copiloto §4)", () => {
+  it("elimina fence huérfano antes de Request body (§4)", () => {
     const raw = `### POST /api/v1/chat/message
 Recibe el mensaje del webhook de WhatsApp y orquesta la respuesta.
 \`\`\`
@@ -310,6 +312,24 @@ Recibe el mensaje del webhook de WhatsApp y orquesta la respuesta.
     const out = repairPastedMarkdown(raw);
     assert.match(out, /respuesta\.\n+\*\*Request body:\*\*/);
     assert.doesNotMatch(out, /respuesta\.\n```\n\n\*\*Request body/);
+  });
+
+  it("conserva cierre ```json antes de **Response 200:** (no confundir con huérfano)", () => {
+    const raw = `**Request body:**
+\`\`\`json
+{
+  "client_id": "string",
+  "client_secret": "string"
+}
+\`\`\`
+
+**Response 200:**
+\`\`\`json
+{ "access_token": "jwt" }
+\`\`\`
+`;
+    const out = repairOrphanFenceBeforeContractLabels(raw);
+    assert.match(out, /"client_secret": "string"\n}\n```\n\n\*\*Response 200:/);
   });
 
   it("normaliza Response 204 sin # No Content", () => {
@@ -341,7 +361,7 @@ Recibe el mensaje del webhook de WhatsApp y orquesta la respuesta.
     assert.doesNotMatch(out, /### Detalle ejecutable en/);
   });
 
-  it("formatDocumentMarkdown aplica todas las reparaciones Copiloto", () => {
+  it("formatDocumentMarkdown repara §4 tras repairMarkdownFences sin perder cierres json", () => {
     const raw = `## 1. Contexto
 
 - **Riesgo:** bucle. **Mitigación:** timeout. ---
@@ -377,5 +397,43 @@ Recibe el mensaje del webhook de WhatsApp y orquesta la respuesta.
     assert.match(out, /"token_type": "Bearer"\n}\n```/);
     assert.match(out, /Detalle ejecutable en \*\*`pantallas\.md`\*\*/);
     assert.doesNotMatch(out, /### Detalle ejecutable en/);
+  });
+
+  it("repairJsonFenceIntegrity no elimina cierre válido antes de **Response N:**", () => {
+    const raw = `**Request body:**
+\`\`\`json
+{ "a": 1 }
+\`\`\`
+
+**Response 200:**
+\`\`\`json
+{ "b": 2 }
+\`\`\`
+
+### POST /api/v1/next
+`;
+    const out = repairJsonFenceIntegrity(raw);
+    assert.match(out, /\{ "a": 1 \}\n```\n+\*\*Response 200:/);
+    assert.match(out, /\{ "b": 2 \}\n```\n+### POST/);
+  });
+
+  it("cadena de endpoints: json sin cierre antes de **Response** y ### DELETE", () => {
+    const raw = `### POST /api/v1/a
+**Request body:**
+\`\`\`json
+{ "id": "1" }
+
+**Response 200:**
+\`\`\`json
+{ "ok": true }
+
+### DELETE /api/v1/a/:id
+**Response 204:**
+# _No Content_
+`;
+    const out = repairPastedMarkdown(raw);
+    assert.match(out, /\{ "id": "1" \}\n```[\s\S]*?\*\*Response 200:/);
+    assert.match(out, /\{ "ok": true \}\n```[\s\S]*?### DELETE/);
+    assert.match(out, /\*\*Response 204:\*\*\n+_No Content_/);
   });
 });

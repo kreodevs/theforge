@@ -1851,7 +1851,7 @@ CREATE TABLE roles (id UUID PRIMARY KEY);
   });
 });
 
-describe("mdd format sanitizer regressions (copiloto sample)", () => {
+describe("mdd format sanitizer regressions (patrones genéricos)", () => {
   it("bug1: despega encabezados pegados en §1 y escenarios UAT en negrita", () => {
     const raw = `## 1. Contexto y Alcance ### Propósito del Proyecto
 El sistema hace X. ### Alcance y Fronteras #### Servicios Core
@@ -1999,12 +1999,12 @@ Stack.
     assert.match(out, /\[ARQUITECTURA - SECCIÓN INMUTABLE\]/);
   });
 
-  it("prepareMddMarkdownForPersist repara §4 Copiloto (fence huérfano y JSON sin cierre)", () => {
+  it("prepareMddMarkdownForPersist repara §4 (fence huérfano, JSON sin cierre, Response 204)", () => {
     const raw = `# Master Design Document
 
 ## 1. Contexto
 
-Cuerpo §1 con más de ochenta caracteres para el MDD canónico de prueba del copiloto.
+Cuerpo §1 con más de ochenta caracteres para el MDD canónico de prueba genérico.
 
 ## 4. Contratos de API
 
@@ -2060,6 +2060,80 @@ Texto de reglas con más de ochenta caracteres para cumplir validaciones mínima
     const out = prepareMddMarkdownForPersist(raw);
     assert.match(out, /^## 6\. Seguridad/m);
     assert.doesNotMatch(out, /### ## 6\./);
+  });
+
+  it("prepareMddMarkdownForPersist: demote H1 falso # _prosa_ y despega ## pegados", () => {
+    const raw = `# Master Design Document
+
+## 1. Contexto
+
+Texto §1 con más de ochenta caracteres para cumplir validaciones mínimas del gate de entrega.
+
+- **Riesgo:** item. **Mitigación:** límite de iteraciones.
+## 2. Arquitectura y Stack
+
+### Diagrama
+
+\`\`\`mermaid
+flowchart TB
+  A --> B
+\`\`\`
+
+# _Nota derivada de §2–§4: prosa larga que no debe ser heading._
+
+## 5. Lógica y Edge Cases
+
+1. **Paso:** detalle.
+   - Sub-item de lista.
+## 6. Seguridad
+
+Texto §6 con más de ochenta caracteres para cumplir validaciones mínimas del gate.
+## 7. Infraestructura
+
+Texto §7 con más de ochenta caracteres para cumplir validaciones mínimas del gate.
+## UI/UX Design Intent
+
+Texto UI con más de ochenta caracteres para cumplir validaciones mínimas del gate.
+`;
+    const out = prepareMddMarkdownForPersist(raw);
+    assert.doesNotMatch(out, /^# _Nota derivada/m);
+    assert.match(out, /_Nota derivada de §2–§4/);
+    assert.match(out, /Mitigación:[^\n]+\n---\n## 2\. Arquitectura/);
+    assert.match(out, /Sub-item de lista\.\n---\n## 6\. Seguridad/);
+    assert.match(out, /gate\.\n---\n## 7\. Infraestructura/);
+    assert.match(out, /gate\.\n---\n## UI\/UX Design Intent/);
+  });
+
+  it("prepareMddMarkdownForPersist mantiene cierre json tras sanitizeMddAtPersist", () => {
+    const raw = `# Master Design Document
+
+## 1. Contexto
+
+Cuerpo §1 con más de ochenta caracteres para cumplir validaciones mínimas del gate de entrega.
+
+## 4. Contratos de API
+
+### POST /api/v1/chat/message
+Recibe el mensaje.
+\`\`\`
+
+**Request body:**
+\`\`\`json
+{ "x": 1 }
+\`\`\`
+
+**Response 202:**
+\`\`\`json
+{
+  "status": "accepted",
+  "message": "processing"
+
+### POST /api/v1/chat/switch-company
+Cambia empresa.
+`;
+    const out = prepareMddMarkdownForPersist(raw);
+    assert.match(out, /"processing"\n}\n```[\s\S]*?### POST \/api\/v1\/chat\/switch-company/);
+    assert.doesNotMatch(out, /Recibe el mensaje\.\n```\n\n\*\*Request body/);
   });
 
   it("normalizeCanonicalMddSectionHeadings: ## 2. Arquitectura sin y Stack pasa gate tras finalize", () => {

@@ -399,12 +399,8 @@ export function repairJsonFenceIntegrity(text: string): string {
     /\*\*Response (\d+)[^*]*\*\*\s*:?\s*\n+```\s*\n+```json/gi,
     "**Response $1:**\n\n```json",
   );
-  out = out.replace(/```json\n([\s\S]*?)(\n\*\*[^\n]+\*\*)/g, (full, body: string, after: string) => {
-    const trimmed = body.trimEnd();
-    if (trimmed.endsWith("```")) return full;
-    const fixed = balanceJsonFenceBody(trimmed);
-    return `\`\`\`json\n${fixed}\n\`\`\`\n${after}`;
-  });
+  // Solo marcadores de contrato API (**Request body:** / **Response N:**), no cualquier **bold**.
+  out = repairCloseJsonBeforeContractMarkers(out);
   out = out.replace(
     /```json\n([\s\S]*?)(?=\n###\s+(?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s)/gi,
     (full, inner: string) => {
@@ -1177,6 +1173,16 @@ export function repairOrphanFenceBeforeContractLabels(text: string): string {
   for (let i = 0; i < lines.length; i++) {
     const t = lines[i]!.trim();
     if (t === "```") {
+      let open = false;
+      for (let j = 0; j < i; j++) {
+        const ft = lines[j]!.trim();
+        if (/^```/.test(ft)) open = !open;
+      }
+      // Cierra un bloque abierto — conservar aunque siga **Request body:** / **Response N:**
+      if (open) {
+        out.push(lines[i]!);
+        continue;
+      }
       let k = i + 1;
       while (k < lines.length && lines[k]!.trim() === "") k++;
       const after = (lines[k] ?? "").trim();
@@ -1282,6 +1288,7 @@ export function repairPastedMarkdown(text: string): string {
   out = repairStrayCodeFences(out);
   out = repairUnclosedJsonBeforeApiEndpoint(out);
   out = repairApiResponse204NoContent(out);
+  out = repairOrphanFenceBeforeContractLabels(out);
   out = repairSplitUiUxMatrizHeading(out);
   out = out.replace(/\n(🔴|🟡|🟢)/g, "\n\n$1");
   out = out.replace(/\n-{3,}\n/g, "\n\n---\n\n");
