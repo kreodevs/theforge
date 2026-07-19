@@ -1505,6 +1505,14 @@ export function prepareMddMarkdownForPersist(mddMarkdown: string): string {
   return formatDocumentMarkdown(sanitized);
 }
 
+/**
+ * MDD persistido en BD sin cabecera de fechas (evita corrupción stamp+cuerpo).
+ * Limpia stamps legados vía peel antes de formatear.
+ */
+export function storeMddMarkdownForPersist(mddMarkdown: string): string {
+  return prepareMddMarkdownForPersist(mddMarkdown);
+}
+
 /** Sanitiza MDD antes de exportar al handoff (misma pasada que persist). */
 export function sanitizeMddForExport(mddMarkdown: string): string {
   return sanitizeMddAtPersist(mddMarkdown);

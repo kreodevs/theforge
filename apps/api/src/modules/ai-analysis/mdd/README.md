@@ -65,7 +65,7 @@ Modo `pipeline`: antes de ejecutar el grafo LLM, `MddUpstreamSyncService.tryRest
 
 1. Se omite el pipeline LLM (~45 min).
 2. Se reutiliza `stage.mddContent` existente.
-3. `persistMddFromBackgroundJob` repara stamp/formato (`peelDocumentBodyForPersist` → `prepareMddForOutput` → `prependDocumentTimestamps`) y ejecuta el pipeline determinista de entrega (gate + semáforo).
+3. `persistMddFromBackgroundJob` repara formato (`peelDocumentBodyForPersist` → `prepareMddForOutput` → `storeMddMarkdownForPersist`) y ejecuta el pipeline determinista de entrega (gate + semáforo). **Sin cabecera de fechas** en el markdown del MDD.
 
 Progreso del job: `phase: "cache"`. Requiere haber completado al menos una generación previa que capturó baseline (primera regeneración tras el deploy sigue siendo pipeline completo).
 

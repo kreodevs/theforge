@@ -3,7 +3,8 @@ import { documentPersistFieldLabel } from "@theforge/shared-types";
 import type { Project, Stage } from "@theforge/database";
 import type { PrismaService } from "../../prisma/prisma.service.js";
 import { persistStageAndProjectDeliverables } from "./stage-deliverable-persist.util.js";
-import { stampMarkdownIfBodyChanged } from "../engine/document-date-header.util.js";
+import { prepareMddMarkdownForPersist } from "../ai-analysis/utils/mdd-sanitize.js";
+import { documentMarkdownBodiesEqual, stampMarkdownIfBodyChanged } from "../engine/document-date-header.util.js";
 
 type ProjectWithStages = Project & { stages: Stage[] };
 
@@ -46,7 +47,14 @@ export async function persistClarifyDocumentContent(
   previous: string,
   next: string,
 ): Promise<void> {
-  const stamped = stampMarkdownIfBodyChanged(previous, next);
+  const stamped =
+    field === "mddContent"
+      ? (() => {
+          const prepared = prepareMddMarkdownForPersist(next);
+          const ex = (previous ?? "").trim();
+          return ex && documentMarkdownBodiesEqual(ex, prepared) ? ex : prepared;
+        })()
+      : stampMarkdownIfBodyChanged(previous, next);
 
   if (field === "dbgaContent") {
     await prisma.project.update({

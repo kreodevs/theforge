@@ -34,6 +34,12 @@ const HUMAN_HEADER_WITH_SEP_RE = /^>\s*📅[^\n]*\n\n---\n\n/;
 /** Blockquote stamp without `---` (regeneraciones que van directo al H1). */
 const HUMAN_BLOCKQUOTE_LINE_RE = /^>\s*📅[^\n]*\n+/;
 
+/** `>> 📅` o `> > 📅` tras residuo `-->` corrupto. */
+const MULTI_BLOCKQUOTE_STAMP_RE = /^>+\s*📅[^\n]*(?:\n|$)/;
+
+/** `>> 📅 … --- # Título` pegado en una línea. */
+const MULTI_BLOCKQUOTE_GLUE_H1_RE = /^>+\s*📅[^\n]*?\s+---\s+(?=#(?!\#))/;
+
 /** Línea humana sin `>` (stamp pegado al cuerpo). */
 const HUMAN_LINE_NO_BLOCKQUOTE_RE = /^📅[^\n]*(?:\n|$)/;
 
@@ -229,8 +235,10 @@ export function peelTheforgeDocStamp(text: string): { stamp: string; body: strin
   const humanPatterns = [
     HUMAN_HEADER_WITH_SEP_RE,
     HUMAN_GLUE_H1_RE,
+    MULTI_BLOCKQUOTE_GLUE_H1_RE,
     /^>\s*📅[^\n]*\n---\s*\n+/,
     /^>\s*📅[^\n]*\s+---\s+/,
+    MULTI_BLOCKQUOTE_STAMP_RE,
     HUMAN_BLOCKQUOTE_LINE_RE,
     HUMAN_LINE_NO_BLOCKQUOTE_RE,
   ];

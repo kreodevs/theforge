@@ -40,7 +40,7 @@ import { MddUpdatePipelineService } from "../engine/mdd-update-pipeline.service.
 import { SemaphoreService, type SemaphoreEvaluationInput } from "../engine/semaphore.service.js";
 import { normalizeMddContent } from "../engine/mdd-markdown-parser.js";
 import { shouldReplacePhase0SummaryWithBorrador, generateAemBodySchema, isPhase0BorradorJson, isBrownfieldCapable } from "@theforge/shared-types";
-import { prepareMddMarkdownForPersist } from "../ai-analysis/utils/mdd-sanitize.js";
+import { storeMddMarkdownForPersist } from "../ai-analysis/utils/mdd-sanitize.js";
 import { prepareMddForOutput } from "../ai-analysis/utils/mdd-prepare-output.js";
 import { prependDocumentTimestamps, stampMarkdownIfBodyChanged } from "../engine/document-date-header.util.js";
 import {
@@ -1067,7 +1067,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         mddGovernanceSeedOnly !== true &&
         mddFormatOnly !== true;
       if (mddFormatOnly === true) {
-        const formatted = prependDocumentTimestamps(prepareMddMarkdownForPersist(mddForPipeline ?? ""));
+        const formatted = storeMddMarkdownForPersist(mddForPipeline ?? "");
         await this.prisma.stage.update({
           where: { id: targetStage.id },
           data: { mddContent: formatted, documentAst: parsedDocumentAst === null ? Prisma.JsonNull : (parsedDocumentAst as Prisma.InputJsonValue), documentVersion: parsedDocumentVersion },
@@ -1079,9 +1079,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
           precisionScore: targetStage.precisionScore,
         };
       } else if (skipPipelineForSeed || skipPipelineForPatternWizard) {
-        const formatted = skipPipelineForPatternWizard
-          ? prependDocumentTimestamps(prepareMddMarkdownForPersist(mddForPipeline ?? ""))
-          : prependDocumentTimestamps(mddForPipeline);
+        const formatted = storeMddMarkdownForPersist(mddForPipeline ?? "");
         await this.prisma.stage.update({
           where: { id: targetStage.id },
           data: {
@@ -1111,7 +1109,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
           await this.prisma.stage.update({
             where: { id: targetStage.id },
             data: {
-              mddContent: prependDocumentTimestamps(result.sanitizedMdd),
+              mddContent: storeMddMarkdownForPersist(result.sanitizedMdd),
               status: result.status,
               precisionScore: result.precisionScore,
               documentAst: parsedDocumentAst === null ? Prisma.JsonNull : (parsedDocumentAst as Prisma.InputJsonValue),
@@ -2845,7 +2843,7 @@ name: ${JSON.stringify(name)}
 
     if (!options?.finalize) {
       const prepared = await prepareMddForOutput(mddForPipeline);
-      const stored = prependDocumentTimestamps(prepared);
+      const stored = storeMddMarkdownForPersist(prepared);
       await this.prisma.stage.update({
         where: { id: targetStage.id },
         data: { mddContent: stored },
@@ -2874,7 +2872,7 @@ name: ${JSON.stringify(name)}
     await this.prisma.stage.update({
       where: { id: targetStage.id },
       data: {
-        mddContent: prependDocumentTimestamps(result.sanitizedMdd),
+        mddContent: storeMddMarkdownForPersist(result.sanitizedMdd),
         status: result.status,
         precisionScore: result.precisionScore,
       },
@@ -3555,7 +3553,7 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
       await this.prisma.stage.update({
         where: { id: stageId },
         data: {
-          mddContent: prependDocumentTimestamps(result.sanitizedMdd),
+          mddContent: storeMddMarkdownForPersist(result.sanitizedMdd),
           status: result.status,
           precisionScore: result.precisionScore,
         },

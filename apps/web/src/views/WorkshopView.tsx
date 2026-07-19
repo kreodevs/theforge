@@ -4780,10 +4780,9 @@ export default function WorkshopView({
                   />
                 ) : null}
                 {mddViewMode === "preview" ? (
-                  <MddViewer content={mddContent || ""} documentTimestamps={docTs("mddContent")} />
+                  <MddViewer content={mddContent || ""} documentTimestamps={null} />
                 ) : (
                   <>
-                    <WorkshopDocumentStampBar timestamps={docTs("mddContent")} />
                     <textarea
                       value={mddContent}
                       onChange={(e) => setMddContent(e.target.value)}

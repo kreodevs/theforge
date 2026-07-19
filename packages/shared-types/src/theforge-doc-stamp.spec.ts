@@ -113,6 +113,14 @@ describe("theforge-doc-stamp", () => {
     assert.doesNotMatch(display!.created, / UTC$/);
   });
 
+  it("peelDocumentBodyForPersist strips >> 📅 residue after orphan ISO prefix", () => {
+    const raw =
+      "Última modificación: 2026-07-19T16:50:37.075Z --> >> 📅 Creado: 19 de julio de 2026, 16:50:37 UTC · Última modificación: 19 de julio de 2026, 16:50:37 UTC --- # Master Design Document --- ## 1. Contexto";
+    const body = peelDocumentBodyForPersist(raw);
+    assert.match(body, /^#\s*Master Design Document/);
+    assert.doesNotMatch(body, /📅|Última modificación:/);
+  });
+
   it("peelDocumentBodyForPersist splits glued §1 and §2 from stamp residue", () => {
     const raw =
       "Última modificación: 2026-07-18T06:25:57.540Z --> 📅 Creado: 18 de julio de 2026, 06:25:57 UTC · Última modificación: 18 de julio de 2026, 06:25:57 UTC --- # Master Design Document --- ## 1. Contexto y alcance --- ## 2. Arquitectura y Stack ### 2.1 Visión";
