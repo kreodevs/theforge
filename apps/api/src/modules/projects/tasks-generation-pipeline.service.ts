@@ -300,8 +300,8 @@ export class TasksGenerationPipelineService {
     const phaseCount = phaseMatches.length;
     const planItemCount = plan.items.length;
 
-    // Heuristic: each phase should generate at least 2 tasks
-    const minExpectedTasks = phaseCount * 2;
+    // Heuristic: each phase should generate at least 5 tasks (backend + frontend + test + infra + doc)
+    const minExpectedTasks = phaseCount * 5;
     if (planItemCount < minExpectedTasks) {
       this.logger.warn(
         `[Tasks pipeline] plan incompleto: blueprint tiene ${phaseCount} fases (~${phaseMatches.map((m) => m[0]?.trim()).join(", ")}) ` +

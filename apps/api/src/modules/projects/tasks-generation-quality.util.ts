@@ -35,12 +35,12 @@ function estimateMinimumTaskCount(params: {
 }): number {
   let minimum = 8; // baseline: setup, MDD §1, §3 modelo, §4 API, §5 lógica, §6 seguridad, §7 infra, QA
 
-  // Blueprint phases: each phase → at least 2 tasks
+  // Blueprint phases: each phase → at least 5 tasks (backend, frontend, test, deploy, doc)
   const blueprint = (params.blueprintMarkdown ?? "").trim();
   if (blueprint.length > 200) {
     const phaseMatches = [...blueprint.matchAll(/^##\s+(?:(?:Fase|Phase|Roadmap|Milestone|Sprint|Hitos|Etapa)\s+\d+[^#\n]*)/gim)];
     if (phaseMatches.length > 1) {
-      minimum += phaseMatches.length * 2;
+      minimum += phaseMatches.length * 5;
     }
   }
 
