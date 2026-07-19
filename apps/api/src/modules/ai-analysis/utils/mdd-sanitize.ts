@@ -1363,6 +1363,9 @@ function demoteProseHeadingsInSectionBody(body: string): string {
   return body
     .split("\n")
     .map((line) => {
+      if (/^#{3,6}\s+(#{1,2}\s+)/.test(line.trim())) {
+        return line.trim().replace(/^#{3,6}\s+(#{1,2}\s+)/, "$1");
+      }
       if (!/^###\s+/.test(line)) return line;
       if (isValidContratosOrInfraSubheading(line)) return line;
       const text = line.replace(/^###\s+/, "").trim();
@@ -1510,7 +1513,8 @@ export function prepareMddMarkdownForPersist(mddMarkdown: string): string {
   if (!mddMarkdown?.trim()) return mddMarkdown;
   const preservedGov = extractGovernanceSection(mddMarkdown);
   const lockedPatternIds = selectedPatternIdsFromMdd(mddMarkdown);
-  const body = peelDocumentBodyForPersist(mddMarkdown);
+  let body = normalizeCanonicalMddSectionHeadings(mddMarkdown);
+  body = peelDocumentBodyForPersist(body);
   let formatted = formatDocumentMarkdown(body);
   let sanitized = sanitizeMddAtPersist(formatted);
   formatted = formatDocumentMarkdown(sanitized);
@@ -1522,6 +1526,7 @@ export function prepareMddMarkdownForPersist(mddMarkdown: string): string {
   formatted = repairGarbageHeadings(formatted);
   formatted = repairOrphanFenceBeforeContractLabels(formatted);
   formatted = repairApiResponse204NoContent(formatted);
+  formatted = normalizeCanonicalMddSectionHeadings(formatted);
   formatted = finalizeMddPersistFormatting(formatted);
   return formatted;
 }
@@ -3978,6 +3983,7 @@ export function normalizeMddEnglishSubheadings(draft: string): string {
 export function normalizeCanonicalMddSectionHeadings(draft: string): string {
   if (!draft?.trim()) return draft;
   let out = repairInlineHorizontalRuleSectionBreaks(draft);
+  out = out.replace(/^#{3,6}\s+(##\s+[1-7]\.\s+[^\n]+)$/gm, "$1");
   out = out.replace(/^##\s+Contexto(?:\s+y\s*alcance)?\s*$/gim, "## 1. Contexto");
   out = out.replace(
     /^##\s+2\.\s*Arquitectura(?!\s+y\s*Stack)\s*$/gim,

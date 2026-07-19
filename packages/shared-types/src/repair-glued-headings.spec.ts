@@ -75,4 +75,16 @@ stateDiagram-v2
     assert.doesNotMatch(out, /^\* item/m);
     assert.match(out, /^- item A/m);
   });
+
+  it("repara headings apilados ### ## N. Sección", () => {
+    const raw = `## 5. Lógica y Edge Cases
+
+### ## 6. Seguridad
+
+### Aislamiento Multitenant y Autorización
+- item`;
+    const out = repairGluedMarkdownHeadings(raw);
+    assert.match(out, /^## 6\. Seguridad/m);
+    assert.doesNotMatch(out, /### ## 6\./);
+  });
 });

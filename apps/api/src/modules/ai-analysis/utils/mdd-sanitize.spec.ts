@@ -2045,6 +2045,23 @@ Autenticación M2M con JWT RS256 y aislamiento multitenant obligatorio en todas 
     assert.match(out, /Edge Cases[\s\S]*---[\s\S]*## 6\. Seguridad/);
   });
 
+  it("prepareMddMarkdownForPersist repara ### ## 6. Seguridad apilado", () => {
+    const raw = `# Master Design Document
+
+## 5. Lógica y Edge Cases
+
+Texto de reglas con más de ochenta caracteres para cumplir validaciones mínimas del gate de entrega.
+
+### ## 6. Seguridad
+
+### Aislamiento Multitenant y Autorización
+- Aislamiento lógico estricto por tenant_id y company_id.
+`;
+    const out = prepareMddMarkdownForPersist(raw);
+    assert.match(out, /^## 6\. Seguridad/m);
+    assert.doesNotMatch(out, /### ## 6\./);
+  });
+
   it("normalizeCanonicalMddSectionHeadings: ## 2. Arquitectura sin y Stack pasa gate tras finalize", () => {
     const raw = `# Master Design Document
 

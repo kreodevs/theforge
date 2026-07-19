@@ -2345,20 +2345,18 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         if (!source) return { ok: false, message: "No hay MDD para formatear." };
         const rawFromDb = selectRawMddFromStage(get());
         const repairInput = rawFromDb.length >= source.length ? rawFromDb : source;
-        const formatted =
-          normalizeWorkshopDocumentForEditor(fmt(repairInput)) ?? fmt(repairInput);
         const needsStructuralRepair =
           mddMarkdownNeedsStructuralRepair(repairInput) ||
           mddMarkdownNeedsStructuralRepair(rawFromDb) ||
           mddMarkdownNeedsStructuralRepair(source);
         const before = normalizedMddForPersistCompare(source);
-        const after = normalizedMddForPersistCompare(formatted);
+        await get().persistMddContent(repairInput, { force: true, mddFormatOnly: true });
+        const saved = selectPersistedMddBaseline(get());
+        set({ mddContent: saved });
+        const after = normalizedMddForPersistCompare(saved);
         if (!needsStructuralRepair && after === before) {
           return { ok: true, message: "MDD: ya estaba bien formateado (sin cambios)." };
         }
-        set({ mddContent: formatted });
-        await get().persistMddContent(formatted, { force: true, mddFormatOnly: true });
-        set({ mddContent: selectPersistedMddBaseline(get()) });
         return {
           ok: true,
           message: needsStructuralRepair

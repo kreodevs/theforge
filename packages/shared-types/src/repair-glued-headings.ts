@@ -115,9 +115,19 @@ export function homogenizeMarkdownBulletMarkers(draft: string): string {
   return draft.replace(/^(\s*)\*\s+/gm, "$1- ");
 }
 
+/** `### ## 6. Seguridad` / `#### ## Integración` → conserva solo el heading interno canónico. */
+export function repairStackedMarkdownHeadingMarkers(draft: string): string {
+  if (!draft?.trim()) return draft ?? "";
+  return draft
+    .replace(/^#{3,6}\s+(#{1,2}\s+\d+\.\s+[^\n]+)$/gm, "$1")
+    .replace(/^#{3,6}\s+(#{1,2}\s+(?:Integración|Infraestructura|Seguridad|Contexto|Manifest)\b[^\n]*)$/gim, "$1")
+    .replace(/^#{3,6}\s+(#{1,2}\s+[^\n]+)$/gm, "$1");
+}
+
 export function repairGluedMarkdownHeadings(draft: string): string {
   if (!draft?.trim()) return draft ?? "";
-  let out = fixBareNumberedSectionGluedSubheadings(draft);
+  let out = repairStackedMarkdownHeadingMarkers(draft);
+  out = fixBareNumberedSectionGluedSubheadings(out);
   out = fixGluedHeadingMermaidSuffix(out);
   out = fixGluedPlainTitleMermaidSuffix(out);
   out = fixGluedHeadingToCodeFence(out);
