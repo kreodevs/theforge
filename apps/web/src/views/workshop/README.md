@@ -19,7 +19,8 @@ Subcomponentes extraídos de `WorkshopView.tsx` (Fase 5b del [GOD-REFACTOR](../.
 | **WorkshopUxGuidePanel.tsx** | Design System / UX guide (preview, design, source). Tipos en `workshopUxGuidePanel.types.ts`. |
 | **WorkshopAdrsPluginPanels.tsx** | ADRs del grafo y paneles plugin dinámicos. Tipos en `workshopAdrsPluginPanels.types.ts`. |
 | **WorkshopDocPanelContent.tsx** | Compositor del área scroll: encadena todos los subpaneles anteriores. Tipos en `workshopDocPanelContent.types.ts`. |
+| **useWorkshopDocPanelProps.ts** | Hook que consolida los `useMemo` de props de todos los subpaneles del documento. Tipos de entrada en `useWorkshopDocPanelProps.types.ts`. |
 
 Utilidades puras compartidas con otros módulos viven en `utils/workshopDocToolbar.ts`.
 
-Próximas extracciones planificadas: reducir `useMemo` de props (hooks dedicados), columna métricas/chat.
+Próximas extracciones planificadas: columna métricas/chat, layout shell 3 columnas.

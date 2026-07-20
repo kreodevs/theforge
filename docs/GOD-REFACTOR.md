@@ -718,3 +718,10 @@ Fase 6 (legacy/MCP)
 | `WorkshopAdrsPluginPanels.tsx` + types | ✅ |
 | `WorkshopDocPanelContent.tsx` — compositor scroll | ✅ |
 | `WorkshopView.tsx` — ~4 078 L | ✅ |
+
+### Fase 5 — Workshop frontend (incremento 5g)
+
+| Ítem | Estado |
+|------|--------|
+| `useWorkshopDocPanelProps.ts` + `useWorkshopDocPanelProps.types.ts` | ✅ |
+| `WorkshopView.tsx` — ~3 647 L (−~430 vs 5f) | ✅ |
