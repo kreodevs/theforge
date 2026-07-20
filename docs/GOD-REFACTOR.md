@@ -844,4 +844,17 @@ Próximo: ver incrementos 5m-2 y 5m-3.
 | `index.ts` — **~248 L** (bootstrap JSON-RPC + auth) | ✅ |
 | Tests existentes project-group/stage | ✅ |
 
-Próximo: subdividir `mcp-core.tools.ts` por dominio; split `agent-governance.util.ts`.
+### Fase 6 — Legacy y MCP (incremento 6-3)
+
+| Ítem | Estado |
+|------|--------|
+| `tools/project.tools.ts` — CRUD + spreads stage/group | ✅ |
+| `tools/generation.tools.ts` — entregables y gobernanza IA | ✅ |
+| `tools/analysis.tools.ts` — análisis, estimación, MDD | ✅ |
+| `tools/orchestrator.tools.ts` — chat y sesiones | ✅ |
+| `tools/legacy.tools.ts` — flujo legacy | ✅ |
+| `tools/integration.tools.ts` — Ariadne, merge, spec-kit | ✅ |
+| `tools/markdown.tools.ts` — tablas y Mermaid | ✅ |
+| `tools/index.ts` — compone dominios; eliminado `mcp-core.tools.ts` (~1 727 L) | ✅ |
+
+Próximo: split `agent-governance.util.ts` (6-4).

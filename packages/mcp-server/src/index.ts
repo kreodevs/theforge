@@ -7,7 +7,7 @@
  * - HTTP (`StreamableHTTP`): despliegue detrás de Docker/Traefik; flag `--http`, puerto `PORT` (default 3100).
  * - Stdio: desarrollo local o integración como subproceso (sin args).
  *
- * Definiciones y handlers de tools: {@link ./tools/index.ts} y {@link ./tools/mcp-core.tools.ts}.
+ * Definiciones y handlers de tools: {@link ./tools/index.ts} (dominios en `tools/*.tools.ts`).
  *
  * @copyright 2026 Jorge Correa
  * @license Apache-2.0

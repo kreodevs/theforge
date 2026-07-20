@@ -5,8 +5,8 @@ Servidor MCP que expone la API REST de The Forge como herramientas (`stdio` o HT
 ## JSDoc de herramientas
 
 - **`src/mcp-tools.doc.ts`** — catálogo documentado: cada `name` MCP, verbo HTTP y agrupación.
-- **`src/tools/mcp-core.tools.ts`** — definiciones runtime (`MCP_CORE_TOOL_DEFINITIONS`) y handlers (`createMcpCoreHandlers`).
-- **`src/tools/index.ts`** — `buildMcpTools()` / `buildMcpHandlers()` (core + project-group + project-stage).
+- **`src/tools/*.tools.ts`** — definiciones JSON Schema y handlers por dominio (project, generation, analysis, …).
+- **`src/tools/index.ts`** — `buildMcpTools()` / `buildMcpHandlers()` (dominios + project-group + project-stage).
 - **`src/index.ts`** — bootstrap JSON-RPC, auth M2M y transporte HTTP/stdio (~250 L).
 
 **Integración Ariadne:** `resolve_forge_project_for_ariadne` resuelve el proyecto Workshop; `create_stage_from_ariadne_change_pack` crea/importa etapa desde change pack v1. En 404/409 del resolve, JSON estructurado para modal en Ariadne.
