@@ -28,8 +28,13 @@ export class ProjectConformanceService {
     const mdd = buildConstitutionMarkdown(project);
     const conformance = await this.getConformance(projectId, options);
     const conformanceSummary = buildConformanceSummary(this.conformance, mdd, project);
-    const crossArtifactGaps = collectConformanceGaps(this.conformance, mdd, project);
     const stage = pickPrimaryStage(project.stages ?? []);
+    const crossArtifactGaps = collectConformanceGaps(this.conformance, mdd, {
+      ...project,
+      brdContent: stage?.brdContent ?? null,
+      dbgaContent: project.dbgaContent ?? null,
+      domainInventory: stage?.domainInventory ?? null,
+    });
     return {
       projectId,
       projectName: project.name,

@@ -422,6 +422,7 @@ export type InfraManifestRequirement = {
   hashingAlgorithm?: string;
   rateLimitEndpoints?: string[];
   dlqRequired?: boolean;
+  messagingBroker?: "rabbitmq" | "celery";
   celeryHealthPath?: string;
   staticDeploy?: "cloudfront_s3" | "nginx_container";
 };
@@ -451,6 +452,8 @@ export function extractMddInfraRequirements(mddContent: string): InfraManifestRe
 
   if (/Argon2id/i.test(section7)) req.hashingAlgorithm = "Argon2id";
   if (/dead[- ]?letter|DLQ/i.test(section7)) req.dlqRequired = true;
+  if (/RabbitMQ|rabbitmq/i.test(section7)) req.messagingBroker = "rabbitmq";
+  if (/Celery|celery/i.test(section7) && !req.messagingBroker) req.messagingBroker = "celery";
   if (/\/health.*Celery|Celery.*\/health/i.test(section7)) req.celeryHealthPath = "/health";
   if (/CloudFront|S3.*origen/i.test(section7)) req.staticDeploy = "cloudfront_s3";
   if (/nginx.*contenedor|nginx.*frontend/i.test(section7) && !req.staticDeploy) {
@@ -481,7 +484,15 @@ export function checkInfraManifestConformance(
     );
   }
   if (req.dlqRequired && !/\b(dlq|dead[- ]?letter)\b/i.test(infraLower)) {
-    gaps.push("MDD §7 exige Dead Letter Queue (DLQ) para Celery; no aparece en Infra");
+    const broker = req.messagingBroker ?? "celery";
+    gaps.push(
+      broker === "rabbitmq"
+        ? "MDD §7 exige Dead Letter Queue (DLQ) para RabbitMQ; no aparece en Infra"
+        : "MDD §7 exige Dead Letter Queue (DLQ) para Celery; no aparece en Infra",
+    );
+  }
+  if (req.messagingBroker === "rabbitmq" && !/\brabbitmq\b/i.test(infraLower)) {
+    gaps.push("MDD §7 declara RabbitMQ; no documentado en Infra");
   }
   if (req.celeryHealthPath && !/\/health\b/i.test(infraContent)) {
     gaps.push("MDD §7 exige healthcheck HTTP /health en worker Celery; no documentado en Infra");

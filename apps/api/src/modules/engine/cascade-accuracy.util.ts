@@ -12,6 +12,7 @@ import {
   type TaskAccuracyResult,
 } from "@theforge/shared-types";
 import { buildDomainInventory, detectAuthOnlySkew } from "./domain-inventory.util.js";
+import { collectDomainInventoryConformanceGaps } from "./domain-inventory-conformance.util.js";
 import { extractEntities } from "./conformance.service.js";
 import { extractSectionByNumber } from "./mdd-markdown-parser.js";
 
@@ -429,6 +430,23 @@ export function domainDeliveryGateFindings(input: {
       warnings.push(
         `Cobertura entidades de negocio en §3 = ${Math.round(coverage * 100)}% (objetivo ≥70%). Faltan: ${missing.slice(0, 8).join(", ")}`,
       );
+    }
+  }
+
+  // SSOT gaps: DBGA core entities + platform orphan tables
+  const invConf = collectDomainInventoryConformanceGaps({
+    brdMarkdown: input.brdMarkdown,
+    dbgaMarkdown: input.dbgaMarkdown,
+    mddMarkdown: input.mddMarkdown,
+    inventory,
+  });
+  for (const gap of invConf.gaps) {
+    if (invConf.missingDbgaCoreInMdd.length > 0 && gap.includes("DBGA faltantes")) {
+      blockers.push(gap.replace(/^\[MDD §3\]\s*/, "domain-dbga-core-missing: "));
+    } else if (invConf.platformTablesWithoutJustification.length > 0) {
+      blockers.push(gap.replace(/^\[MDD §3\]\s*/, "domain-platform-orphan: "));
+    } else {
+      warnings.push(gap);
     }
   }
 

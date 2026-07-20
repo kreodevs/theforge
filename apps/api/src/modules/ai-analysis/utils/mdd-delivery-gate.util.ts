@@ -10,6 +10,7 @@ import {
 } from "./mdd-sanitize.js";
 import { collectMddQualityIssues, isAutoRepairableDeliveryGateWarning } from "../../engine/mdd-quality-audit.util.js";
 import { domainDeliveryGateFindings } from "../../engine/cascade-accuracy.util.js";
+import { checkBrdDecisionLogClosure } from "../../engine/brd-decision-log.util.js";
 
 export type { MddDeliveryGateResult };
 
@@ -118,6 +119,12 @@ export function validateMddForDelivery(
     });
     blockers.push(...domain.blockers);
     warnings.push(...domain.warnings);
+  }
+
+  if (options?.brdMarkdown?.trim()) {
+    const brdLog = checkBrdDecisionLogClosure(options.brdMarkdown);
+    blockers.push(...brdLog.blockers.map((b) => `brd-decision-log: ${b}`));
+    warnings.push(...brdLog.warnings);
   }
 
   score -= blockers.length * 8;

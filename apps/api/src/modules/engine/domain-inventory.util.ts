@@ -4,6 +4,7 @@
 
 import {
   AUTH_ENTITY_FAMILY,
+  DBGA_CORE_ENTITIES,
   type BrdCapability,
   type CrudMatrixRow,
   type DomainInventory,
@@ -56,6 +57,23 @@ const ENTITY_ALIASES: Record<string, string> = {
   llm: "llm_configs",
   configuración: "llm_configs",
   configuracion: "llm_configs",
+  watchlist: "watchlists",
+  watchlists: "watchlists",
+  operacion: "operations",
+  operaciones: "operations",
+  operation: "operations",
+  operations: "operations",
+  credencial: "credentials",
+  credenciales: "credentials",
+  credential: "credentials",
+  credentials: "credentials",
+  dashboard: "dashboard_configs",
+  "dashboard config": "dashboard_configs",
+  otp: "otp_sessions",
+  "sesion otp": "otp_sessions",
+  "sesiones otp": "otp_sessions",
+  user: "users",
+  users: "users",
   "tarea programada": "scheduled_tasks",
   scheduled: "scheduled_tasks",
 };
@@ -148,6 +166,25 @@ export function suggestEntitiesFromProse(...docs: Array<string | null | undefine
     for (const m of doc.matchAll(/\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?["`]?([a-z_][a-z0-9_]*)/gi)) {
       if (m[1]) found.add(m[1].toLowerCase());
     }
+  }
+  return [...found].sort();
+}
+
+/** Entidades núcleo explícitas en DBGA (CREATE TABLE + keywords canónicos). */
+export function extractDbgaCanonicalEntities(dbgaMarkdown: string): string[] {
+  const found = new Set<string>();
+  const text = (dbgaMarkdown ?? "").trim();
+  if (!text) return [];
+
+  for (const entity of DBGA_CORE_ENTITIES) {
+    const slug = entity.replace(/_/g, "[\\s_-]*");
+    if (new RegExp(`\\b${slug}\\b`, "i").test(text)) found.add(entity);
+  }
+  for (const m of text.matchAll(/\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?["`]?([a-z_][a-z0-9_]*)/gi)) {
+    if (m[1]) found.add(m[1].toLowerCase());
+  }
+  for (const e of suggestEntitiesFromProse(text)) {
+    if (DBGA_CORE_ENTITIES.includes(e as (typeof DBGA_CORE_ENTITIES)[number])) found.add(e);
   }
   return [...found].sort();
 }
@@ -252,11 +289,13 @@ export function buildDomainInventory(input: {
   mddEntities?: Iterable<string>;
 }): DomainInventory {
   const capabilities = extractBrdCapabilities(input.brdMarkdown ?? "");
-  const suggestedEntities = suggestEntitiesFromProse(
+  const suggestedFromProse = suggestEntitiesFromProse(
     input.brdMarkdown,
     input.dbgaMarkdown,
     input.mddMarkdown,
   );
+  const dbgaCanonical = extractDbgaCanonicalEntities(input.dbgaMarkdown ?? "");
+  const suggestedEntities = [...new Set([...suggestedFromProse, ...dbgaCanonical])].sort();
   const mddEntities = input.mddEntities ?? [];
   const crudMatrix = buildCrudMatrix(mddEntities, suggestedEntities, capabilities);
   const processes = buildProcessInventory(capabilities);

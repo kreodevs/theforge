@@ -29,6 +29,13 @@ import {
   formatModelCardinalityGaps,
 } from "../engine/model-cardinality.util.js";
 import {
+  collectDomainInventoryConformanceGaps,
+  formatDomainInventoryConformanceGaps,
+} from "../engine/domain-inventory-conformance.util.js";
+import { buildEntityApiTraceReport, formatEntityApiTraceGaps } from "../engine/entity-api-trace.util.js";
+import { collectExternalIntegrationContractGaps } from "../engine/sdd-external-contracts.util.js";
+import { checkBrdDecisionLogClosure } from "../engine/brd-decision-log.util.js";
+import {
   collectSddPrecisionGaps,
   formatPrecisionGapsFeedback,
   precisionGapsForPostPassRetry,
@@ -300,13 +307,59 @@ export class DeliverablesCascadeService {
     });
     const cardinalityGaps = formatModelCardinalityGaps(cardinality);
 
-    const allGaps = [...precisionGaps, ...taskGaps, ...crossGaps, ...cardinalityGaps];
+    const invConf = collectDomainInventoryConformanceGaps({
+      brdMarkdown: stage?.brdContent,
+      dbgaMarkdown: project.dbgaContent,
+      mddMarkdown: mdd,
+      inventory,
+    });
+    const invConfGaps = formatDomainInventoryConformanceGaps(invConf, 10);
+
+    const entityTraceGaps = formatEntityApiTraceGaps(
+      buildEntityApiTraceReport({
+        mddMarkdown: mdd,
+        inventory,
+        apiContractsMarkdown: project.apiContractsContent,
+      }),
+      10,
+    );
+
+    const externalGaps = collectExternalIntegrationContractGaps({
+      dbgaMarkdown: project.dbgaContent,
+      brdMarkdown: stage?.brdContent,
+      mddMarkdown: mdd,
+      apiContractsMarkdown: project.apiContractsContent,
+      architectureMarkdown: project.architectureContent,
+      infraMarkdown: project.infraContent,
+    });
+
+    const brdLogGaps = stage?.brdContent?.trim()
+      ? [
+          ...checkBrdDecisionLogClosure(stage.brdContent).blockers,
+          ...checkBrdDecisionLogClosure(stage.brdContent).warnings,
+        ]
+      : [];
+
+    const allGaps = [
+      ...precisionGaps,
+      ...taskGaps,
+      ...crossGaps,
+      ...cardinalityGaps,
+      ...invConfGaps,
+      ...entityTraceGaps,
+      ...externalGaps,
+      ...brdLogGaps,
+    ];
     if (allGaps.length === 0) return;
 
     const feedback = formatPrecisionGapsFeedback(allGaps);
     const flags = precisionGapsForPostPassRetry(precisionGaps);
     if (taskGaps.length > 0 || crossGaps.length > 0 || cardinalityGaps.length > 0) {
       flags.retryTasks = true;
+    }
+    if (invConfGaps.length > 0 || entityTraceGaps.length > 0 || externalGaps.length > 0) {
+      flags.retryApiContracts = true;
+      flags.retryArchitecture = true;
     }
 
     this.logger.warn(

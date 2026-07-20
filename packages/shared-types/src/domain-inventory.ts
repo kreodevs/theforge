@@ -17,6 +17,25 @@ export const AUTH_ENTITY_FAMILY = new Set([
   "mfa_devices",
 ]);
 
+/** Tablas plataforma/chat que requieren justificación explícita en BRD/DBGA si aparecen en §3. */
+export const PLATFORM_ORPHAN_TABLES = new Set([
+  "messages",
+  "mcp_plugins",
+  "conversation_memory",
+]);
+
+/** Entidades núcleo DBGA frecuentemente ausentes en MDD §3 auth-skewed. */
+export const DBGA_CORE_ENTITIES = [
+  "users",
+  "watchlists",
+  "operations",
+  "credentials",
+  "dashboard_configs",
+  "otp_sessions",
+] as const;
+
+export type DbgaCoreEntity = (typeof DBGA_CORE_ENTITIES)[number];
+
 export const crudOpsSchema = z.enum(["C", "R", "U", "D", "L"]);
 export type CrudOp = z.infer<typeof crudOpsSchema>;
 
