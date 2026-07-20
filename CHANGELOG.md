@@ -4,7 +4,43 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
-## [v1.5.0] — 2026-07-19
+## [v1.6.0] — 2026-07-19
+
+> **Pipeline de generación — 10 brechas post GOD-REFACTOR** — IDs US estables, SSOT tasks, bundle version atómico, conformidad cross-artifact, partición por journey, alcance v1 de pantallas, cardinalidad Prisma, parser tasksJson v2, re-estimación post-consolidación y cableado MCP/spec-kit.
+
+### Added
+
+- **`us-id-registry.ts`:** namespaces `US-CRUD-*` / `US-JRN-*` para IDs de user stories estables entre regeneraciones.
+- **`tasks-resolve.ts` + `resolveProjectTasksSsot`:** SSOT único (`tasksJson` v2 → fallback `tasksContent`) para Workshop, spec-kit, next-task y MCP.
+- **`deliverable-bundle.ts` + `deliverable-bundle-persist.util.ts`:** `bundleVersion` en snapshot de etapa tras oleadas de regeneración atómica.
+- **`cross-artifact-trace.util.ts`:** conformidad pantalla → API → US → task en post-pase W4.
+- **`tasks-journey-partition.util.ts`:** generación de tasks particionada por journey/fases.
+- **`ui-screens-v1-scope.util.ts`:** política de pantallas fuera de alcance v1 (`v1InScope`).
+- **`model-cardinality.util.ts`:** alineación cardinalidad MDD §3 = inventario = T-002 Prisma.
+- **Parser `tasks-parser-v2`:** metadata solo bajo `## Metadata`; strip de `---` anidados.
+- **MCP `mcp-ssot.util.ts`:** tool `get_tasks_json`; `tasksSsot` en `get_project_deliverables`; `deliverableBundleVersion` en `get_project_stages` y `get_next_implementation_task`.
+- **Specs:** us-id, tasks-resolve, ui-screens-v1-scope, tasks-journey-partition, tasks-parser-v2, tasks-ssot-resolve, mcp-ssot.
+
+### Changed
+
+- **`buildThinUserStoriesFromInventory`:** user stories delgadas con `usId` estable desde inventario de dominio.
+- **`deliverables-cascade.service.ts`:** persistencia de bundle version post-oleadas; trazabilidad cross-artifact.
+- **`tasks-generation-pipeline.service.ts`:** redactor por fases/journey; heurística mín. 1 task frontend por pantalla v1 con API.
+- **`tasks-coverage-checklist.util.ts` / `tasks-heuristic-plan.util.ts`:** rutas v1 en checklist y plan heurístico.
+- **`spec-kit-bundle.ts` / handoff export:** `buildSpecKitBundleFiles` consume SSOT `tasksJson`.
+- **`project-estimation-recalc.service.ts`:** re-estimación con `consolidatedTaskCount` tras `generateTasks`.
+- **`ProjectNextTaskResponse`:** expone `tasksSource`, `hasTasksJson`, `taskCount`, `deliverableBundleVersion`.
+
+### Fixed
+
+- **Regeneración parcial:** snapshot de entregables versionado evita mezcla de artefactos de oleadas distintas.
+- **Drift tasks markdown vs JSON:** consumidores (MCP, spec-kit, next-task) leen la misma fuente resuelta.
+
+### Architecture
+
+- Sin cambios en fórmulas MXN (`packages/business-rules`) ni contratos REST públicos breaking.
+- Workshop web sigue leyendo `tasksContent` directamente (fuera de scope MCP; SSOT ya disponible vía API/MCP).
+
 
 > **GOD-REFACTOR (Fases 0–6)** — Descomposición de god modules sin cambiar contratos públicos: MDD sanitize/manager, chat API, `projects.service`, Workshop UI/store, legacy coordinator, MCP server y gobernanía IA por artefacto. Build monorepo verde.
 
