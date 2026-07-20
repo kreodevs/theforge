@@ -28,8 +28,16 @@ packages/config       tsconfig.base, eslint, tailwind
 ## IA agnóstica
 
 - **Contrato:** `LLMProvider` (generateResponse, parseChecklist). Adapters solo en `apps/api/src/modules/ai/adapters/`.
-- **Config:** **OpenRouter** único (`OPENROUTER_API_KEY` o alias `AI_API_KEY` / `OPENAI_API_KEY`). Default chat: `nousresearch/hermes-3-llama-3.1-405b`. Factory por env. Sin lógica de proveedor fuera de adapters.
+- **Runtime BYOK:** instancias del tenant en Ajustes → Proveedores de IA (`ProviderInstance`: clave cifrada, tres modelos por tier). Fallback plataforma: **OpenRouter** vía env (`OPENROUTER_API_KEY` o alias `AI_API_KEY` / `OPENAI_API_KEY`).
+- **Tiers C / B / A:** `chatModel` (**C**, Ligero), `graphChatModel` (**B**, Estándar), `architectChatModel` (**A**, Premium). Fallback runtime: architect → graph → chat. Labels UI: `apps/web/src/utils/provider-model-tier-labels.ts`.
 - **Prompt maestro:** `apps/api/src/modules/ai/prompts/master-prompt.md` — editar el .md; el .ts lo carga en runtime.
+
+## Pipeline MDD (ai-analysis)
+
+- **Módulo:** `apps/api/src/modules/ai-analysis/` — LangGraph lean (Clarifier → Architect → Security ∥ Integration → **Quality Gate**). **No** Critic/Auditor en el grafo; `mdd-auditor.node.ts` solo para auditoría manual opcional.
+- **Cola:** `MddQueueService` / BullMQ `theforge-mdd` — modos `pipeline`, `manager`, `section`, `legacy`.
+- **Cancelación:** `POST /projects/:id/mdd/cancel` — botón **Detener** en Workshop; abort cooperativo entre pasos del grafo.
+- **Detalle:** `docs/notebooklm/mdd-lean-migration.md`, `apps/api/src/modules/ai-analysis/README.md`.
 
 ## Semáforo y estimación
 
@@ -56,7 +64,7 @@ packages/config       tsconfig.base, eslint, tailwind
 
 ## Checklist al cambiar
 
-- [ ] IA: ¿Solo OpenRouter + factory? ¿Imports de SDKs solo en ai/adapters?
+- [ ] IA: ¿Runtime BYOK o fallback OpenRouter? ¿Tiers C/B/A en instancia activa? ¿Pipeline MDD en `ai-analysis/` (no `modules/ai`)? ¿Adapters solo en `ai/adapters/`?
 - [ ] Estimación: ¿Fórmula/tarifas intactas en `packages/business-rules`?
 - [ ] Docker: ¿docker-compose y env actualizados?
 - [ ] README de la carpeta afectada actualizado si creas componente/página.
