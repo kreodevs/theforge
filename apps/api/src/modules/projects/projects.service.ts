@@ -36,16 +36,11 @@ import {
   UI_MCP_DESIGN_SYSTEM_HEADING,
   buildUiMcpDesignSystemSection,
 } from "../ui-mcp/ui-design-system-section.util.js";
-import { MddUpdatePipelineService } from "../engine/mdd-update-pipeline.service.js";
 import { SemaphoreService } from "../engine/semaphore.service.js";
 import { normalizeMddContent } from "../engine/mdd-markdown-parser.js";
 import { shouldReplacePhase0SummaryWithBorrador, generateAemBodySchema, isPhase0BorradorJson, isBrownfieldCapable } from "@theforge/shared-types";
-import { storeMddMarkdownForPersist } from "../ai-analysis/utils/mdd-sanitize.js";
 import { prependDocumentTimestamps, stampMarkdownIfBodyChanged } from "../engine/document-date-header.util.js";
-import {
-  enforceMddGovernancePatternsOnPersist,
-  mddHasSubstantialBody,
-} from "@theforge/shared-types/mdd-governance-patterns";
+import { enforceMddGovernancePatternsOnPersist } from "@theforge/shared-types/mdd-governance-patterns";
 import { loadProjectBorrador, hasBorradorContent } from "../ai-analysis/phase0/phase0-load-borrador.util.js";
 import { phase0ToMarkdown } from "../ai-analysis/phase0/phase0-to-markdown.js";
 import { ProjectEstimationRecalcService } from "./project-estimation-recalc.service.js";
@@ -241,7 +236,6 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly discovery: DiscoveryService,
     private readonly scraper: ScraperService,
     private readonly estimationRecalc: ProjectEstimationRecalcService,
-    private readonly mddUpdatePipeline: MddUpdatePipelineService,
     private readonly semaphore: SemaphoreService,
     private readonly theforge: TheForgeService,
     private readonly graphMemory: GraphMemoryService,
@@ -930,73 +924,26 @@ export class ProjectsService implements IOrchestratorProjectsPort {
 
     let pipelineResult: { sanitizedMdd: string; status: Status; precisionScore: number } | null = null;
     if (mddForPipeline !== undefined && mddForPipeline !== null) {
-      const skipPipelineForSeed =
-        clearMddCompletely === true ||
-        (mddGovernanceSeedOnly === true && !mddHasSubstantialBody(mddForPipeline));
-      const skipPipelineForPatternWizard =
-        allowGovernancePatternChange === true &&
-        clearMddCompletely !== true &&
-        mddGovernanceSeedOnly !== true &&
-        mddFormatOnly !== true;
-      if (mddFormatOnly === true) {
-        const formatted = storeMddMarkdownForPersist(mddForPipeline ?? "");
-        await this.prisma.stage.update({
-          where: { id: targetStage.id },
-          data: { mddContent: formatted, documentAst: parsedDocumentAst === null ? Prisma.JsonNull : (parsedDocumentAst as Prisma.InputJsonValue), documentVersion: parsedDocumentVersion },
-        });
-        await this.changeLog.log(id, "mddContent", formatted);
-        pipelineResult = {
-          sanitizedMdd: formatted,
+      pipelineResult = await this.mddPersist.persistMddFromPatch({
+        projectId: id,
+        stageId: targetStage.id,
+        mddMarkdown: mddForPipeline,
+        mergedForSemaphore,
+        stageBaseline: {
           status: targetStage.status,
           precisionScore: targetStage.precisionScore,
-        };
-      } else if (skipPipelineForSeed || skipPipelineForPatternWizard) {
-        const formatted = storeMddMarkdownForPersist(mddForPipeline ?? "");
-        await this.prisma.stage.update({
-          where: { id: targetStage.id },
-          data: {
-            mddContent: formatted,
-            documentAst: parsedDocumentAst === null ? Prisma.JsonNull : (parsedDocumentAst as Prisma.InputJsonValue),
-            documentVersion: parsedDocumentVersion,
-          },
-        });
-        await this.changeLog.log(id, "mddContent", formatted);
-        pipelineResult = {
-          sanitizedMdd: formatted,
-          status: targetStage.status,
-          precisionScore: targetStage.precisionScore,
-        };
-      } else {
-        const result = await this.mddUpdatePipeline.process(
-          mddForPipeline,
-          buildSemaphoreBaseFromProject(mergedForSemaphore),
-          { projectId: id, stageId: targetStage.id },
-        );
-        if (result.ok) {
-          pipelineResult = {
-            sanitizedMdd: result.sanitizedMdd,
-            status: result.status,
-            precisionScore: result.precisionScore,
-          };
-          await this.prisma.stage.update({
-            where: { id: targetStage.id },
-            data: {
-              mddContent: storeMddMarkdownForPersist(result.sanitizedMdd),
-              status: result.status,
-              precisionScore: result.precisionScore,
-              documentAst: parsedDocumentAst === null ? Prisma.JsonNull : (parsedDocumentAst as Prisma.InputJsonValue),
-              documentVersion: parsedDocumentVersion,
-            },
-          });
-          await this.changeLog.log(id, "mddContent", result.sanitizedMdd);
-          void this.mddPersist.persistMddDeliveryGateSnapshot(
-            targetStage.id,
-            await evaluateMddDeliveryGatePrepared(result.sanitizedMdd),
-          );
-        } else {
-          await this.mddPersist.throwMddPipelineBadRequest(result, targetStage.id, mddForPipeline);
-        }
-      }
+        },
+        documentMeta: {
+          documentAst: parsedDocumentAst,
+          documentVersion: parsedDocumentVersion,
+        },
+        patchFlags: {
+          clearMddCompletely: clearMddCompletely === true,
+          mddGovernanceSeedOnly: mddGovernanceSeedOnly === true,
+          allowGovernancePatternChange: allowGovernancePatternChange === true,
+          mddFormatOnly: mddFormatOnly === true,
+        },
+      });
     }
 
     const mddForRecalc =
@@ -3358,29 +3305,22 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
     }
 
     const enforced = enforceMddGovernancePatternsOnPersist(patched, stage.mddContent);
-    const result = await this.mddUpdatePipeline.process(
-      enforced.markdown,
-      buildSemaphoreBaseFromProject(project),
-      { projectId, stageId },
-    );
-    if (result.ok) {
-      await this.prisma.stage.update({
-        where: { id: stageId },
-        data: {
-          mddContent: storeMddMarkdownForPersist(result.sanitizedMdd),
-          status: result.status,
-          precisionScore: result.precisionScore,
-        },
-      });
-      await this.changeLog.log(projectId, "mddContent", result.sanitizedMdd);
-      await this.estimationRecalc.recalcAndUpsert(stageId, {
-        mddContent: result.sanitizedMdd,
-        infraContent: project.infraContent ?? null,
-        status: result.status,
-      });
-    } else {
-      await this.mddPersist.throwMddPipelineBadRequest(result, stageId, enforced.markdown);
-    }
+    const pipelineResult = await this.mddPersist.persistMddFromPatch({
+      projectId,
+      stageId,
+      mddMarkdown: enforced.markdown,
+      mergedForSemaphore: mergeProjectFieldsForSemaphore(project, {}),
+      stageBaseline: {
+        status: stage.status,
+        precisionScore: stage.precisionScore,
+      },
+      patchFlags: {},
+    });
+    await this.estimationRecalc.recalcAndUpsert(stageId, {
+      mddContent: pipelineResult.sanitizedMdd,
+      infraContent: project.infraContent ?? null,
+      status: pipelineResult.status,
+    });
   }
 
   async generateInfra(projectId: string, gapsFeedback?: string | null) {

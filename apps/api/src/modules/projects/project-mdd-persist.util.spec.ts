@@ -4,6 +4,7 @@ import { ComplexityLevel } from "@theforge/database";
 import {
   buildSemaphoreBaseFromProject,
   mergeProjectFieldsForSemaphore,
+  resolveMddPersistMode,
 } from "./project-mdd-persist.util.js";
 
 describe("project-mdd-persist.util", () => {
@@ -45,5 +46,14 @@ describe("project-mdd-persist.util", () => {
     assert.equal(merged.specContent, "new-spec");
     assert.equal(merged.infraContent, "old-infra");
     assert.equal(merged.complexity, ComplexityLevel.LOW);
+  });
+
+  it("resolveMddPersistMode picks format, store, or pipeline", () => {
+    assert.equal(resolveMddPersistMode("body", { mddFormatOnly: true }), "format");
+    assert.equal(
+      resolveMddPersistMode("x", { allowGovernancePatternChange: true }),
+      "store",
+    );
+    assert.equal(resolveMddPersistMode("# MDD\n\n".repeat(20), {}), "pipeline");
   });
 });

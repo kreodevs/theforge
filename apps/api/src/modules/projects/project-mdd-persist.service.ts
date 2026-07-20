@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
-import { Prisma } from "@theforge/database";
+import { Prisma, type Status } from "@theforge/database";
 import type { MddDeliveryGateResult } from "@theforge/shared-types";
 import {
   enforceMddGovernancePatternsOnPersist,
+  mddHasSubstantialBody,
   selectedPatternIdsFromMdd,
   updateMddGovernancePatterns,
 } from "@theforge/shared-types/mdd-governance-patterns";
@@ -24,9 +25,31 @@ import { loadAccessibleProjectWithStages } from "./project-access.util.js";
 import {
   buildSemaphoreBaseFromProject,
   mergeProjectFieldsForSemaphore,
+  resolveMddPersistMode,
+  type MddPatchPersistFlags,
+  type SemaphoreProjectFields,
 } from "./project-mdd-persist.util.js";
 import { ProjectEstimationRecalcService } from "./project-estimation-recalc.service.js";
 import { pickPrimaryStage, type StageWithEstimation } from "./stage-helpers.js";
+
+export type PersistMddFromPatchInput = {
+  projectId: string;
+  stageId: string;
+  mddMarkdown: string;
+  mergedForSemaphore: SemaphoreProjectFields;
+  stageBaseline: { status: Status; precisionScore: number };
+  documentMeta?: {
+    documentAst: unknown | null;
+    documentVersion?: number | null;
+  };
+  patchFlags: MddPatchPersistFlags;
+};
+
+export type PersistMddFromPatchResult = {
+  sanitizedMdd: string;
+  status: Status;
+  precisionScore: number;
+};
 
 @Injectable()
 export class ProjectMddPersistService {
@@ -166,5 +189,76 @@ export class ProjectMddPersistService {
       infraContent: existing.infraContent ?? null,
       status: result.status,
     });
+  }
+
+  /** Persistencia MDD desde `PATCH /projects/:id` (format-only, seed/wizard o pipeline completo). */
+  async persistMddFromPatch(input: PersistMddFromPatchInput): Promise<PersistMddFromPatchResult> {
+    const {
+      projectId,
+      stageId,
+      mddMarkdown,
+      mergedForSemaphore,
+      stageBaseline,
+      documentMeta,
+      patchFlags,
+    } = input;
+    const mode = resolveMddPersistMode(mddMarkdown, patchFlags);
+    const documentData = this.buildStageDocumentUpdate(documentMeta);
+
+    if (mode === "format" || mode === "store") {
+      const formatted = storeMddMarkdownForPersist(mddMarkdown);
+      await this.prisma.stage.update({
+        where: { id: stageId },
+        data: { mddContent: formatted, ...documentData },
+      });
+      await this.changeLog.log(projectId, "mddContent", formatted);
+      return {
+        sanitizedMdd: formatted,
+        status: stageBaseline.status,
+        precisionScore: stageBaseline.precisionScore,
+      };
+    }
+
+    const result = await this.mddUpdatePipeline.process(
+      mddMarkdown,
+      buildSemaphoreBaseFromProject(mergedForSemaphore),
+      { projectId, stageId },
+    );
+    if (!result.ok) {
+      await this.throwMddPipelineBadRequest(result, stageId, mddMarkdown);
+    }
+
+    await this.prisma.stage.update({
+      where: { id: stageId },
+      data: {
+        mddContent: storeMddMarkdownForPersist(result.sanitizedMdd),
+        status: result.status,
+        precisionScore: result.precisionScore,
+        ...documentData,
+      },
+    });
+    await this.changeLog.log(projectId, "mddContent", result.sanitizedMdd);
+    void this.persistMddDeliveryGateSnapshot(
+      stageId,
+      await evaluateMddDeliveryGatePrepared(result.sanitizedMdd),
+    );
+    return {
+      sanitizedMdd: result.sanitizedMdd,
+      status: result.status,
+      precisionScore: result.precisionScore,
+    };
+  }
+
+  private buildStageDocumentUpdate(
+    documentMeta?: PersistMddFromPatchInput["documentMeta"],
+  ): Pick<Prisma.StageUpdateInput, "documentAst" | "documentVersion"> {
+    if (documentMeta === undefined) return {};
+    return {
+      documentAst:
+        documentMeta.documentAst === null
+          ? Prisma.JsonNull
+          : (documentMeta.documentAst as Prisma.InputJsonValue),
+      documentVersion: documentMeta.documentVersion ?? undefined,
+    };
   }
 }
