@@ -461,6 +461,11 @@ Refactor incremental completado. `projects.service.ts` pasó de **~3 809 L →
 
 ### Fase 5 — Workshop frontend (4–6 semanas) — en curso
 
+**Incremento 3 (2026-07-19):**
+
+- **5b paso 3:** `WorkshopDocPanel` + `WorkshopDocToolbar`; lógica `resolveWorkshopDocEditToolbarToggle` / `canShowWorkshopDocViewToggle` en `utils/workshopDocToolbar.ts`.
+- **Líneas:** `WorkshopView.tsx` ~5 565 → **~5 140 L**.
+
 **Incremento 2 (2026-07-19):**
 
 - **5b paso 2:** `WorkshopHeaderBar` → `views/workshop/WorkshopHeaderBar.tsx` (título, sync, visibilidad, etapas, ZIP, SDD, ayuda, MCP legacy).
@@ -555,7 +560,7 @@ Fase 6 (legacy/MCP)
 
 | Métrica | Actual (2026-07-19) | Objetivo |
 |---------|---------------------|----------|
-| `WorkshopView.tsx` | 5 917 → **~5 565 L** | < 800 L |
+| `WorkshopView.tsx` | 5 917 → **~5 140 L** | < 800 L |
 | `workshopStore.ts` | 5 319 → **~5 310 L** | < 600 L (compose + helpers fuera) |
 | `mdd-sanitize.ts` | 6 065 L | < 200 L (barrel) |
 | `createMddManagerNode` | 1 007 L | < 150 L |
@@ -660,5 +665,7 @@ Fase 6 (legacy/MCP)
 | `utils/workshopDocToolbar.ts` + spec | ✅ |
 | `views/workshop/WorkshopDocToolbarHint.tsx` | ✅ |
 | `views/workshop/WorkshopHeaderBar.tsx` | ✅ |
+| `views/workshop/WorkshopDocPanel.tsx` + `WorkshopDocToolbar.tsx` | ✅ |
+| `utils/workshopDocToolbar.ts` — `resolveWorkshopDocEditToolbarToggle` | ✅ |
 | `store/workshop/helpers/pick-default-stage.ts` + spec | ✅ |
 | `WorkshopDocumentIslandToc` deduplicado | ✅ |

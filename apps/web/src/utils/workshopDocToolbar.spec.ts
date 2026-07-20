@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  canShowWorkshopDocViewToggle,
   getWorkshopDocToolbarActiveViewMode,
   workshopDocSourceTogglePresentation,
   type WorkshopDocToolbarViewModes,
@@ -33,6 +34,20 @@ describe("getWorkshopDocToolbarActiveViewMode", () => {
 
   it("falls back to infra view mode for unknown panels", () => {
     assert.equal(getWorkshopDocToolbarActiveViewMode("unknown-panel", baseModes), "source");
+  });
+});
+
+describe("canShowWorkshopDocViewToggle", () => {
+  it("returns true for spec without extra content", () => {
+    assert.equal(canShowWorkshopDocViewToggle("spec", { hasAgentGovernance: false }), true);
+  });
+
+  it("requires blueprint content for blueprint panel", () => {
+    assert.equal(canShowWorkshopDocViewToggle("blueprint", { hasAgentGovernance: false }), false);
+    assert.equal(
+      canShowWorkshopDocViewToggle("blueprint", { hasAgentGovernance: false, blueprintContent: "# B" }),
+      true,
+    );
   });
 });
 
