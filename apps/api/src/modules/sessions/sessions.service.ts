@@ -37,6 +37,7 @@ import {
   extractDbgaEditKeywords,
   extractDbgaProposedLabels,
   dbgaContainsUserEditKeywords,
+  acceptCompleteDbgaWithoutFinMarker,
   isDbgaContentNearlyIdentical,
   isDbgaEditEffectivelyUnchanged,
   isPartialBenchmarkDoc,
@@ -1474,7 +1475,11 @@ ${msg}
       if (stillBad) {
         const keywords = extractDbgaEditKeywords(userMessage, 10);
         const labels = extractDbgaProposedLabels(userMessage);
-        const concepts = [...new Set([...labels, ...keywords])].slice(0, 12);
+        // Preferir etiquetas cortas (PAT Wasender); no mezclar prosa del renameTail.
+        const concepts = [...new Set([...labels, ...keywords.filter((k) => k.length <= 24)])].slice(
+          0,
+          12,
+        );
         if (concepts.length > 0) {
           console.warn("[Sessions] refineDbga final retry with concepts:", concepts.join(", "));
           response = await this.ai.generateResponse(
@@ -1523,12 +1528,19 @@ ${msg}
     const trimmed = response?.trim() ?? "";
     if (!trimmed) return null;
 
-    // Refinado: exige marcador FIN_DBGA (tolerante a variantes del modelo, no al fallback H1).
+    // Preferir FIN_DBGA; si falta, aceptar DBGA completo (título + tamaño) — Gemma suele omitir el marcador.
     const finSplit =
       parseBenchmarkResponse(trimmed) ?? this.parser.splitDbgaAndChat(trimmed);
+    let finFallbackSplit: { docPart: string; chatPart: string } | null = null;
     if (opts?.requireFinDelimiter && !finSplit) {
-      console.warn("[Sessions] refineDbga: respuesta sin ---FIN_DBGA---; descartada");
-      return null;
+      finFallbackSplit = acceptCompleteDbgaWithoutFinMarker(trimmed, currentDbga);
+      if (!finFallbackSplit) {
+        console.warn("[Sessions] refineDbga: respuesta sin ---FIN_DBGA---; descartada");
+        return null;
+      }
+      console.warn(
+        "[Sessions] refineDbga: sin ---FIN_DBGA---; se acepta DBGA completo por título/tamaño",
+      );
     }
 
     const finIdx = trimmed.search(/-{0,}[ \t]*FIN_DBGA[ \t]*-{0,}/i);
@@ -1536,6 +1548,7 @@ ${msg}
 
     const split =
       finSplit ??
+      finFallbackSplit ??
       (!opts?.requireFinDelimiter
         ? this.parser.detectBenchmarkDocFallback(withoutFin) ??
           this.parser.detectBenchmarkDocFallback(trimmed)

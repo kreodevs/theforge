@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   BENCHMARK_CHAT_ACK,
+  acceptCompleteDbgaWithoutFinMarker,
   benchmarkAssistantChatMessage,
   dbgaContainsUserEditKeywords,
   dbgaReflectsUserEditIntent,
@@ -157,11 +158,23 @@ describe("extractDbgaProposedLabels + rename reflect", () => {
     assert.ok(labels.some((l) => /pat\s+sso/i.test(l)));
   });
 
-  it("extrae PAT Wasender desde «PAT de Wasender (llámalo ya así)»", () => {
+  it("extrae etiqueta ACRÓNIMO+vendor y no captura prosa tras «llámalo ya así»", () => {
     const labels = extractDbgaProposedLabels(
-      "el PAT de Wasender (llámalo ya así) es de la cuenta principal",
+      "el PAT de Wasender (llámalo ya así) es de la cuenta principal, para asociar un teléfono",
     );
     assert.ok(labels.some((l) => /pat\s+wasender/i.test(l)));
+    assert.equal(
+      labels.some((l) => l.split(/\s+/).length > 4 || /es de la cuenta/i.test(l)),
+      false,
+    );
+  });
+
+  it("extrae etiquetas genéricas de renombre (no solo PAT)", () => {
+    const labels = extractDbgaProposedLabels(
+      "Sugiero llamarlos API Gateway y API Billing para evitar confusiones",
+    );
+    assert.ok(labels.some((l) => /api\s+gateway/i.test(l)));
+    assert.ok(labels.some((l) => /api\s+billing/i.test(l)));
   });
 
   it("acepta DBGA que solo incorpora las etiquetas propuestas", () => {
@@ -174,6 +187,27 @@ describe("extractDbgaProposedLabels + rename reflect", () => {
 - **PAT SSO**: token del usuario en SSO.
 `;
     assert.equal(dbgaReflectsUserEditIntent(doc, user), true);
+  });
+});
+
+describe("acceptCompleteDbgaWithoutFinMarker", () => {
+  it("acepta Domain Benchmark largo sin FIN_DBGA", () => {
+    const current = "# Domain Benchmark\n\n" + "x".repeat(10_000);
+    const response =
+      "# Domain Benchmark & Gap Analysis\n\n## Referencia\n\n**PAT Wasender** cuenta principal.\n\n" +
+      "y".repeat(8_000);
+    const split = acceptCompleteDbgaWithoutFinMarker(response, current);
+    assert.ok(split);
+    assert.match(split!.docPart, /PAT Wasender/);
+  });
+
+  it("rechaza stub corto sin FIN", () => {
+    const current = "# Domain Benchmark\n\n" + "x".repeat(10_000);
+    const split = acceptCompleteDbgaWithoutFinMarker(
+      "# Domain Benchmark\n\nCorto.",
+      current,
+    );
+    assert.equal(split, null);
   });
 });
 

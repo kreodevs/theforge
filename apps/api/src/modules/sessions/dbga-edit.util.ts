@@ -61,8 +61,8 @@ export function extractDbgaEditKeywords(message: string, max = 10): string[] {
 }
 
 /**
- * Nombres propuestos en renombres («llamarlos PAT Wasender y PAT SSO»).
- * Si el usuario pide etiquetar X/Y, el doc debe contener esas etiquetas.
+ * Nombres propuestos en renombres («llamarlos X y Y», «el TOKEN de Vendor»).
+ * Si el usuario pide etiquetar conceptos, el doc debe contener esas etiquetas.
  */
 export function extractDbgaProposedLabels(message: string, max = 6): string[] {
   const m = message.trim();
@@ -71,31 +71,41 @@ export function extractDbgaProposedLabels(message: string, max = 6): string[] {
   const seen = new Set<string>();
   const push = (raw: string) => {
     const t = raw.replace(/\s+/g, " ").trim();
-    if (t.length < 3) return;
+    if (t.length < 3 || t.length > 48) return;
+    // Etiqueta = pocas palabras; rechazar cláusulas («es de la cuenta…»).
+    if (t.split(/\s+/).length > 4) return;
+    if (/^(?:es|de|la|el|para|con|un|una|que|y|o)\b/i.test(t)) return;
     const key = t.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
     out.push(t);
   };
 
-  // «llamarlos PAT Wasender…» / «llámalo ya así» junto a PAT Wasender
-  const renameTail =
-    m.match(
-      /\b(?:llamarl[oa]s|ll[aá]mal[oa]|renombr(?:ar|a|e)|n[oó]mbral[oa]s|denomin(?:ar|a))\s+(?:como\s+|a\s+|ya\s+as[ií]\s+)?(.+?)(?:\.|$|\n|para\s+evitar)/isu,
-    )?.[1] ?? "";
-  if (renameTail && !/^ya\s+as[ií]$/i.test(renameTail.trim())) {
-    for (const part of renameTail.split(/\s+y\s+|\s*,\s*|\s+o\s+/i)) {
-      push(part.replace(/["'«»()]/g, "").trim());
+  // «llámalo/la ya así» confirma un nombre ya dicho; no capturar la prosa que sigue.
+  const isConfirmRenameOnly = /\bll[aá]mal[oa]\s+ya\s+as[ií]\b/i.test(m);
+
+  // «llamarlos X y Y» / «renómbralo a X»
+  if (!isConfirmRenameOnly) {
+    const renameTail =
+      m.match(
+        /\b(?:llamarl[oa]s|ll[aá]mal[oa]|renombr(?:ar|a|e)|n[oó]mbral[oa]s|denomin(?:ar|a))\s+(?:como\s+|a\s+)?(.+?)(?:\.|$|\n|para\s+evitar)/isu,
+      )?.[1] ?? "";
+    const cleanedTail = renameTail.replace(/^["'«»()\s]+|["'«»()\s]+$/g, "").trim();
+    if (cleanedTail && !/^ya\s+as[ií]\b/i.test(cleanedTail)) {
+      for (const part of cleanedTail.split(/\s+y\s+|\s*,\s*|\s+o\s+/i)) {
+        push(part.replace(/["'«»()]/g, "").trim());
+      }
     }
   }
 
-  // «el PAT de Wasender (llámalo ya así)» / «PAT Wasender»
-  for (const hit of m.matchAll(/\bPAT\s+(?:de\s+)?([A-Za-zÁÉÍÓÚÜÑ][\wÁÉÍÓÚÜÑ-]{1,32})\b/giu)) {
-    const brand = hit[1]!;
-    push(`PAT ${brand}`);
-  }
-  for (const hit of m.matchAll(/\bPAT\s+[A-Za-zÁÉÍÓÚÜÑ][\wÁÉÍÓÚÜÑ-]{1,32}\b/giu)) {
-    push(hit[0]!);
+  // «el ACRÓNIMO de Vendor» / «ACRÓNIMO Vendor» (PAT, SSO, API, JWT…).
+  for (const hit of m.matchAll(
+    /\b((?:PAT|SSO|API|JWT|OIDC|OAuth|MFA|RBAC))\s+(?:de\s+)?([A-Za-zÁÉÍÓÚÜÑ][\wÁÉÍÓÚÜÑ-]{1,32})\b/giu,
+  )) {
+    const acronym = hit[1]!;
+    const brand = hit[2]!;
+    if (/^(?:de|del|la|el|un|una|para|con|que|y)$/i.test(brand)) continue;
+    push(`${acronym.toUpperCase()} ${brand}`);
   }
 
   return out.slice(0, max);
@@ -304,6 +314,32 @@ export function parseBenchmarkResponse(
   const chatPart = trimmed.slice(idx + match[0].length).trim() || BENCHMARK_CHAT_ACK;
   if (!docPart) return null;
   return { docPart, chatPart };
+}
+
+/**
+ * Gemma y otros modelos a menudo omiten `---FIN_DBGA---` aunque sí devuelvan el DBGA completo.
+ * Acepta ese cuerpo solo si parece un documento de benchmark sustancial (no un stub de chat).
+ */
+export function acceptCompleteDbgaWithoutFinMarker(
+  response: string,
+  currentDbga?: string,
+): { docPart: string; chatPart: string } | null {
+  const trimmed = response.trim();
+  if (!trimmed || parseBenchmarkResponse(trimmed)) return null;
+  if (looksLikeApiEndpointCatalog(trimmed)) return null;
+
+  const hasBenchmarkTitle =
+    /^#\s+(?:Domain\s+Benchmark|Fase\s+0\s+[—–-]|Benchmark\s*&\s*Gap|Research\s+Report)/im.test(
+      trimmed,
+    );
+  if (!hasBenchmarkTitle && !looksLikeDbgaDocumentBody(trimmed)) return null;
+
+  const cur = (currentDbga ?? "").trim();
+  const minLen = cur.length >= 4000 ? Math.floor(cur.length * 0.35) : 800;
+  if (trimmed.length < minLen) return null;
+  if (cur && wouldShrinkDbgaDangerously(cur, trimmed)) return null;
+
+  return { docPart: trimmed, chatPart: BENCHMARK_CHAT_ACK };
 }
 
 /** El modelo a veces devuelve solo un fragmento (### Módulos…) sin el `# Research Report` inicial. */
