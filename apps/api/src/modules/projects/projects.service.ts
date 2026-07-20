@@ -1,20 +1,16 @@
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException, forwardRef } from "@nestjs/common";
+import { Inject, Injectable, Logger, NotFoundException, forwardRef } from "@nestjs/common";
 import { ComplexityLevel, StageStatus } from "@theforge/database";
 import type { Estimation, Project, Stage } from "@theforge/database";
 import { getRequestUserId, getRequestUserRole } from "../../common/request-user.store.js";
 import { isAdminOrAbove } from "../../common/roles.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
-import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import { DiscoveryService } from "../ai/discovery.service.js";
-import { ScraperService } from "../scraper/scraper.service.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
 import { GraphMemoryService } from "../ai-analysis/graph-memory/graph-memory.service.js";
 import type { IOrchestratorProjectsPort } from "./projects-service.port.js";
-import { resolveUrls } from "../scraper/url-utils.js";
 import {
   createProjectSchema,
   cloneProjectBodySchema,
-  getAllowedStageTransitions,
   type DeliverableKind,
   type CreateProjectDto,
   type UpdateProjectDto,
@@ -33,8 +29,8 @@ import { ProjectConformanceService } from "./project-conformance.service.js";
 import { ProjectBrdService } from "./project-brd.service.js";
 import { ProjectUpdateService } from "./project-update.service.js";
 import { ProjectComplexityService } from "./project-complexity.service.js";
+import { ProjectPhase0Service } from "./project-phase0.service.js";
 import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
-import { resolveStageDeliverables } from "./stage-deliverables.util.js";
 import type { ProjectDeliverableSource } from "@theforge/shared-types";
 import { DocumentationGapService } from "../documentation-gap/documentation-gap.service.js";
 import { PluginDocumentPipelineService } from "../../plugins/plugin-document-pipeline.service.js";
@@ -77,8 +73,6 @@ export class ProjectsService implements IOrchestratorProjectsPort {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly discovery: DiscoveryService,
-    private readonly scraper: ScraperService,
     private readonly theforge: TheForgeService,
     private readonly graphMemory: GraphMemoryService,
     private readonly pluginPipeline: PluginDocumentPipelineService,
@@ -100,6 +94,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly projectUpdate: ProjectUpdateService,
     @Inject(forwardRef(() => ProjectComplexityService))
     private readonly projectComplexity: ProjectComplexityService,
+    @Inject(forwardRef(() => ProjectPhase0Service))
+    private readonly projectPhase0: ProjectPhase0Service,
   ) {}
 
   async listDocumentSnapshots(
@@ -347,76 +343,19 @@ export class ProjectsService implements IOrchestratorProjectsPort {
   }
 
   async listStages(projectId: string) {
-    await this.assertProjectAccess(projectId);
-    const stages = await this.prisma.stage.findMany({
-      where: { projectId },
-      orderBy: { ordinal: "asc" },
-      include: { estimation: true },
-    });
-    return { stages };
+    return this.projectStage.listStages(projectId);
   }
 
   async getStageDeliverables(projectId: string, stageId: string) {
-    const project = await this.assertProjectAccess(projectId);
-    const stage = project.stages.find((s) => s.id === stageId);
-    if (!stage) throw new NotFoundException("Etapa no encontrada");
-    return resolveStageDeliverables(project, stage, "workshop");
+    return this.projectStage.getStageDeliverables(projectId, stageId);
   }
-
 
   async patchStage(projectId: string, stageId: string, body: unknown) {
     return this.projectStage.patchStage(projectId, stageId, body);
   }
 
   async getStageDetail(projectId: string, stageId: string) {
-    const project = await this.assertProjectAccess(projectId);
-    const stage = project.stages.find((s) => s.id === stageId);
-    if (!stage) throw new NotFoundException("Etapa no encontrada");
-
-    const resolved = resolveStageDeliverables(project, stage, "workshop");
-    const stageDocFields = ["mddContent", "brdContent", "changeSpecContent"] as const;
-    const stageDocuments: Record<string, { exists: boolean; wordCount: number }> = {};
-    for (const field of stageDocFields) {
-      const text = (stage[field] ?? "") as string;
-      stageDocuments[field] = {
-        exists: text.trim().length > 0,
-        wordCount: text.trim() ? text.trim().split(/\s+/).length : 0,
-      };
-    }
-
-    const cascadeSummary: Record<string, { exists: boolean; wordCount: number }> = {};
-    for (const [key, val] of Object.entries(resolved.deliverables)) {
-      const text = typeof val === "string" ? val : "";
-      cascadeSummary[key] = {
-        exists: text.trim().length > 0,
-        wordCount: text.trim() ? text.trim().split(/\s+/).length : 0,
-      };
-    }
-
-    return {
-      stage: {
-        id: stage.id,
-        ordinal: stage.ordinal,
-        key: stage.key,
-        name: stage.name,
-        workflowStatus: stage.workflowStatus,
-        status: stage.status,
-        precisionScore: stage.precisionScore,
-        isLegacy: stage.isLegacy,
-        estimation: stage.estimation,
-        createdAt: stage.createdAt,
-        updatedAt: stage.updatedAt,
-      },
-      deliverables: {
-        source: resolved.source,
-        readOnly: resolved.readOnly,
-        snapshotCapturedAt: resolved.snapshotCapturedAt ?? null,
-        stageDocuments,
-        cascadeSummary,
-      },
-      allowedTransitions: getAllowedStageTransitions(stage.workflowStatus),
-      activeStageId: pickPrimaryStage(project.stages)?.id ?? null,
-    };
+    return this.projectStage.getStageDetail(projectId, stageId);
   }
 
   async transitionStage(projectId: string, stageId: string, body: unknown) {
@@ -660,43 +599,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     projectId: string,
     options: { userIdea?: string; urls?: string[]; includeBenchmark?: boolean },
   ) {
-    const project = await this.assertProjectAccess(projectId);
-    if ((project as { projectType?: string }).projectType === "LEGACY") {
-      throw new BadRequestException(
-        "Paso 0 (Deep Research) no aplica a proyectos legacy. Usa el flujo de modificaciones en el chat.",
-      );
-    }
-    const userIdea = options.userIdea?.trim() ?? "";
-    const resolvedUrls = resolveUrls(options.urls, userIdea);
-    let scrapedContext: string | undefined;
-    if (resolvedUrls.length > 0) {
-      const pages = await this.scraper.scrapeUrls(resolvedUrls);
-      scrapedContext = pages
-        .filter((p) => p.markdown.trim().length > 0)
-        .map((p) => `## Referencia: ${p.url}\n\n${p.markdown}`)
-        .join("\n\n");
-    }
-    const dbgaContent =
-      options.includeBenchmark && project.dbgaContent?.trim() ? project.dbgaContent : undefined;
-    let summary: string;
-    try {
-      summary = await this.discovery.generatePhase0DeepResearch(
-        userIdea,
-        scrapedContext,
-        dbgaContent,
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Error en Deep Research";
-      throw new Error(
-        `Falló la generación del resumen (Deep Research). ${message.slice(0, 200)}`,
-      );
-    }
-    if (typeof summary !== "string") {
-      throw new Error("El proveedor de IA devolvió un formato inesperado");
-    }
-    return this.update(projectId, {
-      phase0SummaryContent: cleanDocumentContent(summary.trim()),
-    });
+    return this.projectPhase0.phase0DeepResearch(projectId, options);
   }
 
 

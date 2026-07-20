@@ -25,6 +25,11 @@ import {
   ensureStageDeliverableSnapshotIfMissing,
 } from "./stage-deliverable-snapshot.util.js";
 import { seedActiveStageDeliverables } from "./stage-deliverable-persist.util.js";
+import { resolveStageDeliverables } from "./stage-deliverables.util.js";
+import { pickPrimaryStage } from "./stage-helpers.js";
+import type { Estimation, Stage } from "@theforge/database";
+
+type StageWithEst = Stage & { estimation: Estimation | null };
 
 @Injectable()
 export class ProjectStageService {
@@ -317,6 +322,74 @@ export class ProjectStageService {
         previousStatus,
         newStatus: out.workflowStatus,
       },
+    };
+  }
+
+  async listStages(projectId: string) {
+    await loadAccessibleProjectWithStages(this.prisma, projectId);
+    const stages = await this.prisma.stage.findMany({
+      where: { projectId },
+      orderBy: { ordinal: "asc" },
+      include: { estimation: true },
+    });
+    return { stages };
+  }
+
+  async getStageDeliverables(projectId: string, stageId: string) {
+    const project = await loadAccessibleProjectWithStages(this.prisma, projectId);
+    const stage = project.stages.find((s) => s.id === stageId);
+    if (!stage) throw new NotFoundException("Etapa no encontrada");
+    return resolveStageDeliverables(project, stage, "workshop");
+  }
+
+  async getStageDetail(projectId: string, stageId: string) {
+    const project = await loadAccessibleProjectWithStages(this.prisma, projectId);
+    const stage = project.stages.find((s) => s.id === stageId);
+    if (!stage) throw new NotFoundException("Etapa no encontrada");
+
+    const resolved = resolveStageDeliverables(project, stage, "workshop");
+    const stageDocFields = ["mddContent", "brdContent", "changeSpecContent"] as const;
+    const stageDocuments: Record<string, { exists: boolean; wordCount: number }> = {};
+    for (const field of stageDocFields) {
+      const text = (stage[field] ?? "") as string;
+      stageDocuments[field] = {
+        exists: text.trim().length > 0,
+        wordCount: text.trim() ? text.trim().split(/\s+/).length : 0,
+      };
+    }
+
+    const cascadeSummary: Record<string, { exists: boolean; wordCount: number }> = {};
+    for (const [key, val] of Object.entries(resolved.deliverables)) {
+      const text = typeof val === "string" ? val : "";
+      cascadeSummary[key] = {
+        exists: text.trim().length > 0,
+        wordCount: text.trim() ? text.trim().split(/\s+/).length : 0,
+      };
+    }
+
+    return {
+      stage: {
+        id: stage.id,
+        ordinal: stage.ordinal,
+        key: stage.key,
+        name: stage.name,
+        workflowStatus: stage.workflowStatus,
+        status: stage.status,
+        precisionScore: stage.precisionScore,
+        isLegacy: stage.isLegacy,
+        estimation: stage.estimation,
+        createdAt: stage.createdAt,
+        updatedAt: stage.updatedAt,
+      },
+      deliverables: {
+        source: resolved.source,
+        readOnly: resolved.readOnly,
+        snapshotCapturedAt: resolved.snapshotCapturedAt ?? null,
+        stageDocuments,
+        cascadeSummary,
+      },
+      allowedTransitions: getAllowedStageTransitions(stage.workflowStatus),
+      activeStageId: pickPrimaryStage(project.stages as StageWithEst[])?.id ?? null,
     };
   }
 }

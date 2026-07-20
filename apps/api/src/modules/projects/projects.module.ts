@@ -36,6 +36,7 @@ import { ProjectConformanceService } from "./project-conformance.service.js";
 import { ProjectBrdService } from "./project-brd.service.js";
 import { ProjectUpdateService } from "./project-update.service.js";
 import { ProjectComplexityService } from "./project-complexity.service.js";
+import { ProjectPhase0Service } from "./project-phase0.service.js";
 import { ProjectNotionPortabilityService } from "./project-notion-portability.service.js";
 import { PluginModule } from "../../plugins/plugin.module.js";
 
@@ -81,6 +82,7 @@ import { PluginModule } from "../../plugins/plugin.module.js";
     ProjectBrdService,
     ProjectUpdateService,
     ProjectComplexityService,
+    ProjectPhase0Service,
   ],
   exports: [ProjectsService, ProjectIntegrationService, IntegrationAgentService, ProjectMergeService, PROJECTS_ORCHESTRATOR_PORT, DeliverablesQueueService, ProjectGenerationGuardService, PlanValidationService],
 })
