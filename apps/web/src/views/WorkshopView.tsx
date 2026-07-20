@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useMemo, type PointerEvent as ReactPointerEvent } from "react";
 import {
-  Cloud,
-  CloudOff,
   AlertTriangle,
   Printer,
   Download,
@@ -36,11 +34,7 @@ import {
   Copy,
   Check,
   Rocket,
-  ChevronDown,
-  Plus,
   Globe,
-  Lock,
-  Pencil,
   Wrench,
   BrushCleaning,
 } from "lucide-react";
@@ -61,10 +55,6 @@ import {
   WORKSHOP_DOC_TOOLBAR_ICON_BTN,
 } from "../constants/workshopDocToolbar";
 import {
-  WORKSHOP_HEADER_CTL,
-  WORKSHOP_HEADER_CTL_HOVER,
-} from "../constants/workshopHeaderToolbar";
-import {
   agentGovernanceScaffoldHasContent,
   formatPantallasMarkdownForPreview,
   isLegacyChangeGateSatisfied,
@@ -81,7 +71,6 @@ import {
   type Status,
 } from "../store/workshopStore";
 import { WORKSHOP_EXIT_BLOCKED_TITLE } from "@/utils/workshopAgentsBusy";
-import { stageWorkflowStatusLabel } from "@/utils/stageWorkflowStatusLabel";
 import { apiFetch, API_BASE, getOfflineQueue } from "../utils/apiClient";
 import { isWorkshopConnectionError, isSsotPatternsNotice } from "../utils/workshopSyncStatus";
 import { activeGenerationLabel, generationJobAllowed, primaryMddJob } from "../utils/projectGenerationGate";
@@ -120,6 +109,7 @@ import {
   type WorkshopComplexityTier,
 } from "../utils/workshopDocToolbar";
 import { WorkshopDocToolbarHint } from "./workshop/WorkshopDocToolbarHint";
+import { WorkshopHeaderBar } from "./workshop/WorkshopHeaderBar";
 import LegacyMcpDebugPanel from "../components/LegacyMcpDebugPanel/LegacyMcpDebugPanel";
 import { BrdStagePanel } from "../components/BrdStagePanel";
 import { AgentGovernancePanel } from "../components/AgentGovernancePanel";
@@ -164,8 +154,6 @@ import { PluginDocPanel } from "../components/PluginDocPanel";
 import { IntegrationPanel } from "../components/IntegrationPanel";
 import { DocEmptyState } from "../components/DocEmptyState";
 import { WorkshopRegenButton } from "../components/WorkshopRegenButton";
-import { WorkshopDownloadZipButton } from "../components/WorkshopDownloadZipButton";
-import { WorkshopExportSddButton } from "../components/WorkshopExportSddButton";
 import { DocumentClarificationSection } from "../components/DocumentClarificationSection";
 import type { ClarifyableDocumentField } from "@theforge/shared-types";
 import { AemGenerateDialog } from "../components/AemGenerateDialog";
@@ -175,7 +163,6 @@ import {
   WorkshopDirtySaveBar,
   WorkshopDocToolbarIcon,
   WorkshopDocToolbarIconButton,
-  WorkshopHeaderIconButton,
   WorkshopMddActionButton,
   WorkshopPanelActionRegion,
   WorkshopPanelButton,
@@ -2626,7 +2613,18 @@ export default function WorkshopView({
     project?.uxUiGuideContent,
     uiScreensContent,
     project?.uiScreensContent,
+    setError,
   ]);
+
+  const handleExportSdd = useCallback(async () => {
+    if (!projectId) return;
+    const ok = await downloadSpecKitBundleFromApi(
+      projectId,
+      projectName ?? project?.name ?? "Workshop",
+    );
+    if (ok) setError(null);
+    else setError("No hay contenido MDD para exportar bundle SDD.");
+  }, [projectId, projectName, project?.name, setError]);
 
   const uxUiGuideDirty = (uxUiGuideContent ?? "") !== (project?.uxUiGuideContent ?? "");
 
@@ -2686,275 +2684,25 @@ export default function WorkshopView({
       data-workshop-root
       className="workshop-root flex w-full min-w-0 min-h-0 flex-1 flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] antialiased"
     >
-      <header className="shrink-0 border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--card)_35%,var(--background))] px-3 py-2.5 max-sm:py-2.5 sm:px-5 sm:py-3">
-        {/* Main toolbar: grid on sm+ keeps title, stage controls, and actions on one axis */}
-        <div
-          className={cn(
-            "grid grid-cols-1 gap-3 max-sm:gap-2.5 sm:items-center sm:gap-x-4 sm:gap-y-0",
-            "sm:grid-cols-[minmax(0,1fr)_auto]",
-          )}
-        >
-          {/* Column 1 — title + sync + legacy (single baseline on desktop) */}
-          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 max-sm:justify-between sm:flex-nowrap sm:gap-x-3">
-              <h1 className="min-w-0 flex-1 truncate text-base font-semibold tracking-tight text-[var(--foreground)] max-sm:text-[0.9375rem] max-sm:leading-tight sm:flex-1 sm:text-lg">
-                {projectName ?? project?.name ?? "Workshop"}
-              </h1>
-              {onRenameProject ? (
-                <button
-                  type="button"
-                  onClick={onRenameProject}
-                  className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border)] text-[var(--foreground-muted)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  title="Configuración del proyecto"
-                  aria-label="Configuración del proyecto"
-                >
-                  <Pencil className="h-3.5 w-3.5" aria-hidden />
-                </button>
-              ) : null}
-              {project?.projectType === "LEGACY" && (
-                <span
-                  className="shrink-0 rounded border border-[var(--border)] bg-[var(--muted)] px-2 py-0.5 text-xs font-medium text-[color-mix(in_oklch,var(--foreground)_88%,var(--muted-foreground))]"
-                  title="Proyecto legacy: documentación de cambios con Relic"
-                >
-                  Legacy
-                </span>
-              )}
-              {project && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const newVis = project.visibility === "SHARED" ? "PRIVATE" : "SHARED";
-                    try {
-                      const r = await apiFetch(`${API_BASE}/projects/${project.id}`, {
-                        method: "PATCH",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ visibility: newVis }),
-                      });
-                      if (r.ok) {
-                        const data = await r.json();
-                        useWorkshopStore.getState().setProject(data);
-                      }
-                    } catch {}
-                  }}
-                  className={cn(
-                    "shrink-0 inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs font-medium transition-colors",
-                    project.visibility === "SHARED"
-                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
-                      : "border-zinc-500/40 bg-zinc-500/10 text-zinc-400 hover:bg-zinc-500/20",
-                  )}
-                  title={
-                    project.visibility === "SHARED"
-                      ? "Compartido — todos los usuarios pueden ver y editar. Click para hacer privado."
-                      : "Privado — solo tú puedes ver y editar. Click para compartir."
-                  }
-                >
-                  {project.visibility === "SHARED" ? (
-                    <><Globe className="h-3 w-3" aria-hidden /> Compartido</>
-                  ) : (
-                    <><Lock className="h-3 w-3" aria-hidden /> Privado</>
-                  )}
-                </button>
-              )}
-              <span
-                role="status"
-                aria-live="polite"
-                aria-label={
-                  connectionError
-                    ? `Error de sincronización: ${error}`
-                    : synced
-                      ? "Sincronizado con el servidor"
-                      : "Sincronizando con el servidor"
-                }
-                className={cn(
-                  "flex shrink-0 items-center gap-1.5 text-xs text-[var(--foreground-subtle)]",
-                  "max-sm:rounded-full max-sm:border max-sm:border-[color-mix(in_oklch,var(--border)_80%,transparent)] max-sm:bg-[color-mix(in_oklch,var(--card)_40%,transparent)] max-sm:px-2 max-sm:py-1",
-                )}
-                title={
-                  connectionError
-                    ? `Sin conexión — toca para reintentar`
-                    : synced
-                      ? "Sincronizado"
-                      : "Sincronizando"
-                }
-                onClick={connectionError ? () => { void retryWorkshopSync(); } : undefined}
-                style={connectionError ? { cursor: "pointer" } : undefined}
-              >
-                {connectionError ? (
-                  <>
-                    <AlertTriangle className="h-3.5 w-3.5 text-[var(--warning)]" aria-hidden />
-                    <span className="hidden sm:inline">Sin conexión</span>
-                  </>
-                ) : synced ? (
-                  <>
-                    <Cloud className="h-3.5 w-3.5 text-[var(--success)]" aria-hidden />
-                    <span className="hidden sm:inline">Sincronizado</span>
-                  </>
-                ) : (
-                  <>
-                    <CloudOff className="h-3.5 w-3.5 text-[var(--primary)]" aria-hidden />
-                    <span className="hidden sm:inline">Sincronizando…</span>
-                  </>
-                )}
-              </span>
-            </div>
-          </div>
-
-          {/* Column 2 — stages + icon actions: selector, Nueva etapa, ZIP, Ayuda (sin etapas: ZIP, Ayuda en desktop) */}
-          {workshopStagesList.length > 0 ? (
-            <TooltipProvider delayDuration={280}>
-              <div
-                className={cn(
-                  "flex min-w-0 flex-nowrap items-center gap-1.5",
-                  "max-sm:w-full max-sm:gap-2",
-                  "sm:max-w-none sm:justify-self-end",
-                  "overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin] sm:overflow-visible sm:pb-0",
-                )}
-              >
-                <span
-                  className="hidden sm:inline-flex h-9 w-9 shrink-0 items-center justify-center pointer-events-none text-[var(--foreground-subtle)]"
-                  aria-hidden
-                >
-                  <Layers className="h-4 w-4 shrink-0" strokeWidth={2} />
-                </span>
-                <label htmlFor="workshop-stage-select" className="sr-only">
-                  Vista en vivo: etapa del Workshop (MDD y semáforo)
-                </label>
-                <div className="relative min-w-[12rem] max-w-[240px] flex-1 sm:min-w-[14rem] sm:flex-none">
-                  <select
-                    id="workshop-stage-select"
-                    className={cn(
-                      WORKSHOP_HEADER_CTL,
-                      WORKSHOP_HEADER_CTL_HOVER,
-                      "w-full min-w-0 cursor-pointer appearance-none py-0 pl-3 pr-10 leading-9",
-                    )}
-                    value={activeStageId ?? workshopStagesList[0]?.id ?? ""}
-                    onChange={(e) => setActiveStageId(e.target.value)}
-                  >
-                    {workshopStagesList.map((st) => (
-                      <option key={st.id} value={st.id}>
-                        #{st.ordinal}{" "}
-                        {(st.name ?? st.key ?? st.id.slice(0, 8)) +
-                          ` · ${stageWorkflowStatusLabel(st.workflowStatus)}`}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown
-                    className="pointer-events-none absolute right-3 top-1/2 z-[1] h-[1.125rem] w-[1.125rem] -translate-y-1/2 text-[color-mix(in_oklch,var(--foreground)_72%,var(--muted-foreground))]"
-                    strokeWidth={2.25}
-                    aria-hidden
-                  />
-                </div>
-
-                {stageDeliverableView?.source === "snapshot" ? (
-                  <div
-                    role="status"
-                    className="hidden shrink-0 rounded-lg bg-[color-mix(in_oklch,var(--info)_8%,var(--card))] px-2 py-1 text-[10px] leading-snug text-[color-mix(in_oklch,var(--info)_88%,var(--foreground))] sm:block sm:max-w-[14rem]"
-                  >
-                    Entregables congelados · etapa {stageDeliverableView.ordinal}
-                  </div>
-                ) : null}
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <WorkshopHeaderIconButton
-                      onClick={() => setShowStageModal(true)}
-                      aria-label="Nueva etapa"
-                    >
-                      <Plus className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                    </WorkshopHeaderIconButton>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Nueva etapa</TooltipContent>
-                </Tooltip>
-
-                <WorkshopDownloadZipButton
-                  hasAgentGovernance={hasAgentGovernance}
-                  onClick={() => {
-                    void handleDownloadProjectZip();
-                  }}
-                />
-
-                <WorkshopExportSddButton
-                  disabled={!effectiveMddTrimmed || !projectId}
-                  onClick={async () => {
-                    if (!projectId) return;
-                    const ok = await downloadSpecKitBundleFromApi(
-                      projectId,
-                      projectName ?? project?.name ?? "Workshop",
-                    );
-                    if (ok) setError(null);
-                    else setError("No hay contenido MDD para exportar bundle SDD.");
-                  }}
-                />
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <WorkshopHeaderIconButton
-                      onClick={() => setShowHelpModal(true)}
-                      title="Manual de uso del Workshop"
-                      aria-label="Ayuda — manual del Workshop"
-                    >
-                      <HelpCircle className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                    </WorkshopHeaderIconButton>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Manual del Workshop</TooltipContent>
-                </Tooltip>
-              </div>
-            </TooltipProvider>
-          ) : (
-            <TooltipProvider delayDuration={280}>
-              <div className="flex min-w-0 flex-nowrap items-center justify-end gap-1.5 sm:justify-self-end">
-                <WorkshopDownloadZipButton
-                  hasAgentGovernance={hasAgentGovernance}
-                  onClick={() => {
-                    void handleDownloadProjectZip();
-                  }}
-                />
-
-                <WorkshopExportSddButton
-                  disabled={!effectiveMddTrimmed || !projectId}
-                  onClick={async () => {
-                    if (!projectId) return;
-                    const ok = await downloadSpecKitBundleFromApi(
-                      projectId,
-                      projectName ?? project?.name ?? "Workshop",
-                    );
-                    if (ok) setError(null);
-                    else setError("No hay contenido MDD para exportar bundle SDD.");
-                  }}
-                />
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <WorkshopHeaderIconButton
-                      onClick={() => setShowHelpModal(true)}
-                      title="Manual de uso del Workshop"
-                      aria-label="Ayuda — manual del Workshop"
-                    >
-                      <HelpCircle className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                    </WorkshopHeaderIconButton>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Manual del Workshop</TooltipContent>
-                </Tooltip>
-              </div>
-            </TooltipProvider>
-          )}
-
-        </div>
-
-        {project?.projectType === "LEGACY" && project?.theforgeProjectId?.trim() ? (
-          <div className="mt-3 rounded-lg border border-[color-mix(in_oklch,var(--border)_70%,transparent)] bg-[color-mix(in_oklch,var(--muted)_25%,transparent)] px-2.5 py-1.5 sm:mt-3">
-            <span
-              className="font-mono text-[10px] leading-snug text-[var(--foreground-subtle)] sm:text-[11px]"
-              title={`UUID guardado (theforgeProjectId). La API resuelve: ingest proyecto (ask_codebase, get_modification_plan) = id workspace; grafo/semantic = roots[].id; scope.repoIds en ask/plan. ${project.theforgeProjectId}`}
-            >
-              <span className="text-[color-mix(in_oklch,var(--foreground-subtle)_82%,var(--background))] select-none" aria-hidden>
-                MCP{" "}
-              </span>
-              <span className="break-all text-[var(--muted-foreground)]">{project.theforgeProjectId}</span>
-            </span>
-          </div>
-        ) : null}
-      </header>
+      <WorkshopHeaderBar
+        projectName={projectName}
+        project={project}
+        onRenameProject={onRenameProject}
+        connectionError={connectionError}
+        error={error}
+        synced={synced}
+        onRetrySync={() => { void retryWorkshopSync(); }}
+        workshopStagesList={workshopStagesList}
+        activeStageId={activeStageId}
+        onActiveStageChange={setActiveStageId}
+        stageDeliverableView={stageDeliverableView}
+        onNewStage={() => setShowStageModal(true)}
+        hasAgentGovernance={hasAgentGovernance}
+        onDownloadZip={handleDownloadProjectZip}
+        exportSddDisabled={!effectiveMddTrimmed || !projectId}
+        onExportSdd={handleExportSdd}
+        onOpenHelp={() => setShowHelpModal(true)}
+      />
 
       <WorkshopNewStageModal
         open={showStageModal}
