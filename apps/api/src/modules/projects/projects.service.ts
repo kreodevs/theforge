@@ -37,17 +37,14 @@ import {
   buildUiMcpDesignSystemSection,
 } from "../ui-mcp/ui-design-system-section.util.js";
 import { MddUpdatePipelineService } from "../engine/mdd-update-pipeline.service.js";
-import { SemaphoreService, type SemaphoreEvaluationInput } from "../engine/semaphore.service.js";
+import { SemaphoreService } from "../engine/semaphore.service.js";
 import { normalizeMddContent } from "../engine/mdd-markdown-parser.js";
 import { shouldReplacePhase0SummaryWithBorrador, generateAemBodySchema, isPhase0BorradorJson, isBrownfieldCapable } from "@theforge/shared-types";
 import { storeMddMarkdownForPersist } from "../ai-analysis/utils/mdd-sanitize.js";
-import { prepareMddForOutput } from "../ai-analysis/utils/mdd-prepare-output.js";
 import { prependDocumentTimestamps, stampMarkdownIfBodyChanged } from "../engine/document-date-header.util.js";
 import {
   enforceMddGovernancePatternsOnPersist,
   mddHasSubstantialBody,
-  selectedPatternIdsFromMdd,
-  updateMddGovernancePatterns,
 } from "@theforge/shared-types/mdd-governance-patterns";
 import { loadProjectBorrador, hasBorradorContent } from "../ai-analysis/phase0/phase0-load-borrador.util.js";
 import { phase0ToMarkdown } from "../ai-analysis/phase0/phase0-to-markdown.js";
@@ -136,22 +133,22 @@ import {
 import { validateBrdMermaidOutput } from "../ai/utils/brd-mermaid-validate.util.js";
 import { truncateSourceDocForBrdPrompt } from "../ai/utils/dbga-prompt-context.util.js";
 
+import { loadAccessibleProjectWithStages } from "./project-access.util.js";
+import {
+  buildSemaphoreBaseFromProject,
+  mergeProjectFieldsForSemaphore,
+} from "./project-mdd-persist.util.js";
+import { ProjectMddPersistService } from "./project-mdd-persist.service.js";
 import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
 import { resolveStageDeliverables } from "./stage-deliverables.util.js";
 import { persistStageDeliverableSnapshotFromProject, ensureStageDeliverableSnapshotIfMissing } from "./stage-deliverable-snapshot.util.js";
 import {
   buildMddDeliveryGateConflictBody,
-  buildMddPatchPipelineErrorBody,
   evaluateMddDeliveryGatePrepared,
-  MDD_DELIVERY_GATE_ERR,
 } from "../ai-analysis/utils/mdd-delivery-gate-guard.util.js";
-import {
-  mergeDeliveryGateIntoShortTermContext,
-} from "../ai-analysis/utils/mdd-delivery-gate.util.js";
 import { resolveLegacyBaselineStageFlag } from "../ai/utils/legacy-as-is-spec.util.js";
 import {
   mergeTasksQualityIntoShortTermContext,
-  peelDocumentBodyForPersist,
   TASKS_PREFLIGHT_DOC_ACCURACY_BLOCK_THRESHOLD,
   type TasksPipelineQualitySnapshot,
 } from "@theforge/shared-types";
@@ -234,19 +231,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
    * Retorna el proyecto si hay acceso, o lanza NotFoundException.
    */
   private async assertProjectAccess(projectId: string): Promise<Project & { stages: StageWithEst[] }> {
-    const userId = getRequestUserId();
-    const project = await this.prisma.project.findFirst({
-      where: { id: projectId },
-      include: {
-        stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } },
-        group: { select: { name: true } },
-      },
-    });
-    if (!project) throw new NotFoundException("Project not found");
-    const isOwner = project.userId === userId;
-    const isShared = project.visibility === "SHARED";
-    if (!isOwner && !isShared) throw new NotFoundException("Project not found");
-    return project as Project & { stages: StageWithEst[] };
+    return loadAccessibleProjectWithStages(this.prisma, projectId);
   }
 
   constructor(
@@ -274,6 +259,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly documentSnapshot: DocumentSnapshotService,
     private readonly tasksPipeline: TasksGenerationPipelineService,
     private readonly pluginPipeline: PluginDocumentPipelineService,
+    private readonly mddPersist: ProjectMddPersistService,
   ) {}
 
   /** Contexto de hooks para generadores LLM (MDD/BRD desde stage primaria). */
@@ -438,71 +424,6 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     return heuristicUiComponentResolver;
   }
 
-  private buildSemaphoreBase(
-    p: Pick<
-      Project,
-      | "complexity"
-      | "hasUxTeam"
-      | "figmaMapping"
-      | "specContent"
-      | "useCasesContent"
-      | "userStoriesContent"
-      | "tasksContent"
-      | "apiContractsContent"
-      | "uxUiGuideContent"
-      | "logicFlowsContent"
-      | "infraContent"
-    >,
-  ): Omit<SemaphoreEvaluationInput, "mddJsonString"> {
-    return {
-      complexity: p.complexity ?? ComplexityLevel.HIGH,
-      hasUxTeam: p.hasUxTeam,
-      figmaMapping: p.figmaMapping,
-      deliverables: {
-        specContent: p.specContent,
-        useCasesContent: p.useCasesContent,
-        userStoriesContent: p.userStoriesContent,
-        tasksContent: p.tasksContent,
-        apiContractsContent: p.apiContractsContent,
-        uxUiGuideContent: p.uxUiGuideContent,
-        logicFlowsContent: p.logicFlowsContent,
-        infraContent: p.infraContent,
-      },
-    };
-  }
-
-  private mergeProjectForSemaphore(
-    existing: Project,
-    rest: Partial<UpdateProjectDto>,
-  ): Pick<
-    Project,
-    | "complexity"
-    | "hasUxTeam"
-    | "figmaMapping"
-    | "specContent"
-    | "useCasesContent"
-    | "userStoriesContent"
-    | "tasksContent"
-    | "apiContractsContent"
-    | "uxUiGuideContent"
-    | "logicFlowsContent"
-    | "infraContent"
-  > {
-    return {
-      complexity: (rest.complexity ?? existing.complexity) as ComplexityLevel,
-      hasUxTeam: rest.hasUxTeam ?? existing.hasUxTeam,
-      figmaMapping: (rest.figmaMapping !== undefined ? rest.figmaMapping : existing.figmaMapping) as Project["figmaMapping"],
-      specContent: rest.specContent !== undefined ? rest.specContent : existing.specContent,
-      useCasesContent: rest.useCasesContent !== undefined ? rest.useCasesContent : existing.useCasesContent,
-      userStoriesContent: rest.userStoriesContent !== undefined ? rest.userStoriesContent : existing.userStoriesContent,
-      tasksContent: rest.tasksContent !== undefined ? rest.tasksContent : existing.tasksContent,
-      apiContractsContent: rest.apiContractsContent !== undefined ? rest.apiContractsContent : existing.apiContractsContent,
-      uxUiGuideContent: rest.uxUiGuideContent !== undefined ? rest.uxUiGuideContent : existing.uxUiGuideContent,
-      logicFlowsContent: rest.logicFlowsContent !== undefined ? rest.logicFlowsContent : existing.logicFlowsContent,
-      infraContent: rest.infraContent !== undefined ? rest.infraContent : existing.infraContent,
-    };
-  }
-
   private mddJsonStringForSemaphore(mddContent: string | null): string | null {
     if (!mddContent?.trim()) return null;
     const normalized = normalizeMddContent(mddContent);
@@ -554,7 +475,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const sddCrossArtifactGapCount = this.countSddPrecisionGaps(project, mddMarkdown);
 
     const { status, precisionScore } = this.semaphore.evaluate({
-      ...this.buildSemaphoreBase(project),
+      ...buildSemaphoreBaseFromProject(project),
       mddJsonString: this.mddJsonStringForSemaphore(mddMarkdown),
       sddCrossArtifactGapCount,
     });
@@ -628,7 +549,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         ],
         warnings: [],
       };
-      if (stage?.id) void this.persistMddDeliveryGateSnapshot(stage.id, gate);
+      if (stage?.id) void this.mddPersist.persistMddDeliveryGateSnapshot(stage.id, gate);
       if (!acknowledgeGaps) {
         throw new ConflictException(
           buildMddDeliveryGateConflictBody(gate, gate.blockers[0]!),
@@ -642,39 +563,11 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       dbgaMarkdown: project.dbgaContent,
     });
     if (stage?.id) {
-      void this.persistMddDeliveryGateSnapshot(stage.id, gate);
+      void this.mddPersist.persistMddDeliveryGateSnapshot(stage.id, gate);
       void this.syncDomainInventoryForStage(project, stage.id);
     }
     if (!gate.ok && !acknowledgeGaps) {
       throw new ConflictException(buildMddDeliveryGateConflictBody(gate));
-    }
-  }
-
-  private async persistMddDeliveryGateSnapshot(
-    stageId: string,
-    gate: MddDeliveryGateResult,
-  ): Promise<void> {
-    try {
-      const stage = await this.prisma.stage.findUnique({
-        where: { id: stageId },
-        select: { shortTermContext: true },
-      });
-      const prev =
-        stage?.shortTermContext &&
-        typeof stage.shortTermContext === "object" &&
-        !Array.isArray(stage.shortTermContext)
-          ? (stage.shortTermContext as Record<string, unknown>)
-          : {};
-      await this.prisma.stage.update({
-        where: { id: stageId },
-        data: {
-          shortTermContext: mergeDeliveryGateIntoShortTermContext(prev, gate) as Prisma.InputJsonValue,
-        },
-      });
-    } catch (err) {
-      this.logger.warn(
-        `[DeliveryGate] snapshot persist failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
     }
   }
 
@@ -705,29 +598,6 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         `[Tasks] quality snapshot persist failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-  }
-
-  /** BadRequest 400 con cuerpo estructurado para fallos del pipeline MDD en PATCH. */
-  private async throwMddPipelineBadRequest(
-    result: { code: string; message: string },
-    stageId: string,
-    mddRaw: string,
-  ): Promise<never> {
-    if (result.code === MDD_DELIVERY_GATE_ERR) {
-      const gate = await evaluateMddDeliveryGatePrepared(mddRaw);
-      void this.persistMddDeliveryGateSnapshot(stageId, gate);
-      throw new BadRequestException(
-        buildMddPatchPipelineErrorBody(
-          MDD_DELIVERY_GATE_ERR,
-          buildMddDeliveryGateConflictBody(gate).message,
-          stageId,
-          gate,
-        ),
-      );
-    }
-    throw new BadRequestException(
-      buildMddPatchPipelineErrorBody(result.code, result.message, stageId),
-    );
   }
 
   async create(data: CreateProjectDto) {
@@ -1014,7 +884,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       mddGovernancePatternsReverted = enforced.patternsReverted;
     }
 
-    const mergedForSemaphore = this.mergeProjectForSemaphore(existingRaw, rest);
+    const mergedForSemaphore = mergeProjectFieldsForSemaphore(existingRaw, rest);
 
     const updatePayload: Prisma.ProjectUpdateInput = {
       ...rest,
@@ -1099,7 +969,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       } else {
         const result = await this.mddUpdatePipeline.process(
           mddForPipeline,
-          this.buildSemaphoreBase(mergedForSemaphore),
+          buildSemaphoreBaseFromProject(mergedForSemaphore),
           { projectId: id, stageId: targetStage.id },
         );
         if (result.ok) {
@@ -1119,12 +989,12 @@ export class ProjectsService implements IOrchestratorProjectsPort {
             },
           });
           await this.changeLog.log(id, "mddContent", result.sanitizedMdd);
-          void this.persistMddDeliveryGateSnapshot(
+          void this.mddPersist.persistMddDeliveryGateSnapshot(
             targetStage.id,
             await evaluateMddDeliveryGatePrepared(result.sanitizedMdd),
           );
         } else {
-          await this.throwMddPipelineBadRequest(result, targetStage.id, mddForPipeline);
+          await this.mddPersist.throwMddPipelineBadRequest(result, targetStage.id, mddForPipeline);
         }
       }
     }
@@ -2830,73 +2700,7 @@ name: ${JSON.stringify(name)}
     rawMarkdown: string,
     options?: { stageId?: string; finalize?: boolean; lockedPatternIds?: readonly string[] },
   ): Promise<void> {
-    const existing = await this.assertProjectAccess(projectId);
-    const existingRaw = existing as Project & { stages: StageWithEst[] };
-    const targetStage: StageWithEst | undefined =
-      (options?.stageId?.trim() && existingRaw.stages.find((s) => s.id === options.stageId!.trim())) ||
-      pickPrimaryStage(existingRaw.stages);
-    if (!targetStage) throw new BadRequestException("El proyecto no tiene etapas");
-
-    const lockedIds =
-      options?.lockedPatternIds?.length
-        ? new Set(options.lockedPatternIds)
-        : selectedPatternIdsFromMdd(peelDocumentBodyForPersist(targetStage.mddContent ?? ""));
-    const applyLockedPatterns = (md: string): string =>
-      lockedIds.size > 0 ? updateMddGovernancePatterns(md, lockedIds) : md;
-
-    const cleaned = cleanDocumentContent(peelDocumentBodyForPersist(rawMarkdown));
-    if (cleaned.trim().length < 48) return;
-
-    const enforced = enforceMddGovernancePatternsOnPersist(cleaned, targetStage.mddContent, {});
-    const mddForPipeline = applyLockedPatterns(enforced.markdown);
-
-    if (!options?.finalize) {
-      const prepared = await prepareMddForOutput(mddForPipeline);
-      const stored = storeMddMarkdownForPersist(applyLockedPatterns(prepared));
-      await this.prisma.stage.update({
-        where: { id: targetStage.id },
-        data: { mddContent: stored },
-      });
-      await this.changeLog.log(projectId, "mddContent", prepared);
-      return;
-    }
-
-    const mergedForSemaphore = this.mergeProjectForSemaphore(existingRaw, {});
-    const result = await this.mddUpdatePipeline.process(
-      mddForPipeline,
-      this.buildSemaphoreBase(mergedForSemaphore),
-      { projectId, stageId: targetStage.id },
-    );
-    if (!result.ok) {
-      if (result.code === MDD_DELIVERY_GATE_ERR) {
-        const gate = await evaluateMddDeliveryGatePrepared(mddForPipeline);
-        void this.persistMddDeliveryGateSnapshot(targetStage.id, gate);
-      }
-      throw new BadRequestException({
-        code: result.code,
-        message: result.message,
-      });
-    }
-
-    const finalMdd = applyLockedPatterns(result.sanitizedMdd);
-    await this.prisma.stage.update({
-      where: { id: targetStage.id },
-      data: {
-        mddContent: storeMddMarkdownForPersist(finalMdd),
-        status: result.status,
-        precisionScore: result.precisionScore,
-      },
-    });
-    await this.changeLog.log(projectId, "mddContent", finalMdd);
-    void this.persistMddDeliveryGateSnapshot(
-      targetStage.id,
-      await evaluateMddDeliveryGatePrepared(finalMdd),
-    );
-    await this.estimationRecalc.recalcAndUpsert(targetStage.id, {
-      mddContent: finalMdd,
-      infraContent: existingRaw.infraContent ?? null,
-      status: result.status,
-    });
+    return this.mddPersist.persistMddFromBackgroundJob(projectId, rawMarkdown, options);
   }
 
   async generateTasks(
@@ -3556,7 +3360,7 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
     const enforced = enforceMddGovernancePatternsOnPersist(patched, stage.mddContent);
     const result = await this.mddUpdatePipeline.process(
       enforced.markdown,
-      this.buildSemaphoreBase(project),
+      buildSemaphoreBaseFromProject(project),
       { projectId, stageId },
     );
     if (result.ok) {
@@ -3575,7 +3379,7 @@ Usa la misma ruta que el MDD (puedes usar \`:id\` o \`{id}\` en path params). NO
         status: result.status,
       });
     } else {
-      await this.throwMddPipelineBadRequest(result, stageId, enforced.markdown);
+      await this.mddPersist.throwMddPipelineBadRequest(result, stageId, enforced.markdown);
     }
   }
 
