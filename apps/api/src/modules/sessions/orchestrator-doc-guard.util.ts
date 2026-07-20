@@ -1,4 +1,5 @@
 import {
+  isAssistantAwaitingDocumentEditApproval,
   isHypotheticalDocumentEditOffer,
   looksLikeDbgaEditRequest,
   workshopPanelPersistFailedChatNote,
@@ -159,6 +160,12 @@ export function appendOrchestratorDocNotPersistedWarning(
   return `${assistantContent.trim()}${warning}`;
 }
 
+function userRequestedDocumentEdit(tab: string, userMessage: string): boolean {
+  return tab === "benchmark"
+    ? looksLikeDbgaEditRequest(userMessage)
+    : looksLikeOrchestratorDocModificationRequest(userMessage);
+}
+
 export function shouldWarnOrchestratorDocNotPersisted(params: {
   tab: string;
   userMessage: string;
@@ -176,10 +183,16 @@ export function shouldWarnOrchestratorDocNotPersisted(params: {
   if (currentDocLen < 80) return false;
   const persisted = docPersisted ?? docWasPersistedForTab(tab, flags);
   if (persisted) return false;
-  if (hadDelimiter) return true;
-  const userWantsEdit =
-    tab === "benchmark"
-      ? looksLikeDbgaEditRequest(userMessage)
-      : looksLikeOrchestratorDocModificationRequest(userMessage);
-  return userWantsEdit || chatClaimsDocumentWasModified(assistantContent);
+
+  // Propuesta pendiente de confirmación: no persistir (ni avisar fallo) hasta «sí» / «aplica».
+  if (isAssistantAwaitingDocumentEditApproval(assistantContent)) return false;
+
+  const userWantsEdit = userRequestedDocumentEdit(tab, userMessage);
+  const assistantClaimsEdit = chatClaimsDocumentWasModified(assistantContent);
+
+  if (hadDelimiter) {
+    return userWantsEdit || assistantClaimsEdit;
+  }
+
+  return userWantsEdit || assistantClaimsEdit;
 }

@@ -81,6 +81,13 @@ describe("looksLikeDbgaEditRequest", () => {
     assert.equal(looksLikeDbgaEditRequest(msg), false);
   });
 
+  it("trata aclaración plugin vs motor de licencias como exploración", () => {
+    const msg =
+      "Esos límites los impone el plugin o son límites que impone nuestro motor de licencias y tenemos el mecanismo para controlar eso";
+    assert.ok(isUserExploringDbgaIntent(msg));
+    assert.equal(looksLikeDbgaEditRequest(msg), false);
+  });
+
   it("sigue detectando cubrir gap como edición explícita", () => {
     assert.ok(
       looksLikeDbgaEditRequest(
@@ -127,6 +134,14 @@ describe("isHypotheticalDocumentEditOffer", () => {
     assert.ok(
       isHypotheticalDocumentEditOffer(
         "¿Prefieres que profundice en esta arquitectura y la incorpore al DBGA como una sección de Capa de Abstracción?",
+      ),
+    );
+  });
+
+  it("detecta «¿Te parece correcto?» + actualizaré el DBGA", () => {
+    assert.ok(
+      isHypotheticalDocumentEditOffer(
+        "¿Te parece correcto este enfoque? Si es así, actualizaré el DBGA para dejar explícito que el motor gestiona cuotas.",
       ),
     );
   });

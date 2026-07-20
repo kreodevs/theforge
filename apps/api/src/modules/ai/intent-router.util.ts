@@ -45,7 +45,7 @@ export function assistantOfferedDocumentEdit(assistantText: string): boolean {
   const t = (assistantText ?? "").trim();
   if (t.length < 12) return false;
   if (!/\?/m.test(t)) return false;
-  return /\b(?:te parece|quieres que|confirmas|procedo|lo integro|si es as[ií]|puedo integrarlo|puedo aplicarlo)\b/i.test(
+  return /\b(?:te parece|quieres que|confirmas|procedo|lo integro|si es as[ií]|puedo integrarlo|puedo aplicarlo|actualizar[eé]\s+el\s+(?:dbga|documento))\b/i.test(
     t,
   );
 }

@@ -97,7 +97,23 @@ export function isUserExploringDbgaIntent(message: string): boolean {
     return true;
   }
 
-  if (/\b(?:¿te\s+parece\s+bien|te\s+parece\s+bien\s+esta)\b/i.test(m)) return true;
+  // Aclaración plugin vs motor / quién impone límites (charla antes de editar).
+  if (
+    /\b(?:los|esos|estos)\s+l[ií]mites?\b/i.test(m) &&
+    /\b(?:plugin|motor|evd)\b/i.test(m)
+  ) {
+    return true;
+  }
+  if (/\b(?:impone|imponen)\b/i.test(m) && /\b(?:plugin|motor|evd)\b/i.test(m)) {
+    return true;
+  }
+  if (/\b(?:plugin|evd)\b[^.?!\n]{0,160}\b(?:motor de licenc|nuestro motor)\b/i.test(m)) {
+    return true;
+  }
+
+  if (/\b(?:¿te\s+parece\s+bien|te\s+parece\s+bien\s+esta|¿te\s+parece\s+correcto)\b/i.test(m)) {
+    return true;
+  }
 
   if (/\bsi\s+es\s+as[ií]\b/i.test(m) && /\b(integr|incorpor|añad|agreg|actualiz|modific|sac)\w*/i.test(m)) {
     return true;
@@ -194,5 +210,28 @@ export function isHypotheticalDocumentEditOffer(text: string): boolean {
     return true;
   }
 
+  if (/\b¿te parece correcto\b/i.test(t)) return true;
+
+  if (
+    /\bsi es as[ií]\b/i.test(t) &&
+    /\b(?:actualizar[eé]|integrar[eé]|incorporar[eé]|lo actualizar[eé]|lo integrar[eé])\b[^.?!\n]{0,120}\b(?:dbga|documento|panel|fase\s*0|benchmark)\b/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    /\b(?:actualizar[eé]|integrar[eé]|incorporar[eé])\s+(?:el\s+)?(?:dbga|documento|panel)\b/i.test(t) &&
+    /\?/.test(t)
+  ) {
+    return true;
+  }
+
   return false;
+}
+
+/** El asistente propone un cambio al documento y espera confirmación del usuario. */
+export function isAssistantAwaitingDocumentEditApproval(text: string): boolean {
+  return isHypotheticalDocumentEditOffer(text);
 }

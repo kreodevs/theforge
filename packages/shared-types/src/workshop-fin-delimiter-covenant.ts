@@ -52,10 +52,18 @@ export function workshopFinDelimiterCovenant(finTag: string, label: string): str
   );
 }
 
+/** Antes de pedir confirmación para editar el DBGA: la propuesta va visible en el chat. */
+export const WORKSHOP_DBGA_APPROVAL_BEFORE_EDIT_INSTRUCTION =
+  "**Antes de editar — propuesta en el chat (obligatorio):** Si respondes una duda, aclaras plugin vs motor, o pides confirmación " +
+  "(«¿Te parece correcto?», «Si es así lo integro…»), **incluye en el mensaje de chat** el texto/sección/tabla markdown exacta que propones " +
+  "añadir o cambiar en el DBGA, para que el usuario pueda aprobar o corregir. **No** emitas `---FIN_DBGA---` hasta confirmación explícita " +
+  "(«sí», «dale», «aplica», «hazlo»). **Prohibido** decir solo «actualizaré el DBGA» sin mostrar el contenido propuesto.";
+
 /** Covenant específico DBGA / tab Benchmark. */
 export const WORKSHOP_DBGA_EDIT_COVENANT =
   "**REGLA FIRMADA — DBGA (The Forge y agentes):**\n" +
   "1. Pedidos de **revisar**, **auditar**, **cubrir gaps**, **mejorar** o **actualizar** el análisis = edición del **documento COMPLETO**, no solo conversación.\n" +
   "2. Si el alcance es ambiguo → **pregunta en el chat** (sin documento, sin delimitador). Cuando apliques cambios → DBGA **COMPLETO** + línea exacta `---FIN_DBGA---` + mensaje breve después.\n" +
   "3. **Inviolable:** sin `---FIN_DBGA---` el panel **no persiste**. **Prohibido** pedir al usuario delimitadores o reformulaciones técnicas.\n" +
-  "4. **Prohibido** responder solo «He actualizado…» / «El cambio ya está en el panel» sin el markdown completo antes del delimitador.";
+  "4. **Prohibido** responder solo «He actualizado…» / «El cambio ya está en el panel» sin el markdown completo antes del delimitador.\n" +
+  `5. ${WORKSHOP_DBGA_APPROVAL_BEFORE_EDIT_INSTRUCTION}`;

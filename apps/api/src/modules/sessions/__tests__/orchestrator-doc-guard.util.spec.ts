@@ -99,7 +99,22 @@ describe("orchestrator-doc-guard.util", () => {
     );
   });
 
-  it("avisa cuando hubo delimitador pero el panel no persistió", () => {
+  it("avisa cuando hubo delimitador pero el panel no persistió y el usuario pidió edición", () => {
+    assert.equal(
+      shouldWarnOrchestratorDocNotPersisted({
+        tab: "benchmark",
+        userMessage: "integrar kill switch al documento",
+        assistantContent: "He integrado el Kill Switch en el DBGA.",
+        flags: { hasDbga: false },
+        currentDocLen: 5000,
+        docPersisted: false,
+        hadDelimiter: true,
+      }),
+      true,
+    );
+  });
+
+  it("no avisa si hubo delimitador en plática sin pedido de edición", () => {
     assert.equal(
       shouldWarnOrchestratorDocNotPersisted({
         tab: "benchmark",
@@ -110,7 +125,24 @@ describe("orchestrator-doc-guard.util", () => {
         docPersisted: false,
         hadDelimiter: true,
       }),
-      true,
+      false,
+    );
+  });
+
+  it("no avisa cuando el asistente pide confirmación antes de editar DBGA", () => {
+    assert.equal(
+      shouldWarnOrchestratorDocNotPersisted({
+        tab: "benchmark",
+        userMessage:
+          "Esos límites los impone el plugin o los impone nuestro motor de licencias?",
+        assistantContent:
+          "¿Te parece correcto este enfoque? Si es así, actualizaré el DBGA para dejar explícito el Usage Tracking.",
+        flags: { hasDbga: false },
+        currentDocLen: 5000,
+        docPersisted: false,
+        hadDelimiter: true,
+      }),
+      false,
     );
   });
 });

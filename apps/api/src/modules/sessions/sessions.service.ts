@@ -46,6 +46,7 @@ import {
   wouldShrinkDbgaDangerously,
 } from "./dbga-edit.util.js";
 import {
+  isAssistantAwaitingDocumentEditApproval,
   looksLikeApiEndpointCatalog,
   looksLikeDbgaDocumentBody,
   looksLikeDbgaEditRequest,
@@ -1248,6 +1249,18 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
 
     const parsed = parseBenchmarkResponse(safeResponse);
     if (parsed) {
+      const awaitingApproval =
+        isAssistantAwaitingDocumentEditApproval(parsed.chatPart) ||
+        isAssistantAwaitingDocumentEditApproval(safeResponse);
+      if (awaitingApproval) {
+        const chat = parsed.chatPart.trim();
+        const proposal = parsed.docPart.trim();
+        const rawChat =
+          chat.length >= 180 || !proposal || looksLikeDbgaDocumentBody(proposal)
+            ? chat || safeResponse.trim()
+            : `${chat}\n\n**Propuesta para el DBGA:**\n\n${proposal}`.trim();
+        return { hasDbga: false, rawChat: rawChat || safeResponse.trim() };
+      }
       return {
         hasDbga: true,
         dbgaDocPart: parsed.docPart,

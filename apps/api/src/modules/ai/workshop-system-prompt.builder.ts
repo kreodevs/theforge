@@ -6,6 +6,7 @@ import { BENCHMARK_REFINE_PROMPT } from "./prompts/phase0-benchmark-refine-promp
 import { DOCUMENT_CHANGELOG_CHAT_INSTRUCTION } from "./prompts/with-document-changelog-instructions.js";
 import { BRD_CHAT_REFINE_BUSINESS_RULES } from "./prompts/brd-generation-prompt.js";
 import {
+  WORKSHOP_DBGA_APPROVAL_BEFORE_EDIT_INSTRUCTION,
   WORKSHOP_DBGA_EDIT_COVENANT,
   workshopFinDelimiterCovenant,
   isExplicitContext7ChatRequest,
@@ -160,6 +161,9 @@ function appendSyncWorkshopInstructions(
           `Si el usuario te pide explícitamente hacer un cambio (ej. "agrega esto", "actualiza", "haz el cambio"), ` +
           `entonces sí debes devolver el documento actualizado con el delimitador ---FIN_${tag ?? "DOC"}---. ` +
           `Pero mientras el usuario solo pregunte o explore, responde sin modificar el documento.`;
+        if (at === "benchmark") {
+          s += `\n\n${WORKSHOP_DBGA_APPROVAL_BEFORE_EDIT_INSTRUCTION}`;
+        }
       } else {
         // direct_edit o mixed — mantener detección de cambios pero con matiz
         s +=
@@ -171,6 +175,9 @@ function appendSyncWorkshopInstructions(
           `Solo aplica cambios cuando el usuario confirme explícitamente ` +
           `(ej. "sí", "dale", "aplica", "hazlo", "integra eso", "haz los cambios"). ` +
           `Cuando apliques cambios, DEBES devolver el documento actualizado con su delimitador ---FIN_TAG--- inmediatamente.`;
+        if (at === "benchmark") {
+          s += `\n\n${WORKSHOP_DBGA_APPROVAL_BEFORE_EDIT_INSTRUCTION}`;
+        }
       }
   
       if (tag && !options?.welcomeBrief) {
@@ -309,6 +316,9 @@ function appendStreamWorkshopInstructions(
         `Si el usuario te pide explícitamente hacer un cambio (ej. "agrega esto", "actualiza", "haz el cambio"), ` +
         `entonces sí debes devolver el documento actualizado con el delimitador ---FIN_${tag ?? "DOC"}---. ` +
         `Pero mientras el usuario solo pregunte o explore, responde sin modificar el documento.`;
+      if (at === "benchmark") {
+        s += `\n\n${WORKSHOP_DBGA_APPROVAL_BEFORE_EDIT_INSTRUCTION}`;
+      }
     } else {
       s +=
         `\n**INSTRUCCIÓN — DETECCIÓN DE CAMBIOS:** Si el usuario da una **instrucción directa** ` +
@@ -320,6 +330,9 @@ function appendStreamWorkshopInstructions(
         `(ej. "sí", "dale", "aplica", "hazlo", "integra eso", "haz los cambios"). ` +
         `Cuando apliques cambios, DEBES devolver el documento actualizado con su delimitador ---FIN_TAG--- inmediatamente. ` +
         `**Prohibido** afirmar en el chat que ya ajustaste o eliminaste algo del documento si no incluyes el markdown completo antes de \`---FIN_TAG---\`.`;
+      if (at === "benchmark") {
+        s += `\n\n${WORKSHOP_DBGA_APPROVAL_BEFORE_EDIT_INSTRUCTION}`;
+      }
     }
   
     if (tag && !options?.welcomeBrief) {
