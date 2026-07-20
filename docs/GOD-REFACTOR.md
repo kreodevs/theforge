@@ -600,5 +600,6 @@ Fase 6 (legacy/MCP)
 | `mermaid-fences.ts` + `brace.util.ts` | ✅ |
 | `persist-pipeline.ts` + `persist-format.util.ts` | ✅ |
 | `cross-consistency.ts` | ✅ |
-| Barrel `mdd-sanitize.ts` &lt; 200 L | ✅ (~76 L) |
-| `internal.ts` &lt; 800 L | pendiente (~2540 L) |
+| `contratos-format.ts` | ✅ |
+| Barrel `mdd-sanitize.ts` &lt; 200 L | ✅ (~84 L) |
+| `internal.ts` &lt; 800 L | pendiente (~1990 L) |

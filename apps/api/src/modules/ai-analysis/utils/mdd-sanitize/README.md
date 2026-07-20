@@ -14,7 +14,8 @@ Submódulos extraídos de `../mdd-sanitize.ts` durante el refactor GOD-REFACTOR 
 | `persist-format.util.ts` | 3 exports (re-export barrel) | HR/fences del pipeline de persist: `closeUnclosedCodeFencesInDraft`, `collapseConsecutiveHorizontalRules`, `stripStrayParenAfterJsonCodeBlocks` |
 | `persist-pipeline.ts` | 11 exports (re-export barrel) | `prepare/store/sanitize` at persist, `normalizeMddFormat`, `finalizeMddDeliverable`, `applyPreDeliveryGateFixes` |
 | `cross-consistency.ts` | ~25 exports (re-export barrel) | Coherencia cruzada §1–§7: JWT, outbox, dual approval, lockout, patches LLM, detect* |
-| `internal.ts` | resto de exports vía barrel | JSON §4, contratos, normalize markdown, structured helpers |
+| `contratos-format.ts` | 5 exports (re-export barrel) | §4 Contratos: JSON repair, tablas markdown, `ensureContratosSection` |
+| `internal.ts` | resto de exports vía barrel | §1–§3 normalize, structured builders, infra manifest helpers |
 
 El entrypoint estable para consumidores sigue siendo `../mdd-sanitize.ts` (re-exports).
 
@@ -27,3 +28,5 @@ El entrypoint estable para consumidores sigue siendo `../mdd-sanitize.ts` (re-ex
 **Exports de `persist-pipeline.ts`:** `sanitizeMddAtPersist`, `prepareMddMarkdownForPersist`, `storeMddMarkdownForPersist`, `sanitizeMddForExport`, `normalizeMddFormat`, `finalizeMddDeliverable`, `applyPreDeliveryGateFixes`, `repairGarbageHeadings`, `repairManifestJsonClosing`, `demoteProseHeadingsInSections`, `stripUiUxSectionForApiOnlyMvp`.
 
 **Exports principales de `cross-consistency.ts`:** `applyDeterministicCrossConsistencyFixes`, `detectCrossConsistencyIssues`, `applyCrossConsistencyPatches`, `fixDeterministicMddCoherence`, `ensureSecurityLockoutInSection6`, `fixDualApprovalSchemaInDraft`, `detectDuplicateOutboxTables`, `draftUsesRs256Jwt`.
+
+**Exports de `contratos-format.ts`:** `repairNestedJsonFencesInDraft`, `repairDisplacedJsonBracesInContratos`, `formatContratosBody`, `normalizeContratosTableSummary`, `ensureContratosSection`.

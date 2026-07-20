@@ -47,6 +47,11 @@ import {
   ensureHorizontalRuleBeforeH2,
 } from "./persist-format.util.js";
 import {
+  formatContratosBody,
+  repairDisplacedJsonBracesInContratos,
+  repairNestedJsonFencesInDraft,
+} from "./contratos-format.js";
+import {
   alignInfraNodeVersionWithSection2,
   applyDeterministicCrossConsistencyFixes,
   ensureSecurityLockoutInSection6,
@@ -59,7 +64,6 @@ import {
   ensureTechnicalMetadataAtEndOfSection2,
   fixSection6BulletedJsonToMarkdown,
   forceStripBrokenPrefix,
-  formatContratosBody,
   convertSection2JsonBodyToMarkdown,
   collapseDuplicateMainTitle,
   stripBrokenMetadataDocumentBlock,
@@ -73,8 +77,6 @@ import {
   normalizeMddEnglishSubheadings,
   unescapeLiteralNewlines,
   unwrapSection2SqlBlockContainingJson,
-  repairDisplacedJsonBracesInContratos,
-  repairNestedJsonFencesInDraft,
   ensureTechnicalMetadataBlockInDraft,
   mddExcludesWebUiSurface,
   CANONICAL_HEADINGS,
