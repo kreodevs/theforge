@@ -615,7 +615,8 @@ Fase 6 (legacy/MCP)
 | `manager-context.util.ts` | ✅ |
 | `manager-heuristics.ts` | ✅ |
 | `manager-plan.ts` (`buildMddPlan`, `expandSectionsToRun`, `generateMddPlanWithLLM`) | ✅ |
+| `manager-llm-turn.ts` | ✅ |
+| `manager-types.ts` | ✅ |
 | `manager-state-handlers.ts` | pendiente |
-| `manager-llm-turn.ts` | pendiente |
 | `manager-delegate.ts` | pendiente |
-| `mdd-manager.node.ts` &lt; 150 L (fachada) | pendiente (~1128 L) |
+| `mdd-manager.node.ts` &lt; 150 L (fachada) | pendiente (~910 L) |
