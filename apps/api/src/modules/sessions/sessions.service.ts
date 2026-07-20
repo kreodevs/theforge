@@ -38,6 +38,7 @@ import {
   extractDbgaProposedLabels,
   dbgaContainsUserEditKeywords,
   isDbgaContentNearlyIdentical,
+  isDbgaEditEffectivelyUnchanged,
   isPartialBenchmarkDoc,
   mergeBenchmarkPartialDoc,
   parseBenchmarkResponse,
@@ -1428,6 +1429,8 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
 
 **Anti-borrado (crítico):** Conserva TODAS las secciones existentes del documento actual (cabecera, industria, funcionalidades, arquitectura, gaps, etc.). Si el usuario aporta un catálogo de endpoints (GET/POST/…) o una lista numerada corta, **añádelo o fusiónalo** en una sección de integración/API — NUNCA reemplaces el documento entero por solo esa lista.
 
+**Delimitador inviolable:** La última línea del documento (antes del mensaje de chat) DEBE ser exactamente ---FIN_DBGA---. Sin ella el sistema descarta la respuesta.
+
 Petición del usuario:
 ---
 ${msg}
@@ -1441,10 +1444,12 @@ ${msg}
 
     try {
       let response = await this.ai.generateResponse(refinePrompt, [], llmOpts);
-      let merged = this.extractMergedDbgaFromModelResponse(response, current);
+      let merged = this.extractMergedDbgaFromModelResponse(response, current, {
+        requireFinDelimiter: true,
+      });
 
       const unchanged =
-        merged != null && isDbgaContentNearlyIdentical(merged, current);
+        merged != null && isDbgaEditEffectivelyUnchanged(merged, current, userMessage);
       const missingIntent =
         merged != null && !dbgaReflectsUserEditIntent(merged, userMessage);
 
@@ -1453,37 +1458,47 @@ ${msg}
           `[Sessions] refineDbga retry (unchanged=${unchanged}, missingIntent=${missingIntent})`,
         );
         response = await this.ai.generateResponse(
-          `${refinePrompt}\n\nREINTENTO: la respuesta anterior NO aplicó los cambios. El documento debe reflejar explícitamente lo pedido (p. ej. tenant_id, tablas espejo con id de origen e id propio, catálogo multi-origen).`,
+          `${refinePrompt}\n\nREINTENTO: la respuesta anterior NO aplicó los cambios. El documento debe reflejar explícitamente lo pedido (p. ej. PAT Wasender, QR de sesión, tenant_id). Termina con ---FIN_DBGA---.`,
           [],
           llmOpts,
         );
-        merged = this.extractMergedDbgaFromModelResponse(response, current);
+        merged = this.extractMergedDbgaFromModelResponse(response, current, {
+          requireFinDelimiter: true,
+        });
       }
 
       const stillBad =
         !merged ||
-        isDbgaContentNearlyIdentical(merged, current) ||
+        isDbgaEditEffectivelyUnchanged(merged, current, userMessage) ||
         !dbgaReflectsUserEditIntent(merged, userMessage);
       if (stillBad) {
         const keywords = extractDbgaEditKeywords(userMessage, 10);
-        if (keywords.length > 0) {
-          console.warn("[Sessions] refineDbga final retry with keywords:", keywords.join(", "));
+        const labels = extractDbgaProposedLabels(userMessage);
+        const concepts = [...new Set([...labels, ...keywords])].slice(0, 12);
+        if (concepts.length > 0) {
+          console.warn("[Sessions] refineDbga final retry with concepts:", concepts.join(", "));
           response = await this.ai.generateResponse(
-            `${refinePrompt}\n\nREINTENTO FINAL (obligatorio): incorpora explícitamente en el DBGA COMPLETO estos conceptos: ${keywords.join(", ")}. Termina con ---FIN_DBGA---.`,
+            `${refinePrompt}\n\nREINTENTO FINAL (obligatorio): incorpora explícitamente en el DBGA COMPLETO estos conceptos: ${concepts.join(", ")}. Termina con ---FIN_DBGA---.`,
             [],
             llmOpts,
           );
-          merged = this.extractMergedDbgaFromModelResponse(response, current);
+          merged = this.extractMergedDbgaFromModelResponse(response, current, {
+            requireFinDelimiter: true,
+          });
         }
       }
 
-      if (!merged || isDbgaContentNearlyIdentical(merged, current)) return null;
+      if (!merged || isDbgaEditEffectivelyUnchanged(merged, current, userMessage)) return null;
       if (!dbgaReflectsUserEditIntent(merged, userMessage)) {
-        const grew = merged.length > current.length + 80;
+        const grew = merged.length > current.length + 40;
         const mirrorCols =
           /\borigen_id\b|\bsource_id\b|\bid_origen\b|\bid_espejo\b|\bmirror_id\b|\bid_propio\b|\btenant_id\b/i;
+        const proposedOk = extractDbgaProposedLabels(userMessage).some((l) =>
+          merged!.toLowerCase().includes(l.toLowerCase()),
+        );
         if (
           !(
+            proposedOk ||
             (grew &&
               mirrorCols.test(merged) &&
               /\bespejo|origen|propio/i.test(userMessage)) ||
@@ -1503,21 +1518,36 @@ ${msg}
   private extractMergedDbgaFromModelResponse(
     response: string,
     currentDbga?: string,
+    opts?: { requireFinDelimiter?: boolean },
   ): string | null {
     const trimmed = response?.trim() ?? "";
     if (!trimmed) return null;
 
-    const finIdx = trimmed.indexOf("---FIN_DBGA---");
+    // Refinado: exige marcador FIN_DBGA (tolerante a variantes del modelo, no al fallback H1).
+    const finSplit =
+      parseBenchmarkResponse(trimmed) ?? this.parser.splitDbgaAndChat(trimmed);
+    if (opts?.requireFinDelimiter && !finSplit) {
+      console.warn("[Sessions] refineDbga: respuesta sin ---FIN_DBGA---; descartada");
+      return null;
+    }
+
+    const finIdx = trimmed.search(/-{0,}[ \t]*FIN_DBGA[ \t]*-{0,}/i);
     const withoutFin = finIdx >= 0 ? trimmed.slice(0, finIdx).trim() : trimmed;
 
     const split =
-      parseBenchmarkResponse(trimmed) ??
-      this.parser.splitDbgaAndChat(trimmed) ??
-      this.parser.detectBenchmarkDocFallback(withoutFin) ??
-      this.parser.detectBenchmarkDocFallback(trimmed);
+      finSplit ??
+      (!opts?.requireFinDelimiter
+        ? this.parser.detectBenchmarkDocFallback(withoutFin) ??
+          this.parser.detectBenchmarkDocFallback(trimmed)
+        : null);
 
     let docPart = split?.docPart?.trim();
-    if (!docPart && withoutFin.length >= 400 && /^#\s/m.test(withoutFin)) {
+    if (
+      !opts?.requireFinDelimiter &&
+      !docPart &&
+      withoutFin.length >= 400 &&
+      /^#\s/m.test(withoutFin)
+    ) {
       docPart = withoutFin;
     }
     if (!docPart) return null;

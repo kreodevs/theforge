@@ -14,9 +14,9 @@ const DBGA_DOC_TARGET_RE =
 const DBGA_IMPERATIVE_RE =
   /\b(?:haz\s+(?:las\s+modific|los\s+cambios|el\s+cambio|los\s+ajustes)|aplica\s+(?:los\s+)?cambios|aplica\s+el\s+cambio|persiste\s+en\s+el\s+panel|guarda\s+en\s+el\s+panel)\b/i;
 
-/** Renombre / etiquetado explícito (p. ej. «llamarlos PAT Wasender y PAT SSO»). */
+/** Renombre / etiquetado explícito (p. ej. «llamarlos PAT Wasender» / «llámalo ya así»). */
 const DBGA_RENAME_INTENT_RE =
-  /\b(?:llamarl[oa]s|renombr(?:ar|a|e)|n[oó]mbral[oa]s|denomin(?:ar|a)|para\s+evitar\s+confusiones)\b/i;
+  /\b(?:llamarl[oa]s|ll[aá]mal[oa]|renombr(?:ar|a|e)|n[oó]mbral[oa]s|denomin(?:ar|a)|para\s+evitar\s+confusiones)\b/i;
 
 const DBGA_DOMAIN_WITH_VERB_RE =
   /\b(?:modific|actualiz|añad|agreg|ajust|incorpor|integr|corrige|cubr|elimina|saca|quita)/i;

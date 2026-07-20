@@ -142,7 +142,10 @@ export class IntentRouterService {
     }
 
     if (looksLikeDbgaEditRequest(trimmed)) {
-      return { intent: "direct_edit", action: "edit_document", confidence: 0.9 };
+      // Imperativos cortos → alta confianza. Mensajes largos de dominio → confianza
+      // media para que el LLM de intención confirme (ruteo preferente post-refactor).
+      const confidence = trimmed.length > 120 ? 0.78 : 0.9;
+      return { intent: "direct_edit", action: "edit_document", confidence };
     }
 
     const intent = this.intentClassifier.classify(trimmed);
@@ -158,9 +161,12 @@ export class IntentRouterService {
 
     const hasWeakEditSignals =
       hasEmbeddedSpecificationBlock(trimmed) ||
-      /\b(?:integra|incorpora|actualiza|modifica|cumplir|especificaci[oó]n)\b/i.test(trimmed);
+      /\b(?:integra|incorpora|actualiza|modifica|cumplir|especificaci[oó]n|documento\s+deber[ií]a|alinear)\b/i.test(
+        trimmed,
+      );
 
     if (hasWeakEditSignals) {
+      // Baja confianza → LLM decide si es edición o solo chat.
       return { intent: "explore", action: "chat_only", confidence: 0.58 };
     }
 
