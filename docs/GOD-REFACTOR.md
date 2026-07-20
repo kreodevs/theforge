@@ -700,3 +700,12 @@ Fase 6 (legacy/MCP)
 | `views/workshop/WorkshopMddPanel.tsx` + types | ✅ |
 | Panel MDD (gates, toolbar acciones, viewer) extraído | ✅ |
 | `WorkshopView.tsx` — ~4 193 L | ✅ |
+
+### Fase 5 — Workshop frontend (incremento 5d–5e)
+
+| Ítem | Estado |
+|------|--------|
+| `views/workshop/WorkshopSpecBrdAemPanels.tsx` + types | ✅ |
+| `views/workshop/WorkshopAgentPanels.tsx` + types | ✅ |
+| Spec, AEM, UI Screens, BRD y paneles agente extraídos | ✅ |
+| `WorkshopView.tsx` — ~4 085 L | ✅ |

@@ -5,12 +5,9 @@ import {
   FileText,
   Package,
   Loader2,
-  MonitorSmartphone,
   RefreshCw,
   X,
-  Play,
   ListOrdered,
-  Bot,
   ListChecks,
   ArrowDown,
   ArrowUp,
@@ -24,7 +21,6 @@ import {
 import { cn } from "@/lib/utils";
 import {
   agentGovernanceScaffoldHasContent,
-  formatPantallasMarkdownForPreview,
   isLegacyChangeGateSatisfied,
   isLegacyIntegrationHandoffGatePending,
   isPhase0BorradorJson,
@@ -77,13 +73,10 @@ import { WorkshopStandardDocPanels } from "./workshop/WorkshopStandardDocPanels"
 import { WorkshopLegacyPanels } from "./workshop/WorkshopLegacyPanels";
 import { WorkshopBenchmarkPanel } from "./workshop/WorkshopBenchmarkPanel";
 import { WorkshopMddPanel } from "./workshop/WorkshopMddPanel";
+import { WorkshopSpecBrdAemPanels } from "./workshop/WorkshopSpecBrdAemPanels";
+import { WorkshopAgentPanels } from "./workshop/WorkshopAgentPanels";
 import { HANDOFF_GATE_STORAGE_KEY } from "./workshop/workshopLegacyPanels.types";
 import type { WorkshopDocToolbarProps } from "./workshop/workshopDocToolbar.types";
-import { BrdStagePanel } from "../components/BrdStagePanel";
-import { AgentGovernancePanel } from "../components/AgentGovernancePanel";
-import { WorkshopAgentProgressPanel } from "../components/WorkshopAgentProgressPanel";
-import { PendingDocumentationGapsPanel } from "../components/PendingDocumentationGapsPanel";
-import { AgentSessionLogPanel } from "../components/AgentSessionLogPanel";
 import { type DocumentsForZip } from "../utils/downloadDocumentsZip";
 import {
   downloadRepoHandoffFromApi,
@@ -112,23 +105,14 @@ import {
   mddSectionRegenDisabledTitle,
   resolveEffectiveMddContent,
 } from "../utils/mddSectionRegen";
-import { StandardDocPanel } from "../components/StandardDocPanel";
 import { PluginDocPanel } from "../components/PluginDocPanel";
-import { DocEmptyState } from "../components/DocEmptyState";
-import { DocumentClarificationSection } from "../components/DocumentClarificationSection";
 import type { ClarifyableDocumentField } from "@theforge/shared-types";
 import type { AemMarketScope } from "@theforge/shared-types";
-import {
-  WorkshopDirtySaveBar,
-  WorkshopPanelButton,
-  WorkshopButtonIcon,
-} from "../components/WorkshopButtons";
 import { UxUiGuidePanel } from "../components/UxUiGuidePanel";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { AdrsPanel } from "../components/AdrsPanel";
 import { useAutoSaveContent } from "../hooks/useAutoSaveContent";
 import {
-  Button,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -3275,6 +3259,135 @@ export default function WorkshopView({
     ],
   );
 
+  const workshopSpecBrdAemPanelsProps = useMemo(
+    (): import("./workshop/workshopSpecBrdAemPanels.types").WorkshopSpecBrdAemPanelsProps => ({
+      centralPanel,
+      projectId,
+      activeStageId,
+      effectiveMddTrimmed,
+      dbgaContent,
+      specContent,
+      aemContent,
+      uiScreensContent,
+      brdWorkshopDraft,
+      brdDocViewMode,
+      specViewMode,
+      aemViewMode,
+      specDirty,
+      aemDirty,
+      brdWorkshopDirty,
+      brdTobePersistBusy,
+      loading,
+      loadingReason,
+      canGenerateFromCodebase,
+      canGenerateAem,
+      deliverablesReadOnly,
+      clarifySpecDialogOpen,
+      isLegacyProject,
+      activeLegacyState,
+      activeStageBrdContent: activeWorkshopStage?.brdContent,
+      stageDeliverableView,
+      docTs,
+      buildDocClarification,
+      onSpecContentChange: setSpecContent,
+      onAemContentChange: setAemContent,
+      onBrdWorkshopDraftChange: setBrdWorkshopDraft,
+      onClarifySpecDialogOpenChange: setClarifySpecDialogOpen,
+      onPersistSpecContent: () => void persistSpecContent(specContent ?? ""),
+      onPersistAemContent: () => void persistAemContent(aemContent ?? ""),
+      onPersistBrdWorkshopDraft: () => void persistBrdWorkshopDraft(),
+      onGenerateSpec: () => generateSpec(projectId),
+      onOpenAemGenerateDialog: () => setAemGenerateDialogOpen(true),
+      onSyncUiScreens: () => void syncUiScreens(projectId),
+      onSpecBlur: handleSpecBlur,
+      onAemBlur: handleAemBlur,
+      onFetchProject: fetchProject,
+      onLegacyGenerateSpec: () =>
+        void legacyGenerateFromCodebaseDoc(projectId, "spec", activeStageId ?? undefined),
+      onLegacySuggestBrdFromCodebase: async () => {
+        const res = await legacySuggestBrdFromCodebaseDoc(projectId, activeStageId ?? undefined);
+        if (res?.brdContent) setBrdWorkshopDraft(res.brdContent);
+      },
+    }),
+    [
+      centralPanel,
+      projectId,
+      activeStageId,
+      effectiveMddTrimmed,
+      dbgaContent,
+      specContent,
+      aemContent,
+      uiScreensContent,
+      brdWorkshopDraft,
+      brdDocViewMode,
+      specViewMode,
+      aemViewMode,
+      specDirty,
+      aemDirty,
+      brdWorkshopDirty,
+      brdTobePersistBusy,
+      loading,
+      loadingReason,
+      canGenerateFromCodebase,
+      canGenerateAem,
+      deliverablesReadOnly,
+      clarifySpecDialogOpen,
+      isLegacyProject,
+      activeLegacyState,
+      activeWorkshopStage?.brdContent,
+      stageDeliverableView,
+      docTs,
+      buildDocClarification,
+      persistSpecContent,
+      persistAemContent,
+      persistBrdWorkshopDraft,
+      generateSpec,
+      syncUiScreens,
+      handleSpecBlur,
+      handleAemBlur,
+      fetchProject,
+      legacyGenerateFromCodebaseDoc,
+      legacySuggestBrdFromCodebaseDoc,
+    ],
+  );
+
+  const workshopAgentPanelsProps = useMemo(
+    (): import("./workshop/workshopAgentPanels.types").WorkshopAgentPanelsProps => ({
+      centralPanel,
+      projectId,
+      activeStageId,
+      effectiveMddTrimmed,
+      loading,
+      loadingReason,
+      agentGovernanceContent,
+      agentGovernanceViewMode,
+      agentGovernanceExportScaffold,
+      agentGovernanceExportLoading,
+      agentGovernanceGenerating,
+      hasAgentGovernance,
+      documentationGapsRefreshNonce,
+      onGenerateAgentGovernance: () => generateAgentGovernance(projectId),
+      onFetchProject: fetchProject,
+    }),
+    [
+      centralPanel,
+      projectId,
+      activeStageId,
+      effectiveMddTrimmed,
+      loading,
+      loadingReason,
+      agentGovernanceContent,
+      agentGovernanceViewMode,
+      agentGovernanceExportScaffold,
+      agentGovernanceExportLoading,
+      agentGovernanceGenerating,
+      hasAgentGovernance,
+      documentationGapsRefreshNonce,
+      generateAgentGovernance,
+      fetchProject,
+    ],
+  );
+
   const uxUiGuideDirty = (uxUiGuideContent ?? "") !== (project?.uxUiGuideContent ?? "");
 
   if (error && !project) {
@@ -3607,234 +3720,13 @@ export default function WorkshopView({
               />
               </ErrorBoundary>
             )}
-            {centralPanel === "spec" && (
-              <>
-                {stageDeliverableView?.source === "snapshot" ? (
-                  <div
-                    role="status"
-                    className="mb-3 rounded-lg bg-[color-mix(in_oklch,var(--info)_8%,var(--card))] px-3 py-2 text-xs leading-relaxed text-[color-mix(in_oklch,var(--info)_88%,var(--foreground))]"
-                  >
-                    Viendo entregables congelados de etapa {stageDeliverableView.ordinal}
-                    {stageDeliverableView.snapshotCapturedAt
-                      ? ` · ${new Date(stageDeliverableView.snapshotCapturedAt).toLocaleString()}`
-                      : ""}
-                  </div>
-                ) : null}
-                <StandardDocPanel
-                icon={ListOrdered}
-                title="Spec"
-                description="Spec = Benchmark + alcance. Alimenta el MDD; revísalo antes de dar por cerrado el MDD."
-                content={specContent}
-                onContentChange={(v) => setSpecContent(v)}
-                onSave={() => void persistSpecContent(specContent ?? "")}
-                isDirty={specDirty}
-                viewMode={specViewMode}
-                onGenerate={() => generateSpec(projectId)}
-                canGenerate={!!(dbgaContent?.trim() || effectiveMddTrimmed)}
-                isLoading={loading}
-                placeholder="# Spec\n\nEl contenido del Spec se genera aquí o puedes escribirlo manualmente..."
-                onBlur={handleSpecBlur}
-                legacyGenerateLabel={canGenerateFromCodebase ? "Generar Spec desde MDD Inicial" : undefined}
-                onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "spec", activeStageId ?? undefined) : undefined}
-                legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
-                readOnly={deliverablesReadOnly}
-                documentTimestamps={docTs("specContent")}
-                clarification={buildDocClarification(
-                  "specContent",
-                  (c) => setSpecContent(c),
-                  undefined,
-                  {
-                    clarifyOpen: clarifySpecDialogOpen,
-                    onClarifyOpenChange: setClarifySpecDialogOpen,
-                  },
-                )}
-              />
-              </>
-            )}
-            {centralPanel === "aem" && (
-              <StandardDocPanel
-                icon={FileText}
-                title="AEM"
-                description="Análisis y Estudio de Mercado — inteligencia de mercado, competencia, monetización, glosario y dictamen de inversión digital (SEGUIR / NO SEGUIR / SEGUIR CON CONDICIONES)."
-                content={aemContent}
-                onContentChange={(v) => setAemContent(v)}
-                onSave={() => void persistAemContent(aemContent ?? "")}
-                isDirty={aemDirty}
-                viewMode={aemViewMode}
-                onGenerate={() => setAemGenerateDialogOpen(true)}
-                canGenerate={canGenerateAem}
-                isLoading={loading && loadingReason === "aem"}
-                generateLabel="Generar AEM"
-                placeholder="# Análisis y Estudio de Mercado (AEM)\n\nMercado, competencia, planes de monetización y glosario..."
-                onBlur={handleAemBlur}
-                generateBlocked={!canGenerateAem}
-                generateBlockedReason="Completa al menos Benchmark (Deep Research), Fase 0 (DBGA) o BRD antes de generar."
-                documentTimestamps={docTs("aemContent")}
-                clarification={buildDocClarification("aemContent", (c) => setAemContent(c))}
-              />
-            )}
-            {centralPanel === "ui-screens" && (
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-                <div className="mb-1 flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_8%,var(--card))] px-3 py-2.5">
-                  <p className="min-w-0 flex-1 text-xs leading-relaxed text-[color-mix(in_oklch,var(--primary)_62%,var(--foreground))]">
-                    <strong>Pantallas / UI Screens Spec</strong> — documento de texto generado desde el MCP gráfico compatible activo. Lista las pantallas con los componentes reales de la librería conectada, la entidad de dominio asociada y el binding a endpoints. Se regenera al sincronizar (deriva de las entidades del §3 del MDD).
-                  </p>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <Button
-                      type="button"
-                      variant="default"
-                      size="sm"
-                      onClick={() => void syncUiScreens(projectId)}
-                      disabled={loading}
-                      aria-label="Sincronizar Pantallas"
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" aria-hidden />
-                      Sincronizar Pantallas
-                    </Button>
-                  </div>
-                </div>
-                <StandardDocPanel
-                  icon={MonitorSmartphone}
-                  title="Pantallas / UI Screens Spec"
-                  description="Pantallas con componentes reales del MCP gráfico conectado. Pulsa «Sincronizar Pantallas» para (re)generarlo desde las entidades del MDD."
-                  content={
-                    uiScreensContent
-                      ? formatPantallasMarkdownForPreview(uiScreensContent)
-                      : uiScreensContent
-                  }
-                  onContentChange={() => {}}
-                  onSave={() => {}}
-                  isDirty={false}
-                  viewMode="preview"
-                  readOnly
-                  onGenerate={() => void syncUiScreens(projectId)}
-                  canGenerate={!loading}
-                  isLoading={loading}
-                  generateLabel="Sincronizar Pantallas"
-                  placeholder="# Pantallas\n\nPulsa «Sincronizar Pantallas» para generarlo desde el MCP gráfico conectado."
-                  documentTimestamps={docTs("uiScreensContent")}
-                  clarification={buildDocClarification("uiScreensContent", () => {
-                    void fetchProject(projectId);
-                  })}
-                />
-              </div>
-            )}
-            {centralPanel === "brd" && projectId && (
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-                {/* Legacy: generar BRD desde codebaseDoc (AS-IS) antes de describir cambios */}
-                {isLegacyProject && (activeLegacyState?.codebaseDoc ?? "").trim().length > 0 && !brdWorkshopDraft.trim() && (
-                  <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_10%,var(--card))] px-3 py-2.5">
-                    <span className="text-sm text-[color-mix(in_oklch,var(--primary)_62%,var(--foreground))]">
-                      Documenta requisitos AS-IS desde el codebase existente.
-                    </span>
-                    <WorkshopPanelButton
-                      tone="primary"
-                      onClick={async () => {
-                        const res = await legacySuggestBrdFromCodebaseDoc(projectId, activeStageId ?? undefined);
-                        if (res?.brdContent) setBrdWorkshopDraft(res.brdContent);
-                      }}
-                      disabled={loading && loadingReason === "legacy-brd-suggest"}
-                      loading={loading && loadingReason === "legacy-brd-suggest"}
-                    >
-                      {!loading || loadingReason !== "legacy-brd-suggest" ? (
-                        <WorkshopButtonIcon icon={Play} tone="primary" />
-                      ) : null}
-                      Generar BRD desde MDD Inicial
-                    </WorkshopPanelButton>
-                  </div>
-                )}
-                {brdWorkshopDirty && (
-                  <WorkshopDirtySaveBar
-                    message="Cambios sin guardar en el BRD de esta etapa."
-                    onCancel={() => setBrdWorkshopDraft(activeWorkshopStage?.brdContent ?? "")}
-                    onSave={() => void persistBrdWorkshopDraft()}
-                    saving={brdTobePersistBusy}
-                    disabled={brdTobePersistBusy}
-                    className="py-2"
-                  />
-                )}
-                {buildDocClarification("brdContent", (c) => {
-                  setBrdWorkshopDraft(c);
-                  void fetchProject(projectId);
-                }) ? (
-                  <DocumentClarificationSection
-                    {...buildDocClarification("brdContent", (c) => {
-                      setBrdWorkshopDraft(c);
-                      void fetchProject(projectId);
-                    })!}
-                    content={brdWorkshopDraft}
-                  />
-                ) : null}
-                <BrdStagePanel
-                  projectId={projectId}
-                  activeStageId={activeStageId}
-                  brdContent={brdWorkshopDraft}
-                  onBrdContentChange={setBrdWorkshopDraft}
-                  docViewMode={brdDocViewMode}
-                  documentTimestamps={docTs("brdContent")}
-                />
-              </div>
-            )}
-            {/* to-be tab removed — secciones To-Be y As-Is eliminadas del sistema */}
-            {centralPanel === "agent-governance" && (
-              agentGovernanceGenerating ? (
-                <div className="flex min-h-[min(420px,60vh)] flex-1 flex-col items-center justify-center px-4 py-10 sm:px-8">
-                  <WorkshopAgentProgressPanel
-                    title={
-                      loadingReason === "agent-governance"
-                        ? hasAgentGovernance
-                          ? "Regenerando gobernanza de agentes…"
-                          : "Generando gobernanza de agentes…"
-                        : "Generando entregables…"
-                    }
-                    loading
-                    className="w-full max-w-md"
-                  />
-                </div>
-              ) : hasAgentGovernance ? (
-                <AgentGovernancePanel
-                  scaffold={agentGovernanceExportScaffold}
-                  rawContent={agentGovernanceContent}
-                  viewMode={agentGovernanceViewMode}
-                  loading={agentGovernanceExportLoading}
-                />
-              ) : (
-                <DocEmptyState
-                  icon={Bot}
-                  title="Gobernanza de agentes"
-                  description="Scaffold AGENTS.md, .cursor/rules, skills y workflows derivados del MDD (7 §)."
-                  onGenerate={() => generateAgentGovernance(projectId)}
-                  loading={loading}
-                  hasMdd={!!effectiveMddTrimmed}
-                  generateButtonLabel="Generar gobernanza de agentes desde MDD"
-                />
-              )
-            )}
+            <WorkshopSpecBrdAemPanels {...workshopSpecBrdAemPanelsProps} />
+            <WorkshopAgentPanels {...workshopAgentPanelsProps} />
             {centralPanel === "adrs" && (
               <AdrsPanel
                 adrs={adrs}
                 projectId={projectId}
                 onRefresh={fetchAdrs}
-              />
-            )}
-            {centralPanel === "agent-pending-changes" && projectId && activeStageId && (
-              <PendingDocumentationGapsPanel
-                projectId={projectId}
-                stageId={activeStageId}
-                variant="workspace"
-                className="min-h-0 flex-1 border-0 bg-transparent p-0 shadow-none"
-                refreshToken={documentationGapsRefreshNonce}
-                onResolved={() => {
-                  void fetchProject(projectId);
-                }}
-              />
-            )}
-            {centralPanel === "agent-session-log" && projectId && activeStageId && (
-              <AgentSessionLogPanel
-                projectId={projectId}
-                stageId={activeStageId}
-                variant="workspace"
-                className="min-h-0 flex-1 border-0 bg-transparent p-0 shadow-none"
               />
             )}
             {isPluginPanel(centralPanel) && projectId && (

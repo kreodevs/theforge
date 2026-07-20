@@ -14,7 +14,9 @@ Subcomponentes extraídos de `WorkshopView.tsx` (Fase 5b del [GOD-REFACTOR](../.
 | **WorkshopLegacyPanels.tsx** | Banner AS-IS, MDD Inicial, Integración y flujo de modificación legacy. Tipos en `workshopLegacyPanels.types.ts`. |
 | **WorkshopBenchmarkPanel.tsx** | Pestaña Benchmark (Fase 0 + Deep Research). Tipos en `workshopBenchmarkPanel.types.ts`. |
 | **WorkshopMddPanel.tsx** | Panel MDD: gates legacy, acciones (generar, formato, patrones, cascade), auditoría manual y editor. Tipos en `workshopMddPanel.types.ts`. |
+| **WorkshopSpecBrdAemPanels.tsx** | Spec, AEM, UI Screens y BRD de etapa. Tipos en `workshopSpecBrdAemPanels.types.ts`. |
+| **WorkshopAgentPanels.tsx** | Gobernanza de agentes, gaps pendientes y log de sesión. Tipos en `workshopAgentPanels.types.ts`. |
 
 Utilidades puras compartidas con otros módulos viven en `utils/workshopDocToolbar.ts`.
 
-Próximas extracciones planificadas: spec/AEM/BRD/UX, agent-governance y paneles agente.
+Próximas extracciones planificadas: UX guide, ADRs (opcional), métricas/columna chat.
