@@ -1,43 +1,40 @@
 import { createHash } from "node:crypto";
 import { Injectable, Logger } from "@nestjs/common";
-
-function envCacheEnabled(): boolean {
-  const v = process.env.THEFORGE_CONTEXT_CACHE?.trim().toLowerCase();
-  if (v === undefined || v === "") return true;
-  return !["0", "false", "off", "no"].includes(v);
-}
+import {
+  resolvePlatformConfigBoolean,
+  resolvePlatformConfigByKey,
+  resolvePlatformConfigNumber,
+} from "../system-config/platform-config.runtime.js";
 
 /**
  * Caché en memoria del contexto MCP/TheForge por proyecto y huella del índice
  * (equiv. a “revisión” del código sin depender del git hash del repo remoto).
- * Opcional: `THEFORGE_CONTEXT_REVISION` para invalidar manualmente tras deploy del índice.
+ * Opcional: `theforge_context_revision` para invalidar manualmente tras deploy del índice.
  */
 @Injectable()
 export class TheForgeContextCacheService {
   private readonly logger = new Logger(TheForgeContextCacheService.name);
   private readonly store = new Map<string, { value: string; expiresAt: number }>();
-  private readonly ttlMs: number;
-  private readonly maxEntries: number;
-
-  constructor() {
-    this.ttlMs = Math.max(
-      60_000,
-      parseInt(process.env.THEFORGE_CONTEXT_CACHE_TTL_MS ?? `${30 * 60 * 1000}`, 10) || 30 * 60 * 1000,
-    );
-    this.maxEntries = Math.max(8, parseInt(process.env.THEFORGE_CONTEXT_CACHE_MAX_ENTRIES ?? "80", 10) || 80);
-  }
 
   isEnabled(): boolean {
-    return envCacheEnabled();
+    return resolvePlatformConfigBoolean("theforge_context_cache");
+  }
+
+  private ttlMs(): number {
+    return Math.max(60_000, resolvePlatformConfigNumber("theforge_context_cache_ttl_ms"));
+  }
+
+  private maxEntries(): number {
+    return Math.max(8, resolvePlatformConfigNumber("theforge_context_cache_max_entries"));
   }
 
   cacheKey(projectId: string, fingerprint: string): string {
-    const revision = process.env.THEFORGE_CONTEXT_REVISION?.trim() ?? "";
+    const revision = resolvePlatformConfigByKey("theforge_context_revision").trim();
     return `${projectId}\n${revision}\n${fingerprint}`;
   }
 
   fingerprintFromSemanticSlice(projectId: string, semanticText: string): string {
-    const revision = process.env.THEFORGE_CONTEXT_REVISION?.trim() ?? "";
+    const revision = resolvePlatformConfigByKey("theforge_context_revision").trim();
     return createHash("sha256")
       .update(projectId)
       .update("\0")
@@ -47,7 +44,7 @@ export class TheForgeContextCacheService {
       .digest("hex");
   }
 
-  /** Huella fija para contexto vía MCP `generate_legacy_documentation` (invalidar con `THEFORGE_CONTEXT_REVISION`). */
+  /** Huella fija para contexto vía MCP `generate_legacy_documentation` (invalidar con `theforge_context_revision`). */
   legacyDocumentationFingerprint(): string {
     return "generate_legacy_documentation_v2_multi_repo";
   }
@@ -63,12 +60,14 @@ export class TheForgeContextCacheService {
   }
 
   set(key: string, value: string): void {
-    while (this.store.size >= this.maxEntries) {
+    const maxEntries = this.maxEntries();
+    while (this.store.size >= maxEntries) {
       const first = this.store.keys().next().value;
       if (first === undefined) break;
       this.store.delete(first);
     }
-    this.store.set(key, { value, expiresAt: Date.now() + this.ttlMs });
-    this.logger.debug(`[TheForgeContextCache] set key=${key.slice(0, 48)}… ttlMs=${this.ttlMs}`);
+    const ttlMs = this.ttlMs();
+    this.store.set(key, { value, expiresAt: Date.now() + ttlMs });
+    this.logger.debug(`[TheForgeContextCache] set key=${key.slice(0, 48)}… ttlMs=${ttlMs}`);
   }
 }

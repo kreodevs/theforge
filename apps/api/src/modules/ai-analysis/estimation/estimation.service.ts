@@ -46,6 +46,18 @@ import {
   applyDeliveryGateToSemaphoreStatus,
   validateMddForDelivery,
 } from "../utils/mdd-delivery-gate.util.js";
+import { rebuildDomainInventoryPreferringBrd } from "../../engine/domain-inventory-persist.util.js";
+import { reconcileMddSsotBeforeDeliveryGate } from "../../engine/mdd-ssot-repair.util.js";
+import {
+  checkApiVsMdd,
+  checkBlueprintVsMdd,
+  checkInfraVsMdd,
+  checkLogicFlowsVsMdd,
+} from "../../engine/conformance.service.js";
+import {
+  findApiSemanticAliasWarnings,
+  type ConformanceSummary,
+} from "../../engine/mdd-quality-audit.util.js";
 
 /** Horas base por unidad (entidades, pantallas, endpoints) para derivar total. */
 const HOURS_PER_ENTITY = 12;
@@ -807,6 +819,7 @@ export class EstimationService {
 
     // Cargar documentos de etapa + proyecto para métrica integral
     let documents: PlanningDocumentFields = {};
+    let dbgaContent: string | null | undefined;
     const sid = stageId?.trim();
     if (sid) {
       const stage = await this.prisma.stage.findUnique({
@@ -826,6 +839,7 @@ export class EstimationService {
         where: { id: projectId.trim() },
         select: {
           specContent: true,
+          dbgaContent: true,
           architectureContent: true,
           useCasesContent: true,
           userStoriesContent: true,
@@ -837,6 +851,7 @@ export class EstimationService {
         },
       });
       if (projectRec) {
+        dbgaContent = (projectRec as { dbgaContent?: string | null }).dbgaContent;
         documents = {
           ...documents,
           mddContent: content || undefined,
@@ -877,9 +892,65 @@ export class EstimationService {
       stageId: stageId ?? null,
       documents,
     });
-    const deliveryGate = validateMddForDelivery(content);
-    const status = applyDeliveryGateToSemaphoreStatus(metrics.status, deliveryGate);
-    return { ...metrics, status, deliveryGate };
+    const inventory = rebuildDomainInventoryPreferringBrd({
+      brdMarkdown: documents.brdContent,
+      dbgaMarkdown: dbgaContent,
+      mddMarkdown: content,
+    });
+    const repaired = reconcileMddSsotBeforeDeliveryGate(content, {
+      brdMarkdown: documents.brdContent,
+      dbgaMarkdown: dbgaContent,
+      specMarkdown: documents.specContent,
+      inventory,
+    });
+    const gateMarkdown = repaired.markdown;
+    const deliveryGate = validateMddForDelivery(gateMarkdown, {
+      brdMarkdown: documents.brdContent,
+      dbgaMarkdown: dbgaContent,
+      specMarkdown: documents.specContent,
+    });
+    let status = applyDeliveryGateToSemaphoreStatus(metrics.status, deliveryGate);
+
+    let conformanceSummary: ConformanceSummary | undefined;
+    const mddForConf = content.trim();
+    if (mddForConf.length > 80 && (documents.apiContractsContent || documents.infraContent)) {
+      const apiCheck = checkApiVsMdd(mddForConf, documents.apiContractsContent ?? null);
+      const infraCheck = checkInfraVsMdd(mddForConf, documents.infraContent ?? null);
+      const bp = checkBlueprintVsMdd(mddForConf, documents.blueprintContent ?? null);
+      const lf = checkLogicFlowsVsMdd(mddForConf, documents.logicFlowsContent ?? null);
+      const aliasWarnings = findApiSemanticAliasWarnings(
+        mddForConf,
+        documents.apiContractsContent ?? "",
+      );
+      conformanceSummary = {
+        ok: apiCheck.ok && infraCheck.ok && bp.ok && lf.ok,
+        api: {
+          ok: apiCheck.ok,
+          missingCount: apiCheck.missingInApi.length,
+          extraCount: apiCheck.extraInApi.length,
+          aliasWarnings,
+        },
+        infra: {
+          ok: infraCheck.ok,
+          gapCount: infraCheck.gaps.length,
+          gaps: infraCheck.gaps.slice(0, 12),
+        },
+        blueprint: { ok: bp.ok },
+        logicFlows: { ok: lf.ok },
+      };
+      if (!conformanceSummary.ok && status === "green") {
+        status = "yellow";
+      }
+      if (
+        !conformanceSummary.api.ok &&
+        conformanceSummary.api.missingCount > 3 &&
+        status !== "red"
+      ) {
+        status = "red";
+      }
+    }
+
+    return { ...metrics, status, deliveryGate, ...(conformanceSummary ? { conformanceSummary } : {}) };
   }
 
   /** Desglose por sección/agente (0–100) para mostrar en la tabla del chat tras auditar. */
@@ -997,7 +1068,25 @@ export class EstimationService {
 
       // 5. Semáforo
       const gapCount = consistency.gaps.length;
-      const hasGreenCriteria = precision >= PRECISION_GREEN_MIN && gapCount === 0;
+      let conformancePenalty = 0;
+      if (docs && md.trim().length > 80) {
+        if (docs.apiContractsContent?.trim()) {
+          const apiC = checkApiVsMdd(md, docs.apiContractsContent);
+          if (!apiC.ok) {
+            conformancePenalty += Math.min(15, apiC.missingInApi.length * 2 + apiC.extraInApi.length);
+          }
+        }
+        if (docs.infraContent?.trim()) {
+          const infC = checkInfraVsMdd(md, docs.infraContent);
+          if (!infC.ok) conformancePenalty += Math.min(12, infC.gaps.length * 2);
+        }
+      }
+      precision = Math.max(0, precision - conformancePenalty);
+
+      const hasGreenCriteria =
+        precision >= PRECISION_GREEN_MIN &&
+        gapCount === 0 &&
+        conformancePenalty === 0;
       status = hasGreenCriteria ? "green" : precision >= PRECISION_RED_MAX ? "yellow" : "red";
 
       // 6. Hints separados: MDD vs trazabilidad BRD→MDD

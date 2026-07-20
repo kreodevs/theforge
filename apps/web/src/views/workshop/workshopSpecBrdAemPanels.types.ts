@@ -1,0 +1,52 @@
+import type { StageDeliverablesResponse } from "@theforge/shared-types";
+import type { LegacyFlowState } from "@/store/workshopStore";
+import type { WorkshopDocumentTimestamps } from "@/utils/workshop-document-content.util";
+import type { BuildWorkshopDocClarification } from "./workshopStandardDocPanels.types";
+
+export type WorkshopSpecBrdAemPanelId = "spec" | "aem" | "ui-screens" | "brd";
+
+export interface WorkshopSpecBrdAemPanelsProps {
+  centralPanel: WorkshopSpecBrdAemPanelId | string;
+  projectId: string;
+  activeStageId: string | null;
+  effectiveMddTrimmed: string;
+  dbgaContent: string | null;
+  specContent: string | null;
+  aemContent: string | null;
+  uiScreensContent: string | null;
+  brdWorkshopDraft: string;
+  brdDocViewMode: "preview" | "source";
+  specViewMode: "preview" | "source";
+  aemViewMode: "preview" | "source";
+  specDirty: boolean;
+  aemDirty: boolean;
+  brdWorkshopDirty: boolean;
+  brdTobePersistBusy: boolean;
+  loading: boolean;
+  loadingReason: string | null;
+  canGenerateFromCodebase: boolean;
+  canGenerateAem: boolean;
+  deliverablesReadOnly: boolean;
+  clarifySpecDialogOpen: boolean;
+  isLegacyProject: boolean;
+  activeLegacyState: LegacyFlowState | null;
+  activeStageBrdContent: string | null | undefined;
+  stageDeliverableView: StageDeliverablesResponse | null;
+  docTs: (field: string) => WorkshopDocumentTimestamps | null;
+  buildDocClarification: BuildWorkshopDocClarification;
+  onSpecContentChange: (value: string | null) => void;
+  onAemContentChange: (value: string | null) => void;
+  onBrdWorkshopDraftChange: (value: string) => void;
+  onClarifySpecDialogOpenChange: (open: boolean) => void;
+  onPersistSpecContent: () => void;
+  onPersistAemContent: () => void;
+  onPersistBrdWorkshopDraft: () => void;
+  onGenerateSpec: () => void;
+  onOpenAemGenerateDialog: () => void;
+  onSyncUiScreens: () => void;
+  onSpecBlur: () => void;
+  onAemBlur: () => void;
+  onFetchProject: (projectId: string) => void | Promise<unknown>;
+  onLegacyGenerateSpec: () => void;
+  onLegacySuggestBrdFromCodebase: () => void | Promise<void>;
+}

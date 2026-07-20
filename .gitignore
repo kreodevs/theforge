@@ -68,6 +68,8 @@ skills/
 .cursor/skills/.DS_Store
 .cursor/skills/**/.DS_Store
 tools/
+!packages/mcp-server/src/tools/
+!packages/mcp-server/src/tools/**
 tools/registry.py
 cache/
 checkpoints/

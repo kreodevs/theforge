@@ -81,6 +81,14 @@ describe("looksLikeDbgaEditRequest", () => {
     );
   });
 
+  it("detecta revisión de gaps / motor agnóstico como edición DBGA", () => {
+    assert.ok(
+      looksLikeDbgaEditRequest(
+        "evd es un plugin de ejemplo, lo importante es el motor de licenciamiento, revisa que no tenga gaps y que sea un motor de licenciamiento agnóstico",
+      ),
+    );
+  });
+
   it("detecta integración de spec pegada (Portal de Licencias)", () => {
     const spec =
       "# Especificación del Portal de Licencias\n\n**Versión:** 1.0.0\n\n---\n\n## 1. Visión General\n\n" +

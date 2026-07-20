@@ -245,4 +245,10 @@ export interface ProjectNextTaskResponse extends NextTaskDocumentLayout {
   openCount: number;
   task: ParsedTaskItem | null;
   implementHint?: string;
+  /** SSOT tasks: de dónde se resolvió el markdown para next-task. */
+  tasksSource?: "tasksJson" | "tasksContent" | "none";
+  hasTasksJson?: boolean;
+  taskCount?: number;
+  /** Versión del bundle atómico US+pantallas+API+tasks (si cascada completó). */
+  deliverableBundleVersion?: string | null;
 }

@@ -26,14 +26,22 @@ export class ProjectEstimationRecalcService {
       mddContent: string | null;
       infraContent: string | null;
       status: Status;
+      /** Task count post-consolidación — evita heredar horas de generación parcial. */
+      consolidatedTaskCount?: number | null;
     },
   ): Promise<void> {
-    const { mddContent, infraContent, status } = params;
+    const { mddContent, infraContent, status, consolidatedTaskCount } = params;
     if (mddContent == null) return;
 
     const normalized = normalizeMddContent(mddContent);
-    const entityCount = normalized.db_entities?.length ?? 0;
-    const screenCount = normalized.screens?.length ?? 0;
+    let entityCount = normalized.db_entities?.length ?? 0;
+    let screenCount = normalized.screens?.length ?? 0;
+    if (consolidatedTaskCount != null && consolidatedTaskCount > 0) {
+      const floorFromTasks = Math.ceil(consolidatedTaskCount / 4);
+      entityCount = Math.max(entityCount, floorFromTasks);
+      const frontendFloor = Math.ceil(consolidatedTaskCount / 8);
+      screenCount = Math.max(screenCount, frontendFloor);
+    }
     const extraEndpointCount = normalized.extra_endpoints ?? 0;
     const metadataTags = extractTechnicalMetadataTags(mddContent);
     const infraFixedHours = parseInfraFixedHours(infraContent);

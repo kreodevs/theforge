@@ -228,7 +228,7 @@ export function WorkshopDirtySaveBar({
   );
 }
 
-/** Icono cuadrado del header del workshop (etapas, ZIP, Hermes, ayuda). */
+/** Icono cuadrado del header del workshop (etapas, ZIP, ayuda). */
 export const WorkshopHeaderIconButton = forwardRef<HTMLButtonElement, ComponentProps<"button">>(
   ({ className, type = "button", ...props }, ref) => (
     <button ref={ref} type={type} className={cn(WORKSHOP_HEADER_ICON_BTN, className)} {...props} />

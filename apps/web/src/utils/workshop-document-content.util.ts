@@ -1,7 +1,10 @@
 import {
+  formatDocumentMarkdown,
   formatTheforgeDocTimestampsForDisplay,
   parseTheforgeDocTimestamps,
+  peelDocumentBodyForPersist,
   peelTheforgeDocStamp,
+  stripStampResidueBeforeHeading,
 } from "@theforge/shared-types";
 import {
   WORKSHOP_STAGE_DELIVERABLE_FIELDS,
@@ -42,7 +45,9 @@ export function extractWorkshopDocumentTimestamps(
   raw: string | null | undefined,
 ): WorkshopDocumentTimestamps | null {
   if (!raw?.trim()) return null;
-  return formatTheforgeDocTimestampsForDisplay(parseTheforgeDocTimestamps(raw), {
+  const { stamp } = peelTheforgeDocStamp(raw);
+  const metaSource = stamp.includes("theforge-doc:") ? stamp : raw;
+  return formatTheforgeDocTimestampsForDisplay(parseTheforgeDocTimestamps(metaSource), {
     timeZone: resolveWorkshopDisplayTimeZone(),
   });
 }
@@ -97,6 +102,8 @@ export function cleanDocForWorkshop(text: string | null): string | null {
   let c = text.trim();
   if (!c) return null;
 
+  c = stripStampResidueBeforeHeading(c);
+
   if (c.startsWith("---")) {
     return cleanFences(c);
   }
@@ -107,6 +114,8 @@ export function cleanDocForWorkshop(text: string | null): string | null {
       const newlineHashIndex = c.indexOf("\n#");
       if (newlineHashIndex !== -1) {
         c = c.slice(newlineHashIndex + 1).trim();
+      } else if (/📅|theforge-doc:|<!--|\|updated=/.test(c.slice(0, firstHashIndex))) {
+        c = c.slice(firstHashIndex).trim();
       }
     }
   }
@@ -115,8 +124,8 @@ export function cleanDocForWorkshop(text: string | null): string | null {
 }
 
 /**
- * Texto mostrado/editado en Workshop: quita stamp API y aplica `cleanDocForWorkshop`.
- * Alinea store local y `project.*` para auto-guardado.
+ * Texto mostrado/editado en Workshop: quita stamp API, limpia residuos y aplica
+ * `formatDocumentMarkdown` (misma pasada determinista que `MddViewer` y persist API).
  */
 export function normalizeWorkshopDocumentForEditor(
   text: string | null | undefined,
@@ -124,8 +133,17 @@ export function normalizeWorkshopDocumentForEditor(
   if (text == null) return null;
   const trimmed = text.trim();
   if (!trimmed) return null;
-  const { body } = peelTheforgeDocStamp(trimmed);
-  return cleanDocForWorkshop(body);
+  const body = peelDocumentBodyForPersist(trimmed);
+  const cleaned = cleanDocForWorkshop(body);
+  if (!cleaned) return null;
+  return formatDocumentMarkdown(cleaned);
+}
+
+/** Baseline MDD en el editor (una pasada de normalización). */
+export function workshopMddEditorBaseline(
+  text: string | null | undefined,
+): string {
+  return normalizeWorkshopDocumentForEditor(text) ?? (text ?? "").trim();
 }
 
 /** Comparación estable para auto-guardado (ignora cabecera Creado/Última regeneración). */

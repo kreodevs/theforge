@@ -1,8 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { formatDocumentMarkdown } from "@theforge/shared-types";
 import {
   normalizeWorkshopDocumentForEditor,
   workshopDocumentBodiesEqual,
+  workshopMddEditorBaseline,
 } from "./workshop-document-content.util.js";
 
 const STAMP =
@@ -11,10 +13,10 @@ const STAMP =
   "---\n\n";
 
 describe("workshop-document-content", () => {
-  it("normalize strips stamp and keeps body", () => {
+  it("normalize strips stamp and applies formatDocumentMarkdown", () => {
     const body = "# Domain Benchmark\n\nContenido.";
     const out = normalizeWorkshopDocumentForEditor(STAMP + body);
-    assert.equal(out, body);
+    assert.equal(out, formatDocumentMarkdown(body));
   });
 
   it("bodies equal when only stamp timestamps differ", () => {
@@ -37,6 +39,30 @@ describe("workshop-document-content", () => {
   it("local editor text equals stamped server baseline", () => {
     const body = "# Fase 0\n\nTexto.";
     assert.equal(workshopDocumentBodiesEqual(body, STAMP + body), true);
+  });
+
+  it("workshopMddEditorBaseline es idempotente", () => {
+    const body = "# MDD\n\n## 1. Contexto\n\nTexto.";
+    const once = workshopMddEditorBaseline(body);
+    const twice = workshopMddEditorBaseline(once);
+    assert.equal(once, twice);
+    assert.equal(workshopDocumentBodiesEqual(once, twice), true);
+  });
+
+  it("MDD editor strips stamp like other deliverables", () => {
+    const body = "# Master Design Document\n\n## 1. Contexto\n";
+    const out = normalizeWorkshopDocumentForEditor(STAMP + body);
+    assert.equal(out?.trim(), body.trim());
+    assert.doesNotMatch(out ?? "", /📅/);
+  });
+
+  it("strips corrupted stamp glued before H1 with inline §1 and §2", () => {
+    const corrupted =
+      "Última modificación: 2026-07-18T06:25:57.540Z --> 📅 Creado: 18 de julio de 2026, 06:25:57 UTC · Última modificación: 18 de julio de 2026, 06:25:57 UTC --- # Master Design Document --- ## 1. Contexto y alcance --- ## 2. Arquitectura";
+    const body = "# Master Design Document\n\n---\n\n## 1. Contexto y alcance\n\n---\n\n## 2. Arquitectura";
+    const out = normalizeWorkshopDocumentForEditor(corrupted);
+    assert.equal(out?.trim(), formatDocumentMarkdown(body).trim());
+    assert.doesNotMatch(out ?? "", /📅|Última modificación:/);
   });
 });
 

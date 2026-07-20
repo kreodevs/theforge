@@ -19,6 +19,8 @@ import {
   type ReconcileHandoffStageResponse,
   abandonIntegrationHandoffBodySchema,
   reconcileHandoffStageBodySchema,
+  createStageFromAriadneChangePackInputSchema,
+  type CreateStageFromAriadneChangePackOutput,
 } from "@theforge/shared-types";
 import { StageStatus } from "@theforge/database";
 import { PrismaService } from "../../../prisma/prisma.service.js";
@@ -52,6 +54,12 @@ import {
   pickActivateStageIdAfterAbandon,
   releaseHandoffItemsForAbandonedStage,
 } from "./abandon-handoff.util.js";
+import {
+  buildLegacyChangeStateFromAriadnePack,
+  buildRecommendedNextToolsAfterAriadnePack,
+  defaultStageNameFromAriadnePack,
+  shouldRunLegacyStartForAriadnePack,
+} from "../../theforge/apply-ariadne-change-pack.util.js";
 
 type ProjectRow = {
   id: string;
@@ -395,6 +403,185 @@ export class ProjectIntegrationService {
     await this.changeLog.log(projectId, "handoffSnapshot", handoffDesc);
     await this.tryAutoLegacyStartAfterHandoff(projectId, stageId, handoffDesc);
     return this.getStatus(projectId);
+  }
+
+  /**
+   * Crea etapa (o importa en existente) desde un change pack Ariadne.
+   * MCP: `create_stage_from_ariadne_change_pack`.
+   */
+  async createStageFromAriadneChangePack(body: unknown): Promise<CreateStageFromAriadneChangePackOutput> {
+    const dto = createStageFromAriadneChangePackInputSchema.parse(body ?? {});
+    const project = await this.assertAccess(dto.forgeProjectId);
+    if (project.projectType !== "LEGACY") {
+      throw new BadRequestException("create_stage_from_ariadne_change_pack solo en proyectos LEGACY");
+    }
+
+    const pack = dto.pack;
+    let stageRow = dto.stageId?.trim()
+      ? project.stages.find((s) => s.id === dto.stageId!.trim())
+      : undefined;
+    let importMode: "created" | "existing" = "created";
+
+    if (dto.stageId?.trim()) {
+      if (!stageRow) throw new NotFoundException("Stage not found");
+      if (stageRow.ordinal < 2) {
+        throw new BadRequestException("Importa el pack en etapa 2 o superior (o omite stageId para crear una nueva)");
+      }
+      importMode = "existing";
+    } else {
+      const stageName = dto.stageName?.trim() || defaultStageNameFromAriadnePack(pack);
+      const { stage } = await this.projectsService.createStage(project.id, {
+        name: stageName,
+        activate: dto.activate,
+      });
+      stageRow = {
+        id: stage.id,
+        ordinal: stage.ordinal,
+        name: stage.name,
+        workflowStatus: stage.workflowStatus,
+        mddContent: stage.mddContent ?? null,
+        handoffSnapshot: null,
+        handoffImportedAt: null,
+        linkedNewProjectId: null,
+        legacyChangeState: null,
+      };
+      importMode = "created";
+    }
+
+    const stageId = stageRow.id;
+    const legacyState = buildLegacyChangeStateFromAriadnePack(pack, project.theforgeProjectId);
+    const existingState = stageRow.legacyChangeState as Record<string, unknown> | null;
+    const nextLegacyState = {
+      ...(existingState && typeof existingState === "object" ? existingState : {}),
+      ...legacyState,
+    };
+
+    const handoffItems = pack.handoffItems ?? [];
+    const linkedNewProjectId = pack.linkedNewProjectId?.trim() || project.linkedNewProjectId;
+    let handoffDesc = pack.changeDescription.trim();
+
+    if (handoffItems.length) {
+      const snapshot = {
+        items: handoffItems,
+        importedAt: new Date().toISOString(),
+        fromProjectId: linkedNewProjectId ?? "ariadne-change-pack",
+        source: "ariadne_change_pack_v1",
+      };
+      if (linkedNewProjectId) {
+        try {
+          const newProject = await this.assertAccess(linkedNewProjectId);
+          handoffDesc = buildHandoffImportDescription(handoffItems, newProject.name);
+        } catch {
+          handoffDesc = buildHandoffImportDescription(handoffItems, "Proyecto NEW");
+        }
+      } else {
+        handoffDesc = buildHandoffImportDescription(handoffItems, "Ariadne");
+      }
+      await this.prisma.stage.update({
+        where: { id: stageId },
+        data: {
+          handoffSnapshot: snapshot,
+          handoffImportedAt: new Date(),
+          linkedNewProjectId: linkedNewProjectId ?? null,
+          legacyChangeState: {
+            ...nextLegacyState,
+            description: mergeHandoffIntoLegacyDescription(
+              typeof nextLegacyState.description === "string" ? nextLegacyState.description : undefined,
+              handoffDesc,
+            ),
+          },
+        },
+      });
+      if (linkedNewProjectId) {
+        await this.syncTracesFromHandoff(
+          linkedNewProjectId,
+          project.id,
+          { items: handoffItems },
+          stageId,
+        );
+        await this.persistHandoffItemsLegacyStage(
+          linkedNewProjectId,
+          handoffItems.map((i) => i.id),
+          stageId,
+        );
+      }
+      await this.finalizeHandoffStageSetup(project.id, stageId, linkedNewProjectId ?? project.id, handoffItems);
+    } else {
+      await this.prisma.stage.update({
+        where: { id: stageId },
+        data: { legacyChangeState: nextLegacyState as object },
+      });
+    }
+
+    await this.changeLog.log(
+      project.id,
+      "ariadneChangePack",
+      `${importMode === "created" ? "Etapa creada" : "Pack importado"} (${pack.ariadneChangeId ?? "v1"}): ${pack.changeDescription.slice(0, 200)}`,
+    );
+
+    const ariadneWire = { scheduled: false as boolean, skippedReason: undefined as string | undefined };
+    if (dto.wireAriadne !== false && project.theforgeProjectId?.trim()) {
+      ariadneWire.scheduled = true;
+      this.theforge.scheduleAriadneBrownfieldWire(
+        {
+          ariadneSourceId: pack.ariadneRepositoryId?.trim() || project.theforgeProjectId.trim(),
+          workshopProjectId: project.id,
+          workshopStageId: stageId,
+        },
+        "AriadneChangePack",
+      );
+    } else if (dto.wireAriadne !== false && !project.theforgeProjectId?.trim()) {
+      ariadneWire.skippedReason = "project_without_theforgeProjectId";
+    }
+
+    const runLegacyStart = shouldRunLegacyStartForAriadnePack(
+      pack,
+      dto.runLegacyStart,
+      isLegacyHandoffAutoLegacyStartEnabled(),
+    );
+
+    const legacyStart: CreateStageFromAriadneChangePackOutput["legacyStart"] = {
+      attempted: false,
+      ok: false,
+      filesCount: (pack.filesToModify?.length ?? 0) as number,
+      questionsCount: (pack.questionsToRefine?.length ?? 0) as number,
+    };
+
+    if (runLegacyStart) {
+      legacyStart.attempted = true;
+      try {
+        const started = await this.legacyCoordinator.start(project.id, handoffDesc, stageId);
+        legacyStart.ok = true;
+        legacyStart.filesCount = started.filesToModify.length;
+        legacyStart.questionsCount = started.questions.length;
+      } catch (err) {
+        legacyStart.error = err instanceof Error ? err.message : String(err);
+      }
+    } else if ((pack.filesToModify?.length ?? 0) > 0) {
+      legacyStart.skippedReason = "pack_includes_modification_plan";
+    } else {
+      legacyStart.skippedReason = "runLegacyStart_disabled";
+    }
+
+    const updated = await this.prisma.stage.findUniqueOrThrow({ where: { id: stageId } });
+    const questionsCount =
+      legacyStart.questionsCount ||
+      (Array.isArray(nextLegacyState.questions) ? nextLegacyState.questions.length : 0);
+
+    return {
+      forgeProjectId: project.id,
+      stageId,
+      stageOrdinal: updated.ordinal,
+      stageName: updated.name ?? `Etapa ${updated.ordinal}`,
+      workflowStatus: updated.workflowStatus,
+      importMode,
+      legacyStart,
+      ariadneWire,
+      recommendedNextTools: buildRecommendedNextToolsAfterAriadnePack({
+        questionsCount,
+        hasHandoffItems: handoffItems.length > 0,
+      }),
+    };
   }
 
   /**

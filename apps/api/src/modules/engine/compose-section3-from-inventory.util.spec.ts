@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { buildDomainInventory } from "./domain-inventory.util.js";
 import {
   composeDomainTableStubsSql,
+  mergeDbgaCoreGapsIntoMdd,
   mergeDomainTablesIntoMdd,
   missingDomainEntities,
 } from "./compose-section3-from-inventory.util.js";
@@ -50,5 +51,27 @@ CREATE TABLE users (id UUID PRIMARY KEY);
     assert.ok(injected.length > 0);
     assert.match(markdown, /Domain inventory stubs/i);
     assert.match(markdown, /CREATE TABLE users/i);
+  });
+
+  it("injects missing DBGA core entity credentials", () => {
+    const dbga = `
+CREATE TABLE watchlists (id UUID PRIMARY KEY);
+CREATE TABLE operations (id UUID PRIMARY KEY);
+CREATE TABLE users (id UUID PRIMARY KEY);
+`;
+    const mdd = `# MDD
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY);
+CREATE TABLE watchlists (id UUID PRIMARY KEY);
+CREATE TABLE strategies (id UUID PRIMARY KEY);
+CREATE TABLE operations (id UUID PRIMARY KEY);
+CREATE TABLE dashboard_configs (id UUID PRIMARY KEY);
+CREATE TABLE otp_sessions (id UUID PRIMARY KEY);
+\`\`\`
+`;
+    const { markdown, injected } = mergeDbgaCoreGapsIntoMdd(mdd, { dbgaMarkdown: dbga });
+    assert.deepEqual(injected, ["credentials"]);
+    assert.match(markdown, /CREATE TABLE credentials/i);
   });
 });

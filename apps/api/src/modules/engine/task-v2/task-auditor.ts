@@ -69,7 +69,11 @@ const YELLOW_THRESHOLD = 75;
 
 // ---- Motor de auditoría ----
 
-export function auditTasks(parseResult: TaskParseResult, inventory?: DomainInventory | null): TaskAuditResult {
+export function auditTasks(
+  parseResult: TaskParseResult,
+  inventory?: DomainInventory | null,
+  opts?: { requireStoryRef?: boolean },
+): TaskAuditResult {
   const errors: TaskAuditError[] = [];
   const warnings: TaskAuditWarning[] = [];
   const fixes: TaskAuditFix[] = [];
@@ -80,7 +84,7 @@ export function auditTasks(parseResult: TaskParseResult, inventory?: DomainInven
 
   // 1. Estructura por tarea
   for (const task of tasks) {
-    checkStructure(task, errors, warnings, fixes);
+    checkStructure(task, errors, warnings, fixes, opts);
   }
 
   // 2. Dependencias
@@ -134,7 +138,10 @@ function checkStructure(
   errors: TaskAuditError[],
   warnings: TaskAuditWarning[],
   fixes: TaskAuditFix[],
+  opts?: { requireStoryRef?: boolean },
 ): void {
+  const isOperational = task.changeType === "run" || task.changeType === "configure";
+  const isImplementation = !isOperational;
   if (!task.id || task.id.trim() === "") {
     errors.push({
       taskId: task.id,
@@ -201,11 +208,21 @@ function checkStructure(
     });
   }
 
-  if (!task.mddRef) {
-    warnings.push({
+  if (!task.mddRef && isImplementation) {
+    errors.push({
       taskId: task.id,
       message: RULES.HAS_MDD_REF.message,
+      severity: "error",
       rule: RULES.HAS_MDD_REF.id,
+    });
+  }
+
+  if (opts?.requireStoryRef && isImplementation && !task.storyRef) {
+    errors.push({
+      taskId: task.id,
+      message: "Tarea de implementación debe declarar story_ref o trazabilidad Story:",
+      severity: "error",
+      rule: "T-AUD-015",
     });
   }
 

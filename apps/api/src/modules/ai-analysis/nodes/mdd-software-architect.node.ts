@@ -20,11 +20,16 @@ import {
   normalizeMddFormat,
   parseModeloDatosFromSection3Markdown,
   preserveContextSectionIfSubstantial,
+  restoreArquitecturaSectionFromBaselineIfMissing,
   preserveUntouchedMddSectionsFromBaseline,
   replaceContextWhenOnlyMetadata,
   sanitizeContextSection,
 } from "../utils/mdd-sanitize.js";
 import { getUserBrief, getUserExplicitRequirements } from "../utils/mdd-user-brief.js";
+import {
+  buildUserDeclaredStackPromptBlock,
+  STACK_TECHNOLOGY_REGEX,
+} from "../utils/user-declared-stack.util.js";
 import { extractFirstJsonObject, extractJsonFromCodeBlock } from "../utils/parse-json.js";
 import { parseJsonOrThrow } from "../utils/parse-json.js";
 import { getInternalDirectivesContext, extractInternalDirectives } from "../utils/mdd-mesh-topology.js";
@@ -511,8 +516,7 @@ export function createMddSoftwareArchitectNode(
       const directive = state.acceptedProposalDirective?.trim();
       const AFFECTS_MODEL_REGEX =
         /\b(modelo\s+de\s+datos|sql|tablas?|fk|clave\s+externa|integridad\s+referencial|references|create\s+table|entidades?|diagrama\s*(er|entidad|relaci[oó]n)?|aplicaciones?|relaci[oó]n(es)?|permisos?\s+en|roles?\s+por\s+aplicaci[oó]n)\b/i;
-      const AFFECTS_SECTION2_REGEX =
-        /\b(stack|arquitectura|frontend|backend|framework|tecnolog[ií]a|nestjs|react|vue|angular|node\.?js|postgresql|mysql|vite|webpack|docker|kubernetes|kubernets|k8s|dokploy|coolify|despliegue|contenedores?|secci[oó]n\s*2|§2)\b/i;
+      const AFFECTS_SECTION2_REGEX = STACK_TECHNOLOGY_REGEX;
       const affectsModel = !!(directive && AFFECTS_MODEL_REGEX.test(directive));
       const affectsSection2 = !!(directive && AFFECTS_SECTION2_REGEX.test(directive)) || (explicitReqs.length > 0 && AFFECTS_SECTION2_REGEX.test(explicitReqs));
       const explicitReqsAffectModel = explicitReqs.length > 0 && AFFECTS_MODEL_REGEX.test(explicitReqs);
@@ -648,8 +652,18 @@ export function createMddSoftwareArchitectNode(
         );
       }
       // Prioridad inviolable como primera línea del contexto inyectado (plan A/C).
+      const stackBlock = buildUserDeclaredStackPromptBlock(
+        explicitReqs,
+        state.userInputAccumulated,
+        state.lastUserMessage,
+        state.clarifiedScope,
+        brief,
+      );
+      if (stackBlock) {
+        contextParts.unshift(stackBlock, "");
+      }
       contextParts.unshift(
-        "**Prioridad (léelo primero):** Si en este mensaje aparece ACCIÓN REQUERIDA o Requisitos del usuario que piden cambios en §2 (Arquitectura y Stack), §3 o §4, esa instrucción tiene prioridad máxima. Actualiza ## 2, ## 3 y/o ## 4 según corresponda e ignora cualquier instrucción de «no modifiques §3» cuando la directiva lo exija.",
+        "**Prioridad (léelo primero):** Si en este mensaje aparece ACCIÓN REQUERIDA, Requisitos del usuario o STACK DECLARADO que piden cambios en §2 (Arquitectura y Stack), §3 o §4, esa instrucción tiene prioridad máxima sobre el borrador y el benchmark. Actualiza ## 2, ## 3 y/o ## 4 según corresponda e ignora cualquier instrucción de «no modifiques §3» cuando la directiva lo exija.",
         "",
       );
       // Si el objetivo de paso pide roles por aplicación, el §3 del borrador puede ser antiguo (roles global, user_roles). Forzar que el modelo no lo copie.
@@ -885,6 +899,7 @@ export function createMddSoftwareArchitectNode(
       }
       if (draftTrimmed.length >= minLength) {
         mddDraft = preserveContextSectionIfSubstantial(draftTrimmed, mddDraft);
+        mddDraft = restoreArquitecturaSectionFromBaselineIfMissing(draftTrimmed, mddDraft);
       }
       mddDraft = sanitizeContextSection(mddDraft);
       mddDraft = replaceContextWhenOnlyMetadata(mddDraft);

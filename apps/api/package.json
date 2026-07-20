@@ -1,6 +1,6 @@
 {
   "name": "@theforge/api",
-  "version": "1.0.0",
+  "version": "1.6.2",
   "private": true,
   "author": "Jorge Correa <jcorrea@e-personal.net>",
   "license": "Apache-2.0",
@@ -8,6 +8,7 @@
     "build": "nest build",
     "dev": "nest start --watch",
     "start": "node dist/main.js",
+    "start:worker": "node dist/worker.js",
     "test": "node --import tsx --test 'src/**/*.spec.ts'",
     "test:types": "tsc --noEmit -p tsconfig.json",
     "test:mcp-alignment": "nest build && node --test dist/apps/api/src/modules/theforge/theforge-mcp-tools-alignment.spec.js",
@@ -57,7 +58,8 @@
     "echarts": "^5.6.0",
     "puppeteer-core": "^24.0.0",
     "@mermaid-js/mermaid-cli": "^11.0.0",
-    "multer": "^1.4.5-lts.1"
+    "multer": "^1.4.5-lts.1",
+    "jszip": "^3.10.1"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.9",

@@ -33,6 +33,61 @@ function StepIcon({ item }: { item: AgentProgressItem }) {
   );
 }
 
+function agentDisplayLabel(
+  items: readonly AgentProgressItem[],
+  index: number,
+  active: boolean,
+): string {
+  const agent = items[index]?.agent ?? "";
+  if (!active) return agent;
+  const priorSame = items.slice(0, index).filter((p) => p.agent === agent).length;
+  if (priorSame === 0) return agent;
+  // Solo el paso activo: indicar revisión sin numerar (evita «5ª pasada» alarmante).
+  return `${agent} (revisión)`;
+}
+
+function ProgressStepRow({
+  item,
+  label,
+}: {
+  item: AgentProgressItem;
+  label: string;
+}) {
+  const active = isAgentProgressActive(item);
+  const done = item.status === "terminado" || item.status === "done";
+
+  return (
+    <li className="grid grid-cols-[1.125rem_minmax(0,1fr)] items-start gap-x-2.5 gap-y-0.5 text-sm">
+      <span
+        className={cn(
+          "flex h-5 w-[1.125rem] shrink-0 items-center justify-center pt-0.5",
+          active && "text-[var(--primary)]",
+        )}
+        aria-hidden
+      >
+        <StepIcon item={item} />
+      </span>
+      <div className="min-w-0 flex flex-col gap-0.5 pt-0.5">
+        <span
+          className={cn(
+            "font-semibold leading-snug tracking-tight",
+            done
+              ? "text-[color-mix(in_oklch,var(--foreground)_90%,var(--muted-foreground))]"
+              : active
+                ? "text-[color-mix(in_oklch,var(--primary)_88%,var(--foreground))]"
+                : "text-[var(--foreground)]",
+          )}
+        >
+          {label}
+        </span>
+        {item.message ? (
+          <span className="text-xs leading-relaxed text-[var(--foreground-subtle)]">{item.message}</span>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
 /**
  * Lista de pasos con completados, activo y pendientes — mismo patrón que la columna chat en cascadas/MDD.
  */
@@ -55,6 +110,10 @@ export function WorkshopAgentProgressPanel({
   if (items.length === 0 && !loading) return null;
 
   const activeStep = items.find((p) => isAgentProgressActive(p));
+  const completedSteps = items.filter((p) => !isAgentProgressActive(p));
+  const visibleCompleted =
+    completedSteps.length > 6 ? completedSteps.slice(-5) : completedSteps;
+  const hiddenCompletedCount = completedSteps.length - visibleCompleted.length;
 
   return (
     <div
@@ -71,50 +130,36 @@ export function WorkshopAgentProgressPanel({
       </p>
       {items.length > 0 ? (
         <ul className="flex flex-col gap-2.5">
-          {items.map((p, i) => {
-            const active = isAgentProgressActive(p);
-            const done = p.status === "terminado" || p.status === "done";
+          {hiddenCompletedCount > 0 ? (
+            <li className="pl-[calc(1.125rem+0.625rem)] text-xs text-[var(--foreground-subtle)]">
+              {hiddenCompletedCount} paso{hiddenCompletedCount === 1 ? "" : "s"} anterior
+              {hiddenCompletedCount === 1 ? "" : "es"} completado{hiddenCompletedCount === 1 ? "" : "s"}
+            </li>
+          ) : null}
+          {visibleCompleted.map((p, i) => {
+            const index = completedSteps.length - visibleCompleted.length + i;
             return (
-              <li
-                key={`${p.step ?? p.agent}-${i}`}
-                className="grid grid-cols-[1.125rem_minmax(0,1fr)] items-start gap-x-2.5 gap-y-0.5 text-sm"
-              >
-                <span
-                  className={cn(
-                    "flex h-5 w-[1.125rem] shrink-0 items-center justify-center pt-0.5",
-                    active && "text-[var(--primary)]",
-                  )}
-                  aria-hidden
-                >
-                  <StepIcon item={p} />
-                </span>
-                <div className="min-w-0 flex flex-col gap-0.5 pt-0.5">
-                  <span
-                    className={cn(
-                      "font-semibold leading-snug tracking-tight",
-                      done
-                        ? "text-[color-mix(in_oklch,var(--foreground)_90%,var(--muted-foreground))]"
-                        : active
-                          ? "text-[color-mix(in_oklch,var(--primary)_88%,var(--foreground))]"
-                          : "text-[var(--foreground)]",
-                    )}
-                  >
-                    {p.agent}
-                  </span>
-                  {p.message ? (
-                    <span className="text-xs leading-relaxed text-[var(--foreground-subtle)]">{p.message}</span>
-                  ) : null}
-                </div>
-              </li>
+              <ProgressStepRow
+                key={`done-${p.step ?? p.agent}-${index}-${p.message.slice(0, 24)}`}
+                item={p}
+                label={agentDisplayLabel(completedSteps, index, false)}
+              />
             );
           })}
+          {activeStep ? (
+            <ProgressStepRow
+              key={`active-${activeStep.agent}-${items.length - 1}`}
+              item={activeStep}
+              label={agentDisplayLabel(items, items.indexOf(activeStep), true)}
+            />
+          ) : null}
           {loading && !activeStep ? (
             <li className="grid grid-cols-[1.125rem_minmax(0,1fr)] items-start gap-x-2.5 text-sm">
               <span className="flex h-5 w-[1.125rem] shrink-0 items-center justify-center pt-0.5 text-[var(--primary)]" aria-hidden>
                 <AiGenerativeDots />
               </span>
               <span className="min-w-0 pt-0.5 font-semibold leading-snug text-[color-mix(in_oklch,var(--primary)_88%,var(--foreground))]">
-                Siguiente paso…
+                Iniciando siguiente paso…
               </span>
             </li>
           ) : null}

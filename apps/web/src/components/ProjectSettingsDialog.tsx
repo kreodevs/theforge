@@ -32,6 +32,7 @@ export interface ProjectSettingsDialogProps {
   loading?: boolean;
   onSubmit: (projectId: string, data: { name?: string; groupId?: string }) => Promise<void>;
   onCreateGroup?: () => void;
+  onExportNotion?: () => void;
 }
 
 export function ProjectSettingsDialog({
@@ -46,6 +47,7 @@ export function ProjectSettingsDialog({
   loading = false,
   onSubmit,
   onCreateGroup,
+  onExportNotion,
 }: ProjectSettingsDialogProps) {
   const [name, setName] = useState(currentName);
   const [groupId, setGroupId] = useState(currentGroupId ?? "");
@@ -174,6 +176,18 @@ export function ProjectSettingsDialog({
                   {currentGroupName ?? "—"}
                 </p>
               )}
+            </div>
+          ) : null}
+
+          {onExportNotion ? (
+            <div className="space-y-2 rounded-lg border border-[var(--border)] bg-[var(--muted)]/20 p-3">
+              <p className="text-sm font-medium text-[var(--foreground)]">Portabilidad (Notion)</p>
+              <p className="text-xs text-[var(--muted-foreground)]">
+                Export Markdown & CSV con handoff, etapas y documentos. Compatible con backup e import en otra instancia.
+              </p>
+              <Button type="button" variant="outline" size="sm" onClick={onExportNotion} disabled={loading}>
+                Exportar proyecto
+              </Button>
             </div>
           ) : null}
 

@@ -1,3 +1,10 @@
+import { peelDocumentBodyForPersist } from "@theforge/shared-types";
+import {
+  ensureMddGovernanceSection,
+  extractGovernanceSection,
+  selectedPatternIdsFromMdd,
+} from "@theforge/shared-types/mdd-governance-patterns";
+
 /**
  * Prepend creation / last-regeneration timestamp header to any SDD document.
  *
@@ -20,12 +27,6 @@
 
 const META_COMMENT_RE =
   /^<!--\s*theforge-doc:created=([^|]+)\|updated=([^|]+)\s*-->\s*\n?/;
-
-/** Strips legacy and current human-readable header blocks (with or without `---`). */
-const HUMAN_HEADER_WITH_SEP_RE =
-  /^>\s*📅\s*.+?\n\n---\n\n/s;
-
-const HUMAN_BLOCKQUOTE_LINE_RE = /^>\s*📅[^\n]*\n+/;
 
 const LOCALE = "es-MX";
 
@@ -97,12 +98,15 @@ export function prependDocumentTimestamps(
   now: Date = new Date(),
 ): string {
   const existing = extractDocumentTimestamps(content);
-
-  let body = content;
-  body = body.replace(META_COMMENT_RE, "");
-  body = body.replace(HUMAN_HEADER_WITH_SEP_RE, "");
-  body = body.replace(HUMAN_BLOCKQUOTE_LINE_RE, "");
-  body = body.replace(/^---\s*\n+/, "");
+  const governanceBeforePeel = extractGovernanceSection(content);
+  let body = peelDocumentBodyForPersist(content);
+  if (
+    governanceBeforePeel?.trim() &&
+    selectedPatternIdsFromMdd(content).size > 0 &&
+    selectedPatternIdsFromMdd(body).size === 0
+  ) {
+    body = ensureMddGovernanceSection(body, governanceBeforePeel);
+  }
 
   const created = existing.created ?? now;
   const updated = now;
@@ -111,17 +115,12 @@ export function prependDocumentTimestamps(
   const human =
     `> 📅 Creado: ${formatFullDateTime(created)} · Última modificación: ${formatFullDateTime(updated)}`;
 
-  return `${comment}\n${human}\n\n---\n\n${body}`;
+  return `${comment}\n${human}\n\n---\n\n${body.replace(/^\n+/, "")}`;
 }
 
 /** Markdown sin cabecera stamp (comentario HTML + blockquote + `---`). */
 export function stripDocumentStampHeader(content: string): string {
-  let body = content;
-  body = body.replace(META_COMMENT_RE, "");
-  body = body.replace(HUMAN_HEADER_WITH_SEP_RE, "");
-  body = body.replace(HUMAN_BLOCKQUOTE_LINE_RE, "");
-  body = body.replace(/^---\s*\n+/, "");
-  return body;
+  return peelDocumentBodyForPersist(content);
 }
 
 export function documentMarkdownBodiesEqual(a: string, b: string): boolean {

@@ -4,11 +4,15 @@
 
 import {
   AUTH_ENTITY_FAMILY,
+  DBGA_CORE_ENTITIES,
+  PLATFORM_ORPHAN_TABLES,
   type BrdCapability,
   type CrudMatrixRow,
   type DomainInventory,
   type ProcessInventoryItem,
 } from "@theforge/shared-types";
+import { isPlatformTableJustified } from "./platform-table-justify.util.js";
+import { stableCrudUserStoryId, stableJourneyUserStoryId } from "@theforge/shared-types";
 
 const AUTH_CAPABILITY_RE =
   /\b(autenticaci[oó]n|autorizaci[oó]n|login|mfa|ldap|rbac|sso|sesiones?|credenciales)\b/i;
@@ -55,6 +59,27 @@ const ENTITY_ALIASES: Record<string, string> = {
   llm: "llm_configs",
   configuración: "llm_configs",
   configuracion: "llm_configs",
+  strategy: "strategies",
+  strategies: "strategies",
+  estrategia: "strategies",
+  estrategias: "strategies",
+  watchlist: "watchlists",
+  watchlists: "watchlists",
+  operacion: "operations",
+  operaciones: "operations",
+  operation: "operations",
+  operations: "operations",
+  credencial: "credentials",
+  credenciales: "credentials",
+  credential: "credentials",
+  credentials: "credentials",
+  dashboard: "dashboard_configs",
+  "dashboard config": "dashboard_configs",
+  otp: "otp_sessions",
+  "sesion otp": "otp_sessions",
+  "sesiones otp": "otp_sessions",
+  user: "users",
+  users: "users",
   "tarea programada": "scheduled_tasks",
   scheduled: "scheduled_tasks",
 };
@@ -151,6 +176,25 @@ export function suggestEntitiesFromProse(...docs: Array<string | null | undefine
   return [...found].sort();
 }
 
+/** Entidades núcleo explícitas en DBGA (CREATE TABLE + keywords canónicos). */
+export function extractDbgaCanonicalEntities(dbgaMarkdown: string): string[] {
+  const found = new Set<string>();
+  const text = (dbgaMarkdown ?? "").trim();
+  if (!text) return [];
+
+  for (const entity of DBGA_CORE_ENTITIES) {
+    const slug = entity.replace(/_/g, "[\\s_-]*");
+    if (new RegExp(`\\b${slug}\\b`, "i").test(text)) found.add(entity);
+  }
+  for (const m of text.matchAll(/\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?["`]?([a-z_][a-z0-9_]*)/gi)) {
+    if (m[1]) found.add(m[1].toLowerCase());
+  }
+  for (const e of suggestEntitiesFromProse(text)) {
+    if (DBGA_CORE_ENTITIES.includes(e as (typeof DBGA_CORE_ENTITIES)[number])) found.add(e);
+  }
+  return [...found].sort();
+}
+
 function snakePlural(word: string): string {
   const w = word.replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
   if (!w) return w;
@@ -173,6 +217,7 @@ export function buildCrudMatrix(
     const isAuth = AUTH_ENTITY_FAMILY.has(e);
     rows.set(e, {
       entity: e,
+      usId: stableCrudUserStoryId(e),
       ops: infraOnly ? ["R"] : isAuth ? ["C", "R", "U", "L"] : ["C", "R", "U", "D", "L"],
       mvp,
       infraOnly,
@@ -206,6 +251,7 @@ export function buildProcessInventory(capabilities: BrdCapability[]): ProcessInv
     const steps = extractStepsFromBody(cap.body);
     return {
       id: `proc-${cap.id}`,
+      usId: stableJourneyUserStoryId(`proc-${cap.id}`),
       name: cap.title,
       trigger: inferTrigger(cap),
       steps: steps.length > 0 ? steps : [`Ejecutar capacidad: ${cap.title}`],
@@ -249,11 +295,24 @@ export function buildDomainInventory(input: {
   mddEntities?: Iterable<string>;
 }): DomainInventory {
   const capabilities = extractBrdCapabilities(input.brdMarkdown ?? "");
-  const suggestedEntities = suggestEntitiesFromProse(
+  const suggestedFromProse = suggestEntitiesFromProse(
     input.brdMarkdown,
     input.dbgaMarkdown,
     input.mddMarkdown,
   );
+  const dbgaCanonical = extractDbgaCanonicalEntities(input.dbgaMarkdown ?? "");
+  const suggestedRaw = [...new Set([...suggestedFromProse, ...dbgaCanonical])];
+  const suggestedEntities = suggestedRaw
+    .filter(
+      (e) =>
+        !PLATFORM_ORPHAN_TABLES.has(e) ||
+        isPlatformTableJustified(e, {
+          brdMarkdown: input.brdMarkdown,
+          dbgaMarkdown: input.dbgaMarkdown,
+          mddMarkdown: input.mddMarkdown,
+        }),
+    )
+    .sort();
   const mddEntities = input.mddEntities ?? [];
   const crudMatrix = buildCrudMatrix(mddEntities, suggestedEntities, capabilities);
   const processes = buildProcessInventory(capabilities);

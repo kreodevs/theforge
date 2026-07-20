@@ -5,8 +5,9 @@ Cola de generación/regeneración del MDD desacoplada del SSE del navegador.
 ## Cola
 
 - Nombre BullMQ: `theforge-mdd` (`MddQueueService`, `mdd-queue.service.ts`).
-- Con `REDIS_URL`: jobs persistentes en Redis (sobreviven cerrar el navegador).
-- Sin Redis: cola in-memory secuencial por proyecto en el mismo proceso Node (no sobrevive reinicio del API).
+- Con `REDIS_URL` (**obligatorio en production**): jobs persistentes en Redis.
+- Sin Redis: cola in-memory secuencial por proyecto (**solo desarrollo**).
+- Worker: `THEFORGE_RUNTIME_ROLE=worker` (`dist/worker.js`) o monolito `all`. Concurrencia: `MDD_BULLMQ_CONCURRENCY` (default **2**, max 8).
 
 ## Modos (`MddJobMode`)
 
@@ -15,6 +16,7 @@ Cola de generación/regeneración del MDD desacoplada del SSE del navegador.
 | `pipeline` | Greenfield — benchmark → MDD | `streamMddAnalysis` |
 | `manager` | Greenfield — chat Manager (arranque) | `streamMddAnalysisWithManager` |
 | `section` | Greenfield — `/seguridad`, etc. | `streamMddRegenerateSection` |
+| `upstream-sync` | Greenfield — cambios DBGA/BRD/Benchmark | `streamMddUpstreamSync` (§1–§7 selectivas; restaura estrictamente las secciones fuera de alcance) |
 | `legacy` | Proyectos `LEGACY` | `LegacyCoordinatorService.generateMdd` |
 
 Un solo job MDD activo o en cola por proyecto (`assertCanEnqueue` → 409 si busy).
@@ -32,18 +34,46 @@ El Workshop ya no depende de `persistMddContent` tras encolar.
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| `POST` | `/ai-analysis/mdd/jobs` | Encola greenfield (`pipeline` \| `manager` \| `section`) |
+| `POST` | `/ai-analysis/mdd/jobs` | Encola greenfield (`pipeline` \| `manager` \| `section` \| `upstream-sync`) |
+| `GET` | `/ai-analysis/mdd/upstream-sync/analysis?projectId=&stageId=` | Diff upstream vs baseline MDD (secciones recomendadas) |
 | `GET` | `/ai-analysis/mdd/jobs/:jobId` | Estado del job |
 | `GET` | `/projects/:id/mdd-jobs/:jobId` | Alias polling (web) |
+| `DELETE` | `/projects/:id/mdd-jobs/:jobId` | Cancela job encolado o aborta pipeline activo |
+| `GET` | `/projects/:id/generation-status` | Incluye `mddJobs[]` y `mddUpstreamSync` (banner Workshop) |
 | `POST` | `/projects/:id/legacy/generate-mdd` | Encola legacy por defecto (`?queue=false` sync) |
 | `GET` | `/projects/:id/legacy/mdd-jobs/:jobId` | Polling legacy |
 
 SSE (`POST …/mdd/stream`, `…/stream/manager`, `…/regenerate-section`) sigue disponible; el Workshop usa jobs por defecto.
 
+## Progreso acumulado
+
+El job guarda `MddJobProgressState` (`steps[]` completados + `active` en curso). El poll ya no pierde nodos rápidos entre intervalos de 2 s. Eventos `phase: "active"` al iniciar nodo; `phase: "done"` al completar (pipeline greenfield vía `onNodeStart` en `createMddGraph`).
+
 ## Frontend
 
 - `apps/web/src/utils/pollMddJob.ts` — `enqueueAndPollMddJob`, `enqueueAndPollLegacyMdd`.
-- `workshopStore`: `generateMddFromBenchmark`, `legacyGenerateMdd`, regeneración §N vía cola.
+- `workshopStore`: `generateMddFromBenchmark`, `generateMddUpstreamSync`, `legacyGenerateMdd`, regeneración §N vía cola.
+- `MddRegenerateDialog` / `MddUpstreamSyncBanner` — elegir pipeline completo vs sync incremental.
+
+## Baseline upstream
+
+Tras `pipeline`, `section`, `upstream-sync` o restauración desde caché upstream exitosa, `MddUpstreamSyncService.captureBaseline` persiste en `Stage.mddUpstreamBaseline` (hashes + snapshots 32k de DBGA/BRD/Benchmark) para detectar cambios posteriores. Los hashes ignoran la cabecera de fechas (`theforge-doc`) para no marcar desincronización por metadatos solamente.
+
+## Caché documento (upstream sin cambios)
+
+Modo `pipeline`: antes de ejecutar el grafo LLM, `MddUpstreamSyncService.tryRestoreFromUpstreamCache` compara hashes actuales de DBGA, BRD y Benchmark contra `mddUpstreamBaseline`. Si hay MDD guardado, baseline previo y **ningún upstream cambió** (`pendingSync === false`):
+
+1. Se omite el pipeline LLM (~45 min).
+2. Se reutiliza `stage.mddContent` existente.
+3. `persistMddFromBackgroundJob` repara formato (`peelDocumentBodyForPersist` → `prepareMddForOutput` → `storeMddMarkdownForPersist`) y ejecuta el pipeline determinista de entrega (gate + semáforo). **Sin cabecera de fechas** en el markdown del MDD.
+4. Se actualiza `mddUpstreamBaseline` (mismo criterio que pipeline LLM completo).
+
+Progreso del job: `phase: "cache"`. Requiere haber completado al menos una generación previa que capturó baseline (primera regeneración tras el deploy sigue siendo pipeline completo).
+
+**No aplica caché** cuando:
+
+- `forceFullPipeline: true` en el job (Workshop «Regenerar MDD completo» / `generateMddFromBenchmark`).
+- El MDD guardado falla el delivery gate (p. ej. §1/§2 faltantes) — se fuerza pipeline LLM para reconstruirlo.
 
 ## Gates
 

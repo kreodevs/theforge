@@ -11,6 +11,7 @@ import {
 } from "../theforge/theforge-service.port.js";
 import { LEGACY_DOCUMENTATION_PROMPT } from "../ai/prompts/legacy-documentation-prompt.js";
 import { AgentSupervisorService } from "../agent-supervisor/agent-supervisor.service.js";
+import { resolvePlatformConfigBoolean } from "../system-config/platform-config.runtime.js";
 import type { SupervisorRouteResult } from "../agent-supervisor/agent-supervisor.types.js";
 import { SddIngestorService } from "../ai-analysis/sdd-ingestor.service.js";
 import { AgentEvaluatorService } from "../agent-supervisor/agent-evaluator.service.js";
@@ -232,7 +233,7 @@ export class AiOrchestratorService {
     route: SupervisorRouteResult,
     userMessage: string,
   ): Promise<string | undefined> {
-    if (process.env.AGENT_EVALUATOR_LEGACY !== "true") return undefined;
+    if (!resolvePlatformConfigBoolean("agent_evaluator_legacy")) return undefined;
     if (route.flow !== "LEGACY" || !route.theforgeProjectId) return undefined;
     const r = await this.agentEvaluator.evaluateLegacyProposal(projectId, route.stageId, userMessage);
     return r.approved ? undefined : r.critique;
@@ -823,6 +824,8 @@ export class AiOrchestratorService {
               projectOut.phase0SummaryContent ??
               undefined,
             evaluatorCritique,
+            documentHadDelimiter: (msg as { documentHadDelimiter?: boolean }).documentHadDelimiter,
+            documentPersisted: (msg as { documentPersisted?: boolean }).documentPersisted,
             ...(documentPersist ? { documentPersist } : {}),
           },
         };

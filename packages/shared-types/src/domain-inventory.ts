@@ -17,11 +17,33 @@ export const AUTH_ENTITY_FAMILY = new Set([
   "mfa_devices",
 ]);
 
+/** Tablas plataforma/chat que requieren justificación explícita en BRD/DBGA si aparecen en §3. */
+export const PLATFORM_ORPHAN_TABLES = new Set([
+  "messages",
+  "mcp_plugins",
+  "conversation_memory",
+]);
+
+/** Entidades núcleo DBGA frecuentemente ausentes en MDD §3 auth-skewed. */
+export const DBGA_CORE_ENTITIES = [
+  "users",
+  "watchlists",
+  "strategies",
+  "operations",
+  "credentials",
+  "dashboard_configs",
+  "otp_sessions",
+] as const;
+
+export type DbgaCoreEntity = (typeof DBGA_CORE_ENTITIES)[number];
+
 export const crudOpsSchema = z.enum(["C", "R", "U", "D", "L"]);
 export type CrudOp = z.infer<typeof crudOpsSchema>;
 
 export const crudMatrixRowSchema = z.object({
   entity: z.string().min(1),
+  /** Stable user-story id (US-CRUD-{ENTITY}); not renumbered on matrix sort. */
+  usId: z.string().optional(),
   ops: z.array(crudOpsSchema).default(["L", "R"]),
   actor: z.string().optional(),
   endpointHint: z.string().optional(),
@@ -34,6 +56,8 @@ export type CrudMatrixRow = z.infer<typeof crudMatrixRowSchema>;
 
 export const processInventoryItemSchema = z.object({
   id: z.string().min(1),
+  /** Stable journey user-story id (US-JRN-{PROCESS}). */
+  usId: z.string().optional(),
   name: z.string().min(1),
   trigger: z.string().optional(),
   steps: z.array(z.string()).default([]),

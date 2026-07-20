@@ -1,36 +1,73 @@
 import type { MddDeliveryGateResult } from "@theforge/shared-types";
+import { isAutoRepairableDeliveryGateWarning } from "../../engine/mdd-quality-audit.util.js";
 import { getSection6Or7Range } from "./mdd-sanitize.js";
 
 /** Máximo de reintentos automáticos del gate de entrega (Fase 4). */
 export const MAX_MDD_DELIVERY_GATE_ATTEMPTS = 3;
 
-export type DeliveryGateFixTarget = "software_architect" | "integration";
+export type DeliveryGateFixTarget = "software_architect" | "integration" | "clarifier";
 
 const INTEGRATION_BLOCKER_RE =
   /§7|infraestructura|jwt|manifest|node:|microservicios|hashing_algorithm|jwks|api_prefix|tabla\s+outbox\b/i;
 const SECTION3_BLOCKER_RE =
-  /§3|sql|prosa inválida|create table|erdiagram|technicalmetadata|outbox-like|§6 menciona tabla/i;
+  /§3|§4|sql|prosa inválida|create table|erdiagram|technicalmetadata|outbox-like|§6 menciona tabla|fences desbalanceados|tabla huérfana|json inválido/i;
+const CLARIFIER_BLOCKER_RE =
+  /§1\s*contexto|1\.\s*contexto|2\.\s*arquitectura|secciones obligatorias faltantes:.*(?:1\.\s*contexto|2\.\s*arquitectura)|placeholder.*guiones|objetivos comerciales/i;
 
-/** Decide si el siguiente paso del auto-loop debe ser arquitecto (§3) o integración (§7). */
+const MISSING_SECTION7_BLOCKER_RE =
+  /secciones obligatorias faltantes:\s*7\.\s*infraestructura\b/i;
+
+/** Decide si el siguiente paso del auto-loop debe ser arquitecto (§3/§4), integración (§7) o clarifier (§1). */
 export function resolveDeliveryGateFixTarget(blockers: string[]): DeliveryGateFixTarget {
-  const text = blockers.join(" ");
+  const items = blockers.length > 0 ? blockers : [];
+  const text = items.join(" ");
+
+  if (items.some((b) => MISSING_SECTION7_BLOCKER_RE.test(b))) {
+    return "integration";
+  }
+
   let integrationScore = 0;
   let architectScore = 0;
-  for (const b of blockers) {
+  let clarifierScore = 0;
+  for (const b of items) {
     if (INTEGRATION_BLOCKER_RE.test(b)) integrationScore++;
     if (SECTION3_BLOCKER_RE.test(b)) architectScore++;
+    if (CLARIFIER_BLOCKER_RE.test(b)) clarifierScore++;
+  }
+  if (clarifierScore > 0 && clarifierScore >= architectScore && clarifierScore >= integrationScore) {
+    return "clarifier";
   }
   if (integrationScore > architectScore) return "integration";
   if (architectScore > integrationScore) return "software_architect";
   return INTEGRATION_BLOCKER_RE.test(text) ? "integration" : "software_architect";
 }
 
-/** Feedback en español para agentes en el auto-loop del gate. */
+/** Issues del gate que siguen tras auto-reparación — disparan loop de agentes, no bloquean al usuario. */
+export function hasUnresolvedAutoRepairableGateWarnings(warnings: string[]): boolean {
+  return warnings.some((w) => isAutoRepairableDeliveryGateWarning(w));
+}
+
+/** @deprecated Use hasUnresolvedAutoRepairableGateWarnings */
+export function hasUnresolvedAutoRepairableQuality(warnings: string[]): boolean {
+  return hasUnresolvedAutoRepairableGateWarnings(warnings);
+}
+
+/** Feedback en español para agentes en el auto-loop del gate (no se muestra crudo al usuario). */
 export function formatDeliveryGateBlockersFeedback(blockers: string[]): string {
-  if (blockers.length === 0) return "";
+  const items = blockers.filter((b) => b.trim().length > 0);
+  if (items.length === 0) return "";
   const header =
-    "Gate de entrega MDD bloqueado — corrige automáticamente estos defectos antes de finalizar:";
-  return `${header}\n${blockers.map((b) => `- ${b}`).join("\n")}`;
+    "Gate de entrega MDD — corrige automáticamente estos defectos estructurales antes de finalizar:";
+  return `${header}\n${items.map((b) => `- ${b}`).join("\n")}`;
+}
+
+/** Feedback para agentes a partir de warnings auto-reparables del gate. */
+export function formatDeliveryGateQualityWarningsFeedback(warnings: string[]): string {
+  const items = warnings.filter((w) => isAutoRepairableDeliveryGateWarning(w));
+  if (items.length === 0) return "";
+  const header =
+    "Gate MDD — reparar automáticamente (coherencia §1–§7, SQL, Mermaid, metadata):";
+  return `${header}\n${items.map((w) => `- ${w}`).join("\n")}`;
 }
 
 export function draftHasSubstantialSection7(draft: string): boolean {

@@ -1,6 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import {
+  listGovernancePatternOptions,
+  selectedPatternIdsFromMdd,
+  updateMddGovernancePatterns,
+} from "@theforge/shared-types";
+import {
   alignDeliverableMarkdownWithMddSecurity,
   ensurePostMvpUiSurfaceBanner,
   applyCrossConsistencyPatches,
@@ -24,11 +29,14 @@ import {
   mddHasDuplicateSectionHeadings,
   stripTrailingDuplicateMddSections,
   applyPreDeliveryGateFixes,
+  ensureTechnicalMetadataBlockInDraft,
   detectSection2Section7NodeVersionMismatchIssue,
   fixDeterministicMddCoherence,
   finalizeMddDeliverable,
   fixDualApprovalSchemaInDraft,
   getSectionsToPreserveFromExecutorPlan,
+  normalizeCanonicalMddSectionHeadings,
+  ensureMissingCanonicalSections,
   stripMeshDirectivesFromDraft,
   stripStrayParenAfterJsonCodeBlocks,
   repairNestedJsonFencesInDraft,
@@ -46,6 +54,7 @@ import {
   normalizeMddEnglishSubheadings,
   parseCrossConsistencyPatches,
   preserveUntouchedMddSectionsFromBaseline,
+  restoreMddSectionsFromBaselineStrict,
   demoteProseHeadingsInSections,
   repairDisplacedJsonBracesInContratos,
   sanitizeSeguridadIntegracionRawJson,
@@ -284,6 +293,54 @@ Docker legacy.
     );
     assert.match(out, /MFA TOTP obligatorio/);
     assert.doesNotMatch(out, /Pendiente:\s*Arquitecto de Seguridad/);
+  });
+});
+
+describe("restoreMddSectionsFromBaselineStrict", () => {
+  it("restaura §6 aunque el sync upstream haya inyectado otro contenido", () => {
+    const baseline = `# MDD
+
+## 1. Contexto
+
+Contexto largo con alcance del producto y requisitos no funcionales descritos.
+
+## 2. Arquitectura y Stack
+
+Stack.
+
+## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users ( id UUID PRIMARY KEY );
+\`\`\`
+
+## 4. Contratos de API
+
+### GET /api/v1/health
+
+OK.
+
+## 5. Lógica y Edge Cases
+
+Reglas.
+
+## 6. Seguridad
+
+### A. Autenticación
+
+- MFA TOTP obligatorio para administradores con contenido detallado.
+
+## 7. Infraestructura
+
+Docker legacy con variables de entorno documentadas.
+`;
+    const corrupted = baseline.replace(
+      /## 6\. Seguridad[\s\S]*?(?=\n## 7\.)/,
+      "## 6. Seguridad\n\nContenido genérico OAuth sin relación con el proyecto.\n\n",
+    );
+    const out = restoreMddSectionsFromBaselineStrict(corrupted, baseline, [6]);
+    assert.match(out, /MFA TOTP obligatorio/);
+    assert.doesNotMatch(out, /Contenido genérico OAuth/);
   });
 });
 
@@ -613,6 +670,18 @@ TLS entre microservicios y PostgreSQL.
     assert.equal(detectSection2Section7NodeVersionMismatchIssue(fixed), null);
   });
 
+  it("ensureTechnicalMetadataBlockInDraft inyecta etiquetas en §3", () => {
+    const draft = `## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY);
+\`\`\`
+`;
+    const out = ensureTechnicalMetadataBlockInDraft(draft);
+    assert.match(out, /```TechnicalMetadata/);
+    assert.match(out, /\[high_security\]/);
+  });
+
   it("alignDeliverableMarkdownWithMddSecurity separa JWT_PRIVATE_KEY y JWT_PUBLIC_KEY en bloques .env", () => {
     const mdd = `## 6. Seguridad
 
@@ -815,6 +884,49 @@ Tabla users → DataTable.
     assert.ok(out.includes("## UI/UX Design Intent"));
     assert.ok(out.includes("DataTable"));
     assert.strictEqual((out.match(/^##\s+5\./gm) ?? []).length, 1);
+  });
+
+  it("deduplica §4 repetida aunque §5–§7 sean únicas (cola grande de contratos)", () => {
+    const section4 =
+      "## 4. Contratos de API\n\n| POST | /api/test | test | JWT |\n\n#### POST /api/test\n\n```json\n{\"ok\": true}\n```\n\n";
+    const corrupted = `# Master Design Document
+
+## 1. Contexto
+
+ForgeOps.
+
+## 2. Arquitectura y Stack
+
+NestJS.
+
+## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE tenants (id UUID PRIMARY KEY);
+\`\`\`
+
+${section4.repeat(4)}
+## 5. Lógica y Edge Cases
+
+Reglas.
+
+## 6. Seguridad
+
+JWT.
+
+## 7. Infraestructura
+
+Docker.
+
+## UI/UX Design Intent
+
+Ver pantallas.md.
+`;
+    assert.ok(mddHasDuplicateSectionHeadings(corrupted));
+    const out = finalizeMddDeliverable(corrupted);
+    assert.strictEqual((out.match(/^##\s+4\./gm) ?? []).length, 1);
+    assert.strictEqual(mddHasDuplicateSectionHeadings(out), false);
+    assert.ok(out.includes("## UI/UX Design Intent"));
   });
 });
 
@@ -1788,7 +1900,7 @@ CREATE TABLE roles (id UUID PRIMARY KEY);
   });
 });
 
-describe("mdd format sanitizer regressions (copiloto sample)", () => {
+describe("mdd format sanitizer regressions (patrones genéricos)", () => {
   it("bug1: despega encabezados pegados en §1 y escenarios UAT en negrita", () => {
     const raw = `## 1. Contexto y Alcance ### Propósito del Proyecto
 El sistema hace X. ### Alcance y Fronteras #### Servicios Core
@@ -1913,5 +2025,324 @@ Stack.
     assert.doesNotMatch(out, /## 1\. Contexto ###/);
     const second = prepareMddMarkdownForPersist(out);
     assert.doesNotMatch(second, /## 1\. Contexto ###/);
+  });
+
+  it("prepareMddMarkdownForPersist conserva patrones SSOT - [X] tras peel", () => {
+    const base =
+      "# Master Design Document\n\n## 1. Contexto\n\nCuerpo §1 con más de ochenta caracteres para el MDD canónico de prueba.\n";
+    const id = listGovernancePatternOptions().find((o) => o.label.includes("Singleton"))!.id;
+    const md = updateMddGovernancePatterns(base, new Set([id]));
+    const out = prepareMddMarkdownForPersist(md);
+    assert.equal(selectedPatternIdsFromMdd(out).size, 1);
+    assert.doesNotMatch(out, /^# - \[[xX]\]/m);
+  });
+
+  it("prepareMddMarkdownForPersist mantiene SSOT aunque peel recorte stamp previo", () => {
+    const base =
+      "# Master Design Document\n\n## 1. Contexto\n\nCuerpo §1 con más de ochenta caracteres para el MDD canónico de prueba.\n";
+    const id = listGovernancePatternOptions().find((o) => o.label.includes("Singleton"))!.id;
+    const md = updateMddGovernancePatterns(base, new Set([id]));
+    const withStamp = `<!-- theforge-doc:created=2026-01-01T00:00:00.000Z|updated=2026-01-01T00:00:00.000Z -->\n> 📅 Creado: 1 ene 2026\n\n${md}`;
+    const out = prepareMddMarkdownForPersist(withStamp);
+    assert.equal(selectedPatternIdsFromMdd(out).size, 1);
+    assert.match(out, /\[ARQUITECTURA - SECCIÓN INMUTABLE\]/);
+  });
+
+  it("prepareMddMarkdownForPersist repara §4 (fence huérfano, JSON sin cierre, Response 204)", () => {
+    const raw = `# Master Design Document
+
+## 1. Contexto
+
+Cuerpo §1 con más de ochenta caracteres para el MDD canónico de prueba genérico.
+
+## 4. Contratos de API
+
+### POST /api/v1/chat/message
+Recibe el mensaje del webhook de WhatsApp y orquesta la respuesta.
+\`\`\`
+
+**Request body:**
+\`\`\`json
+{ "device_token": "string" }
+\`\`\`
+
+**Response 202:**
+\`\`\`json
+{
+  "status": "accepted",
+  "task_id": "uuid",
+  "message": "El agente está procesando tu solicitud."
+
+### POST /api/v1/chat/switch-company
+Cambia la empresa activa.
+\`\`\`
+
+**Response 204:**
+# _No Content_
+
+## 5. Lógica y Edge Cases
+
+Reglas de negocio con más de ochenta caracteres para cumplir el gate de entrega del MDD canónico.
+## 6. Seguridad
+
+Autenticación M2M con JWT RS256 y aislamiento multitenant obligatorio en todas las consultas.
+`;
+    const out = prepareMddMarkdownForPersist(raw);
+    assert.doesNotMatch(out, /respuesta\.\n```\n\n\*\*Request body/);
+    assert.match(out, /"message": "El agente está procesando tu solicitud."\n}\n```/);
+    assert.match(out, /\*\*Response 204:\*\*\n+_No Content_/);
+    assert.match(out, /Edge Cases[\s\S]*---[\s\S]*## 6\. Seguridad/);
+  });
+
+  it("prepareMddMarkdownForPersist repara ### ## 6. Seguridad apilado", () => {
+    const raw = `# Master Design Document
+
+## 5. Lógica y Edge Cases
+
+Texto de reglas con más de ochenta caracteres para cumplir validaciones mínimas del gate de entrega.
+
+### ## 6. Seguridad
+
+### Aislamiento Multitenant y Autorización
+- Aislamiento lógico estricto por tenant_id y company_id.
+`;
+    const out = prepareMddMarkdownForPersist(raw);
+    assert.match(out, /^## 6\. Seguridad/m);
+    assert.doesNotMatch(out, /### ## 6\./);
+  });
+
+  it("prepareMddMarkdownForPersist: demote H1 falso # _prosa_ y despega ## pegados", () => {
+    const raw = `# Master Design Document
+
+## 1. Contexto
+
+Texto §1 con más de ochenta caracteres para cumplir validaciones mínimas del gate de entrega.
+
+- **Riesgo:** item. **Mitigación:** límite de iteraciones.
+## 2. Arquitectura y Stack
+
+### Diagrama
+
+\`\`\`mermaid
+flowchart TB
+  A --> B
+\`\`\`
+
+# _Nota derivada de §2–§4: prosa larga que no debe ser heading._
+
+## 5. Lógica y Edge Cases
+
+1. **Paso:** detalle.
+   - Sub-item de lista.
+## 6. Seguridad
+
+Texto §6 con más de ochenta caracteres para cumplir validaciones mínimas del gate.
+## 7. Infraestructura
+
+Texto §7 con más de ochenta caracteres para cumplir validaciones mínimas del gate.
+## UI/UX Design Intent
+
+Texto UI con más de ochenta caracteres para cumplir validaciones mínimas del gate.
+`;
+    const out = prepareMddMarkdownForPersist(raw);
+    assert.doesNotMatch(out, /^# _Nota derivada/m);
+    assert.match(out, /_Nota derivada de §2–§4/);
+    assert.match(out, /Mitigación:[^\n]+\n---\n## 2\. Arquitectura/);
+    assert.match(out, /Sub-item de lista\.\n---\n## 6\. Seguridad/);
+    assert.match(out, /gate\.\n---\n## 7\. Infraestructura/);
+    assert.match(out, /gate\.\n---\n## UI\/UX Design Intent/);
+  });
+
+  it("prepareMddMarkdownForPersist mantiene cierre json tras sanitizeMddAtPersist", () => {
+    const raw = `# Master Design Document
+
+## 1. Contexto
+
+Cuerpo §1 con más de ochenta caracteres para cumplir validaciones mínimas del gate de entrega.
+
+## 4. Contratos de API
+
+### POST /api/v1/chat/message
+Recibe el mensaje.
+\`\`\`
+
+**Request body:**
+\`\`\`json
+{ "x": 1 }
+\`\`\`
+
+**Response 202:**
+\`\`\`json
+{
+  "status": "accepted",
+  "message": "processing"
+
+### POST /api/v1/chat/switch-company
+Cambia empresa.
+`;
+    const out = prepareMddMarkdownForPersist(raw);
+    assert.match(out, /"processing"\n}\n```[\s\S]*?### POST \/api\/v1\/chat\/switch-company/);
+    assert.doesNotMatch(out, /Recibe el mensaje\.\n```\n\n\*\*Request body/);
+  });
+
+  it("normalizeCanonicalMddSectionHeadings: ## 2. Arquitectura sin y Stack pasa gate tras finalize", () => {
+    const raw = `# Master Design Document
+
+## 1. Contexto y alcance
+
+Objetivo comercial del sistema con más de ochenta caracteres para pasar validaciones del gate de entrega MDD.
+
+## 2. Arquitectura
+
+Stack Node.js y PostgreSQL con despliegue en Docker Compose para el MVP del producto.
+
+## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY, email TEXT NOT NULL);
+\`\`\`
+
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\`
+
+## 4. Contratos de API
+
+### POST /api/users
+\`\`\`json
+{"path":"/api/users","method":"POST"}
+\`\`\`
+
+## 5. Lógica y Edge Cases
+
+Reglas de negocio y casos borde del dominio con viñetas sustantivas.
+
+## 6. Seguridad
+
+JWT RS256 y control de acceso basado en roles para usuarios internos del sistema.
+
+## 7. Infraestructura
+
+Docker Compose con PostgreSQL 16 y Node 20-alpine en producción del sistema.
+`;
+    const normalized = normalizeCanonicalMddSectionHeadings(raw);
+    assert.match(normalized, /## 2\. Arquitectura y Stack/);
+    const final = finalizeMddDeliverable(normalized);
+    assert.deepEqual(validateMddStructure(final).missingSections, []);
+    assert.match(final, /## 2\. Arquitectura y Stack/);
+  });
+
+  it("validateMddStructure detecta §7 con headings pegados --- ##", () => {
+    const glued =
+      "# Master Design Document --- ## 1. Contexto Texto --- ## 2. Arquitectura y Stack Stack --- ## 3. Modelo de Datos SQL --- ## 4. Contratos de API API --- ## 5. Lógica y Edge Cases Logica --- ## 6. Seguridad Sec --- ## 7. Infraestructura ### 7.1 Flujo contenido del manifest";
+    assert.deepEqual(validateMddStructure(glued).missingSections, []);
+  });
+
+  it("ensureMissingCanonicalSections: restaura §7 desde baseline cuando dedupe la eliminó", () => {
+    const baseline = `# Master Design Document
+
+## 6. Seguridad
+
+Políticas JWT RS256 y MFA obligatorio para operadores internos del sistema.
+
+## 7. Infraestructura
+
+### 7.1 Flujo de integración
+
+Webhook Wasender hacia NestJS con autenticación M2M y cola Redis.
+
+\`\`\`json
+{"stack":"node:20-alpine","database":"postgresql:16"}
+\`\`\`
+`;
+    const without7 = `# Master Design Document
+
+## 1. Contexto
+
+Alcance del copiloto multiempresa con más de ochenta caracteres de contexto técnico.
+
+## 2. Arquitectura y Stack
+
+NestJS y Redis.
+
+## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY);
+\`\`\`
+
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\`
+
+## 4. Contratos de API
+
+### GET /api/health
+
+## 5. Lógica y Edge Cases
+
+Reglas.
+
+## 6. Seguridad
+
+JWT.
+`;
+    const out = ensureMissingCanonicalSections(without7, baseline);
+    assert.deepEqual(validateMddStructure(out).missingSections, []);
+    assert.match(out, /## 7\. Infraestructura/);
+    assert.match(out, /7\.1 Flujo de integración/);
+  });
+
+  it("ensureMissingCanonicalSections: restaura §1/§2 desde baseline cuando el Arquitecto emitió §3–§7", () => {
+    const baseline = `# Master Design Document
+
+## 1. Contexto
+
+Contexto sustancial del clarificador con más de ochenta caracteres de alcance técnico del producto.
+
+## 2. Arquitectura y Stack
+
+NestJS con PostgreSQL 16 y Redis para colas de mensajería del copiloto.
+
+## 3. Modelo de Datos
+
+(Pendiente)
+`;
+    const architectOnly = `# Master Design Document
+
+## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY, email TEXT NOT NULL);
+\`\`\`
+
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\`
+
+## 4. Contratos de API
+
+### POST /api/users
+\`\`\`json
+{"path":"/api/users","method":"POST"}
+\`\`\`
+
+## 5. Lógica y Edge Cases
+
+Reglas de negocio del dominio.
+
+## 6. Seguridad
+
+JWT RS256 y RBAC.
+
+## 7. Infraestructura
+
+Docker Compose con PostgreSQL 16.
+`;
+    const restored = ensureMissingCanonicalSections(architectOnly, baseline);
+    assert.deepEqual(validateMddStructure(restored).missingSections, []);
+    assert.match(restored, /## 1\. Contexto/);
+    assert.match(restored, /## 2\. Arquitectura y Stack/);
+    assert.match(restored, /NestJS con PostgreSQL 16/);
   });
 });

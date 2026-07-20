@@ -1,18 +1,32 @@
 import {
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
+  NotFoundException,
   OnModuleDestroy,
   OnModuleInit,
   forwardRef,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { Queue, Worker, type Job } from "bullmq";
+import type { MddJobSnapshot, MddUpstreamSyncStatus } from "@theforge/shared-types";
+import {
+  applyMddJobProgress,
+  createEmptyMddJobProgressState,
+  normalizeMddJobProgressState,
+  type MddJobProgressState,
+} from "@theforge/shared-types";
 import {
   LONG_JOB_LOCK_DURATION_MS,
   longRunningBullmqWorkerOptions,
 } from "../../../common/bullmq-long-job.worker-options.js";
+import {
+  resolveMddWorkerConcurrency,
+  resolveRedisUrlOrThrow,
+  shouldStartBullmqWorkers,
+} from "../../../common/bullmq-runtime.config.js";
 import { getRequestUserId, runWithRequestUserAsync } from "../../../common/request-user.store.js";
 import { ProjectGenerationGuardService } from "../../projects/project-generation-guard.service.js";
 import { LegacyCoordinatorService } from "../../legacy-flow/legacy-coordinator.service.js";
@@ -20,7 +34,7 @@ import { AiAnalysisService } from "../ai-analysis.service.js";
 
 export const MDD_QUEUE_NAME = "theforge-mdd";
 
-export type MddJobMode = "pipeline" | "manager" | "section" | "legacy";
+export type MddJobMode = "pipeline" | "manager" | "section" | "legacy" | "upstream-sync";
 
 export interface MddJobData {
   mode: MddJobMode;
@@ -32,6 +46,11 @@ export interface MddJobData {
   mddContent?: string;
   section?: number;
   gapReasons?: string[];
+  /** Secciones MDD 1–7 para mode upstream-sync. */
+  upstreamSections?: number[];
+  upstreamChangeSummary?: string;
+  /** Si true, omite caché upstream y ejecuta siempre el pipeline LLM (Regenerar MDD completo). */
+  forceFullPipeline?: boolean;
 }
 
 export type MddJobProgress = {
@@ -41,6 +60,29 @@ export type MddJobProgress = {
   mddLength?: number;
   section?: number;
 };
+
+function pushMddJobProgress(
+  record: InMemoryMddJobRecord,
+  patch: MddJobProgress,
+): void {
+  const prev = normalizeMddJobProgressState(record.progress);
+  record.progress = applyMddJobProgress(prev, patch);
+}
+
+function snapshotFromProgressState(state: MddJobProgressState): Pick<
+  MddJobSnapshot,
+  "progressAgent" | "progressMessage" | "progressPhase" | "progressSteps" | "progressActive"
+> {
+  const active = state.active;
+  const latest = state.latest;
+  return {
+    progressAgent: active?.agent ?? latest?.agent,
+    progressMessage: active?.message ?? latest?.message,
+    progressPhase: active ? "active" : latest?.phase,
+    progressSteps: state.steps,
+    progressActive: state.active,
+  };
+}
 
 export type MddJobResult = {
   ok: boolean;
@@ -55,6 +97,8 @@ export type MddJobResult = {
     questions?: string[];
     planMessage?: string;
   };
+  /** Estado upstream tras capturar baseline (jobs section / upstream-sync). */
+  mddUpstreamSync?: MddUpstreamSyncStatus;
 };
 
 export interface MddJobStatus {
@@ -89,6 +133,7 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly inMemoryJobs = new Map<string, InMemoryMddJobRecord>();
   private readonly inMemoryRunningProjects = new Set<string>();
   private readonly inMemoryPendingByProject = new Map<string, string[]>();
+  private readonly jobAbortControllers = new Map<string, AbortController>();
   private readonly MAX_ATTEMPTS = 3;
 
   constructor(
@@ -105,7 +150,7 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   usesRedis(): boolean {
-    return !!process.env.REDIS_URL?.trim();
+    return !!resolveRedisUrlOrThrow();
   }
 
   /** True si hay job MDD en cola o ejecutándose (incl. stream SSE activo). */
@@ -144,10 +189,97 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
     return out;
   }
 
+  /** Jobs MDD activos o en cola con progreso (para generation-status / UI). */
+  async listJobsForProject(projectId: string): Promise<MddJobSnapshot[]> {
+    const active = await this.listActiveJobsForProject(projectId);
+    const snapshots: MddJobSnapshot[] = [];
+    for (const job of active) {
+      const full = await this.getJobStatus(job.jobId);
+      const state = normalizeMddJobProgressState(full.progress);
+      snapshots.push({
+        jobId: job.jobId,
+        mode: job.mode,
+        status: job.status,
+        ...snapshotFromProgressState(state),
+      });
+    }
+    return snapshots;
+  }
+
+  /**
+   * Cancela un job MDD encolado o solicita abort del pipeline activo.
+   * Cola in-memory: abort inmediato entre nodos LangGraph. BullMQ: quita waiting; active abort entre eventos.
+   */
+  async cancelJob(jobId: string, projectId: string): Promise<{ cancelled: boolean; status: string }> {
+    const mem = this.inMemoryJobs.get(jobId);
+    if (mem) {
+      if (mem.data.projectId !== projectId) {
+        throw new ForbiddenException();
+      }
+      if (mem.status === "completed") {
+        return { cancelled: false, status: "completed" };
+      }
+      if (mem.status === "failed") {
+        return { cancelled: false, status: "failed" };
+      }
+      if (mem.status === "queued") {
+        const pending = this.inMemoryPendingByProject.get(projectId) ?? [];
+        const filtered = pending.filter((id) => id !== jobId);
+        if (filtered.length === 0) {
+          this.inMemoryPendingByProject.delete(projectId);
+        } else {
+          this.inMemoryPendingByProject.set(projectId, filtered);
+        }
+        mem.status = "failed";
+        mem.error = "Cancelado por el usuario";
+        mem.finishedAt = Date.now();
+        this.logger.log(`In-memory MDD job ${jobId} cancelado (queued) projectId=${projectId}`);
+        return { cancelled: true, status: "cancelled" };
+      }
+      if (mem.status === "active") {
+        this.jobAbortControllers.get(jobId)?.abort();
+        this.logger.log(`In-memory MDD job ${jobId} cancelación solicitada (active) projectId=${projectId}`);
+        return { cancelled: true, status: "cancelling" };
+      }
+      return { cancelled: false, status: mem.status };
+    }
+
+    if (!this.queue) {
+      throw new NotFoundException("Job MDD no encontrado");
+    }
+
+    const job = await this.queue.getJob(jobId);
+    if (!job) {
+      throw new NotFoundException("Job MDD no encontrado");
+    }
+    const data = job.data as MddJobData | undefined;
+    if (data?.projectId !== projectId) {
+      throw new ForbiddenException();
+    }
+    const state = await job.getState();
+    if (state === "completed") {
+      return { cancelled: false, status: "completed" };
+    }
+    if (state === "failed") {
+      return { cancelled: false, status: "failed" };
+    }
+    if (state === "waiting" || state === "delayed" || state === "waiting-children") {
+      await job.remove();
+      this.logger.log(`BullMQ MDD job ${jobId} cancelado (queued) projectId=${projectId}`);
+      return { cancelled: true, status: "cancelled" };
+    }
+    if (state === "active") {
+      this.jobAbortControllers.get(jobId)?.abort();
+      this.logger.log(`BullMQ MDD job ${jobId} cancelación solicitada (active) projectId=${projectId}`);
+      return { cancelled: true, status: "cancelling" };
+    }
+    return { cancelled: false, status: state };
+  }
+
   async onModuleInit(): Promise<void> {
-    const url = process.env.REDIS_URL?.trim();
+    const url = resolveRedisUrlOrThrow();
     if (!url) {
-      this.logger.log("BullMQ MDD: sin REDIS_URL — cola in-memory (sobrevive cerrar navegador, no restart API)");
+      this.logger.log("BullMQ MDD: sin REDIS_URL — cola in-memory (solo desarrollo)");
       return;
     }
     this.queue = new Queue(MDD_QUEUE_NAME, {
@@ -159,37 +291,46 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
         backoff: { type: "exponential", delay: 5_000 },
       },
     });
-    const workerOpts = longRunningBullmqWorkerOptions({ concurrency: 1 });
-    this.worker = new Worker(
-      MDD_QUEUE_NAME,
-      async (job: Job<MddJobData>, token?: string) => {
-        const { userId } = job.data;
-        return runWithRequestUserAsync(userId ?? "system", async () => {
-          this.logger.log(
-            `BullMQ MDD job ${job.id} mode=${job.data.mode} projectId=${job.data.projectId}`,
-          );
-          const onProgress = async (p: MddJobProgress) => {
-            await job.updateProgress(p);
-            if (!token) return;
-            try {
-              await job.extendLock(token, LONG_JOB_LOCK_DURATION_MS);
-            } catch {
-              // Worker timer still renews; ignore if lock already lost (logged by BullMQ).
-            }
-          };
-          return this.executeJob(job.data, onProgress);
-        });
-      },
-      { connection: { url }, ...workerOpts },
-    );
-    this.worker.on("failed", (job, err) => {
-      this.logger.error(
-        `BullMQ MDD job ${job?.id} falló: ${err instanceof Error ? err.message : err}`,
+    const concurrency = resolveMddWorkerConcurrency();
+    if (shouldStartBullmqWorkers()) {
+      const workerOpts = longRunningBullmqWorkerOptions({ concurrency });
+      this.worker = new Worker(
+        MDD_QUEUE_NAME,
+        async (job: Job<MddJobData>, token?: string) => {
+          const { userId } = job.data;
+          return runWithRequestUserAsync(userId ?? "system", async () => {
+            this.logger.log(
+              `BullMQ MDD job ${job.id} mode=${job.data.mode} projectId=${job.data.projectId}`,
+            );
+            let progressState = createEmptyMddJobProgressState();
+            const onProgress = async (p: MddJobProgress) => {
+              progressState = applyMddJobProgress(progressState, p);
+              await job.updateProgress(progressState);
+              if (!token) return;
+              try {
+                await job.extendLock(token, LONG_JOB_LOCK_DURATION_MS);
+              } catch {
+                // Worker timer still renews; ignore if lock already lost (logged by BullMQ).
+              }
+            };
+            return this.executeJob(String(job.id), job.data, onProgress);
+          });
+        },
+        { connection: { url }, ...workerOpts },
       );
-    });
-    this.logger.log(
-      `BullMQ MDD worker activo (${MDD_QUEUE_NAME}), lockDuration=${workerOpts.lockDuration}ms, concurrency=1`,
-    );
+      this.worker.on("failed", (job, err) => {
+        this.logger.error(
+          `BullMQ MDD job ${job?.id} falló: ${err instanceof Error ? err.message : err}`,
+        );
+      });
+      this.logger.log(
+        `BullMQ MDD worker activo (${MDD_QUEUE_NAME}), lockDuration=${workerOpts.lockDuration}ms, concurrency=${concurrency}`,
+      );
+    } else {
+      this.logger.log(
+        "BullMQ MDD: cola Redis conectada; workers desactivados (THEFORGE_RUNTIME_ROLE=http)",
+      );
+    }
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -256,8 +397,8 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
 
     void runWithRequestUserAsync(data.userId ?? "system", async () => {
       try {
-        const result = await this.executeJob(data, (p) => {
-          record.progress = p;
+        const result = await this.executeJob(jobId, data, (p) => {
+          pushMddJobProgress(record, p);
         });
         record.status = "completed";
         record.result = result;
@@ -274,14 +415,20 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async executeJob(
+    jobId: string,
     data: MddJobData,
     onProgress: (p: MddJobProgress) => void | Promise<void>,
   ): Promise<MddJobResult> {
     const { projectId } = data;
+    const abortController = new AbortController();
+    this.jobAbortControllers.set(jobId, abortController);
     this.generationGuard.registerMddStream(projectId);
     try {
       if (data.mode === "legacy") {
         onProgress({ phase: "legacy", message: "Generando MDD desde codebase…" });
+        if (abortController.signal.aborted) {
+          throw new Error("Cancelado por el usuario");
+        }
         const res = await this.legacyCoordinator.generateMdd(projectId, data.stageId, {
           includeContent: false,
         });
@@ -294,8 +441,11 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
           outcome: "done",
         };
       }
-      return await this.aiAnalysis.runMddGenerationJob(data, onProgress);
+      return await this.aiAnalysis.runMddGenerationJob(data, onProgress, {
+        signal: abortController.signal,
+      });
     } finally {
+      this.jobAbortControllers.delete(jobId);
       this.generationGuard.unregisterMddStream(projectId);
     }
   }

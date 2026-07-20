@@ -237,6 +237,8 @@ model Stage {
   theforgeProjectId   String?
   /// Memoria de trabajo (corto plazo): último contexto / scratch del agente (JSON).
   shortTermContext Json?
+  /// Snapshot (hashes + metadatos) de DBGA/BRD/Benchmark al último MDD finalizado en etapa.
+  mddUpstreamBaseline Json?
   episodicMemories EpisodicMemory[]
   documentationGaps DocumentationGap[]
   agentSessionLogs AgentSessionLog[]
@@ -389,6 +391,7 @@ model Project {
   integrationHandoffUpdatedAt DateTime?
   integrationTracesAsNew IntegrationTrace[] @relation("IntegrationTraceNew")
   integrationTracesAsLegacy IntegrationTrace[] @relation("IntegrationTraceLegacy")
+  ariadneLinks         ProjectAriadneLink[]
   createdAt            DateTime  @default(now())
 
   @@index([userId])
@@ -397,6 +400,28 @@ model Project {
   @@index([parentProjectId])
   @@index([linkedLegacyProjectId])
   @@index([linkedNewProjectId])
+}
+
+/// Enlace persistido Forge ↔ Ariadne (brownfield / parity). Se crea en Forge, no en Ariadne.
+model ProjectAriadneLink {
+  id                  String   @id @default(uuid())
+  projectId           String
+  project             Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  ariadneProjectId    String?
+  ariadneRepositoryId String?
+  gitRemote           String?
+  projectKey          String?
+  repoSlug            String?
+  isPrimary           Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([ariadneProjectId])
+  @@index([ariadneRepositoryId])
+  @@index([gitRemote])
+  @@index([projectKey, repoSlug])
+  @@map("project_ariadne_links")
 }
 
 enum IntegrationTraceStatus {

@@ -6,6 +6,7 @@ import {
   competitorDataSchema,
   type DBGAStateType,
 } from "../state/index.js";
+import { buildUserDeclaredStackPromptBlock } from "../utils/user-declared-stack.util.js";
 import { z } from "zod";
 import { parseJsonOrThrow } from "../utils/parse-json.js";
 
@@ -34,7 +35,11 @@ export function createScoutNode(
     const query = state.refinedQuery?.trim() || state.rawIdea;
     let prompt = `${SCOUT_PROMPT}\n\n---\nIdea del usuario: ${query}`;
     if (state.userPreferences?.trim()) {
-      prompt += `\n\n**HISTORIAL_DE_PREFERENCIAS (usa para alinear el benchmark):**\n${state.userPreferences.trim()}`;
+      prompt += `\n\n**HISTORIAL_DE_PREFERENCIAS (usa para alinear el benchmark; NO sustituyas stack que el usuario ya nombró en la idea):**\n${state.userPreferences.trim()}`;
+    }
+    const stackBlock = buildUserDeclaredStackPromptBlock(query, state.rawIdea);
+    if (stackBlock) {
+      prompt += `\n\n---\n${stackBlock}`;
     }
     const messages = [new HumanMessage(prompt)];
 

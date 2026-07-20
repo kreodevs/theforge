@@ -3,6 +3,9 @@ import { prepareMddForOutput } from "../utils/mdd-prepare-output.js";
 import { validateMddForDelivery } from "../utils/mdd-delivery-gate.util.js";
 import {
   formatDeliveryGateBlockersFeedback,
+  formatDeliveryGateQualityWarningsFeedback,
+  hasUnresolvedAutoRepairableGateWarnings,
+  MAX_MDD_DELIVERY_GATE_ATTEMPTS,
   resolveDeliveryGateFixTarget,
   shouldContinueDeliveryGateLoop,
 } from "../utils/mdd-delivery-gate-loop.util.js";
@@ -32,27 +35,40 @@ export function createMddPrepareOutputNode(options?: { uiMcpLibraryLabel?: strin
       gateRef.current ??
       validateMddForDelivery(prepared, { brdMarkdown, dbgaMarkdown });
     const attempt = state.deliveryGateAttempt ?? 0;
-    const loop = shouldContinueDeliveryGateLoop(gate, attempt);
+    const qualityPending = hasUnresolvedAutoRepairableGateWarnings(gate.warnings);
+    const loop =
+      shouldContinueDeliveryGateLoop(gate, attempt) ||
+      (qualityPending && attempt < MAX_MDD_DELIVERY_GATE_ATTEMPTS);
 
     LOG(
-      "gate ok=%s score=%s blockers=%d attempt=%d loop=%s",
+      "gate ok=%s score=%s blockers=%d warnings=%d attempt=%d loop=%s qualityPending=%s",
       gate.ok,
       gate.score,
       gate.blockers.length,
+      gate.warnings.length,
       attempt,
       loop,
+      qualityPending,
     );
 
     if (loop) {
-      const fixTarget = resolveDeliveryGateFixTarget(gate.blockers);
+      const fixTarget = resolveDeliveryGateFixTarget([
+        ...gate.blockers,
+        ...gate.warnings.filter((w) => hasUnresolvedAutoRepairableGateWarnings([w])),
+      ]);
+      const agentFeedback = [
+        formatDeliveryGateBlockersFeedback(gate.blockers),
+        formatDeliveryGateQualityWarningsFeedback(gate.warnings),
+      ]
+        .filter(Boolean)
+        .join("\n\n");
       return {
         mddDraft: prepared,
         deliveryGate: gate,
         deliveryGateAttempt: attempt + 1,
         deliveryGateLoopActive: true,
         deliveryGateFixTarget: fixTarget,
-        auditorFeedback: formatDeliveryGateBlockersFeedback(gate.blockers),
-        auditorDecision: "clarifier",
+        auditorFeedback: agentFeedback || state.auditorFeedback,
       };
     }
 

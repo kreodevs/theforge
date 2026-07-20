@@ -26,6 +26,21 @@ import { PlanValidationService } from "./plan-validation.service.js";
 import { ProjectGroupsModule } from "../project-groups/project-groups.module.js";
 import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
 import { TasksGenerationPipelineService } from "./tasks-generation-pipeline.service.js";
+import { ProjectMddPersistService } from "./project-mdd-persist.service.js";
+import { DeliverablesCascadeService } from "./deliverables-cascade.service.js";
+import { ProjectStageService } from "./project-stage.service.js";
+import { ProjectUxGuideService } from "./project-ux-guide.service.js";
+import { ProjectDeliverableGeneratorsService } from "./project-deliverable-generators.service.js";
+import { ProjectDeliverableGateService } from "./project-deliverable-gate.service.js";
+import { ProjectConformanceService } from "./project-conformance.service.js";
+import { ProjectBrdService } from "./project-brd.service.js";
+import { ProjectUpdateService } from "./project-update.service.js";
+import { ProjectComplexityService } from "./project-complexity.service.js";
+import { ProjectSddReconcileService } from "./project-sdd-reconcile.service.js";
+import { ProjectLifecycleService } from "./project-lifecycle.service.js";
+import { ProjectPhase0Service } from "./project-phase0.service.js";
+import { ProjectNotionPortabilityService } from "./project-notion-portability.service.js";
+import { PluginModule } from "../../plugins/plugin.module.js";
 
 @Module({
   imports: [
@@ -33,7 +48,7 @@ import { TasksGenerationPipelineService } from "./tasks-generation-pipeline.serv
     AiModule,
     Phase0Module,
     ScraperModule,
-    TheForgeModule,
+    forwardRef(() => TheForgeModule),
     GraphMemoryModule,
     ChangeLogModule,
     DocumentSnapshotModule,
@@ -43,6 +58,7 @@ import { TasksGenerationPipelineService } from "./tasks-generation-pipeline.serv
     ProjectGroupsModule,
     EstimationModule,
     forwardRef(() => AiAnalysisModule),
+    PluginModule,
   ],
   controllers: [ProjectsController, ProjectIntegrationController],
   providers: [
@@ -57,6 +73,20 @@ import { TasksGenerationPipelineService } from "./tasks-generation-pipeline.serv
     DeliverablesQueueService,
     ProjectGenerationGuardService,
     TasksGenerationPipelineService,
+    ProjectNotionPortabilityService,
+    ProjectMddPersistService,
+    DeliverablesCascadeService,
+    ProjectStageService,
+    ProjectUxGuideService,
+    ProjectDeliverableGeneratorsService,
+    ProjectDeliverableGateService,
+    ProjectConformanceService,
+    ProjectBrdService,
+    ProjectUpdateService,
+    ProjectComplexityService,
+    ProjectPhase0Service,
+    ProjectSddReconcileService,
+    ProjectLifecycleService,
   ],
   exports: [ProjectsService, ProjectIntegrationService, IntegrationAgentService, ProjectMergeService, PROJECTS_ORCHESTRATOR_PORT, DeliverablesQueueService, ProjectGenerationGuardService, PlanValidationService],
 })

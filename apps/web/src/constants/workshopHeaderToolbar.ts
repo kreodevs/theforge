@@ -7,5 +7,5 @@ export const WORKSHOP_HEADER_CTL =
 export const WORKSHOP_HEADER_CTL_HOVER =
   "hover:bg-[color-mix(in_oklch,var(--muted)_52%,var(--card))] hover:border-[color-mix(in_oklch,var(--border)_88%,var(--foreground))]";
 
-/** Workshop header: icon controls (etapas, ZIP, Hermes, Ayuda) — outline + hover invertido. */
+/** Workshop header: icon controls (etapas, ZIP, Ayuda) — outline + hover invertido. */
 export const WORKSHOP_HEADER_ICON_BTN = WORKSHOP_INVERSE_ICON_BTN;

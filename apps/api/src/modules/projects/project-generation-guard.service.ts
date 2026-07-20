@@ -4,6 +4,7 @@ import {
   buildDeliverableReadiness,
   buildGenerationGates,
   evaluateGenerationGate,
+  toMddUpstreamSyncStatus,
   type GenerationJobSnapshot,
   type GenerationJobType,
   type ProjectGenerationStatus,
@@ -11,6 +12,7 @@ import {
 import { ProjectsService } from "./projects.service.js";
 import { DeliverablesQueueService } from "./deliverables-queue.service.js";
 import { MddQueueService } from "../ai-analysis/mdd/mdd-queue.service.js";
+import { MddUpstreamSyncService } from "../ai-analysis/mdd/mdd-upstream-sync.service.js";
 
 type TrackedBgJob = {
   projectId: string;
@@ -33,6 +35,8 @@ export class ProjectGenerationGuardService {
     private readonly deliverablesQueue: DeliverablesQueueService,
     @Inject(forwardRef(() => MddQueueService))
     private readonly mddQueue: MddQueueService,
+    @Inject(forwardRef(() => MddUpstreamSyncService))
+    private readonly mddUpstreamSync: MddUpstreamSyncService,
   ) {}
 
   registerMddStream(projectId: string): void {
@@ -74,7 +78,7 @@ export class ProjectGenerationGuardService {
     }
   }
 
-  async getStatus(projectId: string): Promise<
+  async getStatus(projectId: string, stageId?: string | null): Promise<
     ProjectGenerationStatus & {
       complexity: ComplexityLevel;
       contentReady: ReturnType<typeof buildDeliverableReadiness>;
@@ -95,6 +99,8 @@ export class ProjectGenerationGuardService {
       }
     }
 
+    const mddJobs = await this.mddQueue.listJobsForProject(projectId);
+
     const merged = [...queueJobs, ...bgSnapshots];
     const activeJob = merged.find((j) => j.status === "active") ?? merged.find((j) => j.status === "retrying") ?? null;
     const queuedJobs = merged.filter((j) => j.status === "queued");
@@ -112,14 +118,24 @@ export class ProjectGenerationGuardService {
 
     const busy = mddStreamActive || activeJobsForGates.length > 0;
 
+    let mddUpstreamSync = null;
+    try {
+      const analysis = await this.mddUpstreamSync.analyze(projectId, stageId);
+      mddUpstreamSync = toMddUpstreamSyncStatus(analysis);
+    } catch {
+      mddUpstreamSync = null;
+    }
+
     return {
       busy,
       mddStreamActive,
+      mddJobs,
       activeJob,
       queuedJobs,
       gates,
       complexity,
       contentReady,
+      mddUpstreamSync,
     };
   }
 }

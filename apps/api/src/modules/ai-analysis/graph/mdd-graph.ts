@@ -51,8 +51,20 @@ const STRUCTURAL_TEMPERATURE = 0.2;
 // cache before executing.  On a cache hit the LLM call is skipped entirely.
 // ---------------------------------------------------------------------------
 
-type NodeFn = (state: MDDStateType) => Promise<Partial<MDDStateType>>;
+type NodeFn = (state: MDDStateType) => Partial<MDDStateType> | Promise<Partial<MDDStateType>>;
 type InputHashFn = (state: MDDStateType) => Record<string, unknown>;
+
+function wrapNodeStart(
+  nodeName: string,
+  nodeFn: NodeFn,
+  onNodeStart?: (nodeName: string) => void,
+): NodeFn {
+  if (!onNodeStart) return nodeFn;
+  return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {
+    onNodeStart(nodeName);
+    return Promise.resolve(nodeFn(state));
+  };
+}
 
 function wrapCache(
   cache: NodeCacheService | null,
@@ -82,6 +94,8 @@ export type MddGraphCompileOptions = {
   nodeCache?: NodeCacheService | null;
   /** Librería del MCP gráfico activo (§2 Frontend → UI Library). */
   uiMcpFrontendLibraryLabel?: string | null;
+  /** Emite progreso «activo» al iniciar cada nodo (polling MDD). */
+  onNodeStart?: (nodeName: string) => void;
 };
 
 /**
@@ -101,47 +115,95 @@ export async function createMddGraph(
   const structuralLlm = await createDbgaLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
   const auditorLlm = await createMddAuditorLLM(aiFactory, userId);
   const nodeCache = options?.nodeCache ?? null;
+  const onNodeStart = options?.onNodeStart;
 
-  const clarifierNode = wrapCache(nodeCache, "clarifier", clarifierInput, createMddClarifierNode(llm));
-  const softwareArchitectNode = wrapCache(
-    nodeCache,
-    "software_architect",
-    softwareArchitectInput,
-    createMddSoftwareArchitectNode(structuralLlm, getMddArchitectTools(), {
-      theforge: options?.theforge ?? null,
-      uiMcpFrontendLibraryLabel: options?.uiMcpFrontendLibraryLabel ?? null,
-    }),
+  const clarifierNode = wrapNodeStart(
+    "clarifier",
+    wrapCache(nodeCache, "clarifier", clarifierInput, createMddClarifierNode(llm)),
+    onNodeStart,
   );
-  const architectCriticNode = createMddArchitectCriticNode(llm);
-  const formatterNode = createMddFormatterNode();
+  const softwareArchitectNode = wrapNodeStart(
+    "software_architect",
+    wrapCache(
+      nodeCache,
+      "software_architect",
+      softwareArchitectInput,
+      createMddSoftwareArchitectNode(structuralLlm, getMddArchitectTools(), {
+        theforge: options?.theforge ?? null,
+        uiMcpFrontendLibraryLabel: options?.uiMcpFrontendLibraryLabel ?? null,
+      }),
+    ),
+    onNodeStart,
+  );
+  const architectCriticNode = wrapNodeStart(
+    "architect_critic",
+    createMddArchitectCriticNode(llm),
+    onNodeStart,
+  );
+  const formatterNode = (nodeName: string) =>
+    wrapNodeStart(nodeName, createMddFormatterNode(), onNodeStart);
   // Primera pasada: Security + Integration en un solo nodo con Promise.all (paralelo real,
   // ahorra ~60s vs secuencial). Los nodos individuales se conservan solo para el auto-loop
   // del delivery gate (prepare_output → integration) y regeneración por sección.
-  const securityIntegrationNode = wrapCache(
-    nodeCache,
+  const securityIntegrationNode = wrapNodeStart(
     "security_integration",
-    securityIntegrationInput,
-    createMddSecurityIntegrationNode(structuralLlm),
+    wrapCache(
+      nodeCache,
+      "security_integration",
+      securityIntegrationInput,
+      createMddSecurityIntegrationNode(structuralLlm),
+    ),
+    onNodeStart,
   );
-  const integrationNode = wrapCache(nodeCache, "integration", integrationInput, createMddIntegrationNode(structuralLlm));
-  const formatSecIntNode = createMddFormatSecIntNode();
-  const diagramInjectorNode = createMddDiagramInjectorNode();
-  const consistencyNode = wrapCache(
-    nodeCache,
-    "cross_consistency",
-    crossConsistencyInput,
-    createMddCrossConsistencyNode(auditorLlm),
+  const integrationNode = wrapNodeStart(
+    "integration",
+    wrapCache(nodeCache, "integration", integrationInput, createMddIntegrationNode(structuralLlm)),
+    onNodeStart,
   );
-  const llmFormatterNode = wrapCache(nodeCache, "llm_formatter", llmFormatterInput, createMddLlmFormatterNode(llm));
-  const auditorNode = createMddAuditorNode(auditorLlm, getMddAuditorTools(), null);
-  const graphPopulatorNode = createMddGraphPopulatorNode(llm, graphMemory);
-  const prepareOutputNode = createMddPrepareOutputNode({
-    uiMcpLibraryLabel: options?.uiMcpFrontendLibraryLabel ?? null,
-  });
+  const formatSecIntNode = wrapNodeStart("format_sec_int", createMddFormatSecIntNode(), onNodeStart);
+  const diagramInjectorNode = wrapNodeStart(
+    "diagram_injector",
+    createMddDiagramInjectorNode(),
+    onNodeStart,
+  );
+  const consistencyNode = wrapNodeStart(
+    "cross_consistency_checker",
+    wrapCache(
+      nodeCache,
+      "cross_consistency",
+      crossConsistencyInput,
+      createMddCrossConsistencyNode(auditorLlm),
+    ),
+    onNodeStart,
+  );
+  const llmFormatterNode = wrapNodeStart(
+    "llm_formatter",
+    wrapCache(nodeCache, "llm_formatter", llmFormatterInput, createMddLlmFormatterNode(llm)),
+    onNodeStart,
+  );
+  const auditorNode = wrapNodeStart(
+    "auditor",
+    createMddAuditorNode(auditorLlm, getMddAuditorTools(), null),
+    onNodeStart,
+  );
+  const graphPopulatorNode = wrapNodeStart(
+    "graph_populator",
+    createMddGraphPopulatorNode(llm, graphMemory),
+    onNodeStart,
+  );
+  const prepareOutputNode = wrapNodeStart(
+    "prepare_output",
+    createMddPrepareOutputNode({
+      uiMcpLibraryLabel: options?.uiMcpFrontendLibraryLabel ?? null,
+    }),
+    onNodeStart,
+  );
 
   function routeAfterPrepareOutput(state: MDDStateType): string {
     if (state.deliveryGateLoopActive === true) {
-      return state.deliveryGateFixTarget === "integration" ? "integration" : "software_architect";
+      if (state.deliveryGateFixTarget === "integration") return "integration";
+      if (state.deliveryGateFixTarget === "clarifier") return "clarifier";
+      return "software_architect";
     }
     return "graph_populator";
   }
@@ -188,13 +250,13 @@ export async function createMddGraph(
     .addNode("clarifier", clarifierNode)
     .addNode("software_architect", softwareArchitectNode)
     .addNode("architect_critic", architectCriticNode)
-    .addNode("format_after_architect", formatterNode)
+    .addNode("format_after_architect", formatterNode("format_after_architect"))
     // Nodo combinado (Promise.all §6+§7) para la primera pasada; integration/format_sec_int
     // se mantienen para el auto-loop del delivery gate.
     .addNode("security_integration", securityIntegrationNode)
     .addNode("integration", integrationNode)
     .addNode("format_sec_int", formatSecIntNode)
-    .addNode("format_after_redactor", formatterNode)
+    .addNode("format_after_redactor", formatterNode("format_after_redactor"))
     .addNode("llm_formatter", llmFormatterNode)
     // [PARALELO] CrossConsistency (skip si draft completo) + DiagramInjector (code-only, <3s)
     .addNode("cross_consistency_checker", consistencyNode)
@@ -231,6 +293,7 @@ export async function createMddGraph(
     .addConditionalEdges("prepare_output", routeAfterPrepareOutput, {
       software_architect: "software_architect",
       integration: "integration",
+      clarifier: "clarifier",
       graph_populator: "graph_populator",
     })
     .addEdge("graph_populator", END);
@@ -306,7 +369,9 @@ export async function createMddGraphWithManager(
   function routeAfterPrepareOutput(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
     if (state.deliveryGateLoopActive === true) {
-      return state.deliveryGateFixTarget === "integration" ? "integration" : "software_architect";
+      if (state.deliveryGateFixTarget === "integration") return "integration";
+      if (state.deliveryGateFixTarget === "clarifier") return "clarifier";
+      return "software_architect";
     }
     return "graph_populator";
   }
@@ -560,6 +625,7 @@ export async function createMddGraphWithManager(
       executor: "executor",
       software_architect: "software_architect",
       integration: "integration",
+      clarifier: "clarifier",
       graph_populator: "graph_populator",
     })
     .addConditionalEdges("blackboard", routeAfterBlackboard, {

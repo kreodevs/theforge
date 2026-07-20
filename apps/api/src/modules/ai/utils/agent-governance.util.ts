@@ -7,14 +7,8 @@ import {
   expectedPromptInicialPaths,
   formatDocumentMarkdown,
   formatDocumentPathMapTable,
-  formatDocumentPathMapTableStatic,
-  formatWorkshopSupplementSection,
-  GOVERNANCE_TARGET_LABELS,
-  GOVERNANCE_TARGETS_ORDER,
   GOVERNANCE_THEFORGE_DOC_CONSUMPTION_GUIDE,
   GOVERNANCE_DOCS_PREFIX,
-  GOVERNANCE_INSTALL_TARGETS_PREFIX,
-  installTargetBundlePrefix,
   migrateGovernancePath,
   ROOT_THEFORGE_DOC_CONSUMPTION_GUIDE,
   type AgentGovernanceFile,
@@ -29,12 +23,9 @@ import { buildMultiTargetBundle, remapGovernanceScaffold } from "./governance-ta
 import {
   getRuleById,
   getSkillById,
-  type RuleCatalogEntry,
-  type SkillCatalogEntry,
 } from "./agent-governance-catalog.js";
 import {
   buildArtifactTemplateContext,
-  CLI_FRONTEND_STACK_LABEL,
   extractProjectGovernanceFacts,
   type AgentGovernanceSuggestions,
   type ProjectGovernanceFacts,
@@ -53,6 +44,33 @@ import {
 } from "../../documentation-gap/sdd-align-at-persist.util.js";
 import { injectProposedComponentDiagramIntoSection2 } from "../../ai-analysis/utils/mdd-component-diagram.util.js";
 import { qualifyBlueprintPostMvpUiMentions } from "../../engine/blueprint-enrich-ui-system.js";
+import {
+  defaultInstallMapTableRows,
+  defaultDocumentPathMapTable,
+  defaultMultiTargetInstallTableRows,
+  replaceFeatureDirPlaceholders,
+} from "./agent-governance/install-map.util.js";
+import {
+  buildSddConflictSection,
+  buildSddConflictTable,
+  stripSddConflictSections,
+  contentHasSddConflicts,
+} from "./agent-governance/sdd-conflict.util.js";
+import {
+  defaultTheforgeDocSyncRule,
+  renderRuleFromCatalog,
+} from "./agent-governance/rules-artifacts.util.js";
+import {
+  defaultTheforgeDocSyncSkill,
+  renderSkillFromCatalog,
+} from "./agent-governance/skills-artifacts.util.js";
+import {
+  appendSddConflictToAgents,
+  buildDynamicCursorAgents,
+  buildDynamicCursorCommands,
+  defaultAgentsMd,
+  ensureAgentsCanonicalSections,
+} from "./agent-governance/agents-artifacts.util.js";
 
 const logger = new Logger("AgentGovernanceUtil");
 
@@ -182,103 +200,9 @@ function generateClaudeMdWithContext(facts: ProjectGovernanceFacts): string {
   return sections.join("\n");
 }
 
-function defaultInstallMapTableRows(): string {
-  return (
-    "| `docs/agent-governance/rules/*.mdc` | `.cursor/rules/*.mdc` |\n" +
-    "| `docs/agent-governance/skills/*/SKILL.md` | `.cursor/skills/*/SKILL.md` |\n" +
-    "| `docs/agent-governance/references/*` | `.cursor/references/*` |\n" +
-    "| `docs/agent-governance/agents/*` | `.cursor/agents/*` |\n" +
-    "| `docs/agent-governance/commands/*` | `.cursor/commands/*` |\n" +
-    "| `docs/agent-governance/mcp.json.example` | `.cursor/mcp.json` |\n"
-  );
-}
-
-function defaultDocumentPathMapTable(featureDir?: string): string {
-  if (featureDir?.trim()) {
-    return formatDocumentPathMapTable(featureDir.trim());
-  }
-  return formatDocumentPathMapTableStatic();
-}
-
-function replaceFeatureDirPlaceholders(content: string, featureDir: string): string {
-  return content
-    .replace(/\{featureDir\}/g, featureDir)
-    .replace(/specs\/NNN-slug/g, featureDir);
-}
 
 function defaultDocConsumptionGuide(featureDir?: string): string {
   return buildTheforgeDocConsumptionGuide(featureDir);
-}
-
-const AGENTS_SDD_DUAL_SECTION = "## Documentos SDD (layout dual)";
-const AGENTS_INSTALL_SECTION = "## Instalación de gobernanza";
-
-function buildAgentsDualSpecKitSection(featureDir?: string): string {
-  return (
-    AGENTS_SDD_DUAL_SECTION +
-    "\n\n" +
-    "Lee primero el layout **spec-kit** en la raíz del repo; `docs/sdd/*` es espejo para gobernanza. " +
-    "**No te limites a MDD, Spec, Plan y Tasks**: implementa según el alcance del proyecto leyendo también arquitectura, casos, H.U., design system, pantallas, API, flujos, infra y ADRs cuando estén en el ZIP.\n\n" +
-    defaultDocumentPathMapTable(featureDir) +
-    "\n\n" +
-    formatWorkshopSupplementSection(featureDir) +
-    "\n"
-  );
-}
-
-function buildAgentsInstallSection(): string {
-  return (
-    AGENTS_INSTALL_SECTION +
-    "\n\n" +
-    "El ZIP incluye SSOT en `docs/agent-governance/` y bundles pre-mapeados en `" +
-    GOVERNANCE_INSTALL_TARGETS_PREFIX +
-    "{target}/`. Instala según tu IDE:\n\n" +
-    "1. Lee `IMPLEMENT.md` y `.specify/memory/constitution.md`.\n" +
-    "2. Lee `docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md` y `docs/agent-governance/INSTALACION.md`.\n" +
-    "3. Ejecuta `scripts/install-governance-{tu-ide}.sh` o copia desde `install-targets/{tu-ide}/`.\n" +
-    "4. Pega **`PROMPT-INICIAL.{tu-ide}.md`** en sesión 0 (índice en `PROMPT-INICIAL.md`).\n\n" +
-    defaultMultiTargetInstallTableRows() +
-    "\n\n" +
-    "- **Uso del paquete:** `docs/agent-governance/COMO-USAR-GOBERNANZA-IA.md`\n" +
-    "- **Onboarding:** `docs/agent-governance/agent-onboarding.md`\n"
-  );
-}
-
-const AGENTS_INSTALL_CANONICAL_MARKERS = [
-  "install-targets/",
-  "install-governance-",
-  "PROMPT-INICIAL.{tu-ide}.md",
-  "docs/agent-governance/references/*",
-  ".cursor/references/*",
-] as const;
-
-function extractMarkdownSection(
-  content: string,
-  heading: string,
-): { start: number; end: number; text: string } | null {
-  const idx = content.indexOf(heading);
-  if (idx < 0) return null;
-  const afterHeading = idx + heading.length;
-  const rest = content.slice(afterHeading);
-  const nextHeading = rest.search(/\n## [^#]/);
-  const end = nextHeading >= 0 ? afterHeading + nextHeading : content.length;
-  return { start: idx, end, text: content.slice(idx, end) };
-}
-
-function replaceMarkdownSection(content: string, heading: string, replacement: string): string {
-  const section = extractMarkdownSection(content, heading);
-  if (!section) return content;
-  const before = content.slice(0, section.start).trimEnd();
-  const after = content.slice(section.end).trimStart();
-  const parts = [before, replacement.trimEnd()];
-  if (after) parts.push(after);
-  return `${parts.join("\n\n")}\n`;
-}
-
-function isStaleAgentsInstallSection(section: string): boolean {
-  if (/\.cursor\/specifications\//i.test(section)) return true;
-  if (/\.cursor\/workflows\//i.test(section)) return true;
-  return AGENTS_INSTALL_CANONICAL_MARKERS.some((marker) => !section.includes(marker));
 }
 
 function mcpJsonExampleSpecificityScore(content: string): number {
@@ -330,33 +254,6 @@ function deduplicateMcpJsonExample(fileMap: Record<string, string>): void {
   delete fileMap[rootPath];
 }
 
-const AGENTS_CRITICAL_RULES_SECTION = "## Reglas críticas";
-
-function buildAgentsCriticalRulesSection(): string {
-  return (
-    AGENTS_CRITICAL_RULES_SECTION +
-    "\n\n" +
-    "Estas reglas aplican **independientemente del IDE** (Antigravity, Copilot, Codex, etc.):\n\n" +
-    "1. **Git:** conventional commits cuando el repo los use; sin `Co-authored-by` de agentes IA salvo petición explícita.\n" +
-    "2. **Stack:** respeta el MDD §2 y Blueprint; no introduzcas frameworks no documentados.\n" +
-    "3. **Seguridad:** auth, secretos y contratos API según MDD §6 y `api-contracts.md`.\n" +
-    "4. **SDD:** ante conflicto entre artefactos, **gana el MDD**; reporta gaps vía MCP `report_documentation_gap` si aplica.\n" +
-    "5. **Alcance:** implementa solo la tarea abierta; no expandas scope sin aprobación.\n"
-  );
-}
-
-function defaultAgentsMd(featureDir?: string): string {
-  return (
-    "# AGENTS\n\n" +
-    "Punto de entrada para agentes de código. Usa **`PROMPT-INICIAL.{tu-ide}.md`** en sesión 0.\n\n" +
-    buildAgentsCriticalRulesSection().trimEnd() +
-    "\n\n" +
-    buildAgentsDualSpecKitSection(featureDir).trimEnd() +
-    "\n\n" +
-    buildAgentsInstallSection().trimEnd() +
-    "\n"
-  );
-}
 
 function defaultAgentOnboarding(): string {
   return (
@@ -372,44 +269,6 @@ function defaultAgentOnboarding(): string {
   );
 }
 
-function defaultMultiTargetInstallTableRows(): string {
-  const rows: string[] = [
-    "| Target | Script | Destino repo |",
-    "|--------|--------|--------------|",
-  ];
-  for (const target of GOVERNANCE_TARGETS_ORDER) {
-    if (target === "codex") {
-      rows.push(`| ${GOVERNANCE_TARGET_LABELS[target]} | _(solo prompt)_ | \`AGENTS.md\` + SSOT |`);
-      continue;
-    }
-    const script =
-      target === "cursor"
-        ? "install-governance-cursor.sh"
-        : `install-governance-${target}.sh`;
-    const dest =
-      target === "cursor"
-        ? "`.cursor/`"
-        : target === "antigravity"
-          ? "`.agents/skills/`"
-          : target === "claude-code"
-            ? "`.claude/`"
-            : target === "github-copilot"
-              ? "`.github/instructions/`"
-              : target === "windsurf"
-                ? "`.devin/`"
-                : target === "openhands"
-                  ? "`.openhands/`"
-                  : installTargetBundlePrefix(target);
-    rows.push(`| ${GOVERNANCE_TARGET_LABELS[target]} | \`scripts/${script}\` | ${dest} |`);
-  }
-  rows.push(
-    "",
-    "El ZIP incluye carpetas pre-mapeadas bajo `" +
-      GOVERNANCE_INSTALL_TARGETS_PREFIX +
-      "{target}/` (visibles en Finder).",
-  );
-  return rows.join("\n");
-}
 
 function defaultInstalacion(featureDir?: string): string {
   const featureRef = featureDir ?? "specs/NNN-slug";
@@ -800,63 +659,7 @@ function defaultTheforgeLinkMd(facts: ProjectGovernanceFacts): string {
   );
 }
 
-function defaultTheforgeDocSyncRule(): string {
-  return (
-    "---\n" +
-    "description: Sincronizar la documentación SDD con el código vía MCP The Forge (drift greenfield / pre-producción)\n" +
-    "alwaysApply: true\n" +
-    "---\n\n" +
-    "# The Forge doc sync\n\n" +
-    "El código es la fuente de verdad; el SDD (MDD, Blueprint, Tasks, contratos, flujos…) debe reflejarlo. En greenfield pre-producción los cambios por faltantes de documentación o funcionalidad nueva se reconcilian con **`report_documentation_gap`**, **no** abriendo una etapa nueva por cada desvío.\n\n" +
-    "## Cuándo reportar\n\n" +
-    "- **Inline:** durante la implementación descubres que un entregable SDD es **incorrecto o incompleto**.\n" +
-    "- **Fin de sesión / pre-commit:** antes de cerrar la tarea o commitear, revisa el `git diff` contra el SDD; si el código introdujo/renombró/eliminó algo no contemplado (endpoint, entidad, flujo, tarea), repórtalo.\n\n" +
-    "## Cómo\n\n" +
-    "1. **No** parches la doc en silencio ni abras una etapa nueva por esto.\n" +
-    "2. Lee `.theforge-project.json` (`projectId`, `stageId`).\n" +
-    "3. Llama MCP `report_documentation_gap`: `description` ≥40 chars, `evidence.reference` (§, T-, `docs/sdd/`, `tasks.md`), `affectedArtifacts` acotados. El **MDD se parchea siempre**.\n" +
-    "4. Continúa con el código correcto; la reconciliación parcial se aplica sola (o queda `PENDING_APPROVAL` en Workshop).\n" +
-    "5. Detalle, pasos del diff y mapeo cambio→artefactos: skill `theforge-doc-sync`.\n"
-  );
-}
 
-function defaultTheforgeDocSyncSkill(): string {
-  return (
-    "---\n" +
-    "name: theforge-doc-sync\n" +
-    "description: Reporta gaps de documentación SDD vía MCP The Forge cuando el código diverge de los entregables (inline o al revisar el diff al cerrar la sesión / antes de commit).\n" +
-    "---\n\n" +
-    "# The Forge doc sync\n\n" +
-    "## Cuándo usar\n\n" +
-    "El código implementado es correcto pero el SDD (MDD, Blueprint, Tasks, contratos, flujos, infra…) no lo refleja. Dos disparadores:\n\n" +
-    "- **Inline:** detectas el desvío mientras implementas.\n" +
-    "- **Fin de sesión / pre-commit:** revisas el diff acumulado antes de cerrar la tarea o commitear.\n\n" +
-    "En greenfield pre-producción esto es lo normal: entra funcionalidad nueva o afloran faltantes de documentación. **No abras una etapa nueva por cada desvío** (proliferan etapas difíciles de auditar); reconcilia el SDD de la **etapa activa** con este flujo.\n\n" +
-    "## Pasos (fin de sesión / pre-commit)\n\n" +
-    "1. `git diff` (o `git diff --staged`) para ver qué cambió realmente.\n" +
-    "2. Contrasta con el SDD: ¿el cambio contradice o no está en el MDD §, `docs/sdd/*` o `tasks.md`?\n" +
-    "3. Lee `.theforge-project.json` → `projectId`, `stageId`.\n" +
-    "4. Por cada desvío relevante, llama `report_documentation_gap` con:\n" +
-    "   - `description`: qué cambió y por qué el SDD queda desalineado (≥40 caracteres).\n" +
-    "   - `evidence.reference`: cita §, T-, ruta `docs/sdd/` o `tasks.md`.\n" +
-    "   - `evidence.codePaths`: archivos del diff que lo justifican.\n" +
-    "   - `affectedArtifacts`: solo los que cambian (el **MDD se parchea siempre**).\n" +
-    "5. Continúa con el código correcto; la reconciliación parcial se aplica sola o queda `PENDING_APPROVAL` en Workshop.\n" +
-    "6. Confirma con `get_agent_session_log` / `get_change_log`.\n\n" +
-    "## Mapa cambio → affectedArtifacts\n\n" +
-    "| Cambio en código | affectedArtifacts típicos |\n" +
-    "| --- | --- |\n" +
-    "| Endpoint nuevo/borrado/renombrado | `apiContracts`, `logicFlows`, `tasks` |\n" +
-    "| Entidad o modelo de datos | `blueprint`, `apiContracts` |\n" +
-    "| Flujo o regla de negocio | `logicFlows`, `useCases`, `userStories` |\n" +
-    "| Pantalla / UI | `uxUiGuide`, `pantallas` |\n" +
-    "| Infra / deploy | `infra` |\n\n" +
-    "## Notas\n\n" +
-    "- **Agrupa** por desvío; no un gap por línea. Hay dedup (24 h) y rate limit (~10/h).\n" +
-    "- Sin `DOC_GAP_AUTO_APPLY=1` el gap queda `PENDING_APPROVAL` (se aprueba en Workshop).\n" +
-    "- Reserva **abrir etapa** para hitos reales (cambio de alcance, handoff), no para drift de documentación.\n"
-  );
-}
 
 function formatStackSection(facts: ProjectGovernanceFacts): string {
   const lines: string[] = [];
@@ -867,94 +670,6 @@ function formatStackSection(facts: ProjectGovernanceFacts): string {
   return lines.length > 0 ? lines.join("\n") : "- Deriva el stack del MDD §2 y del Blueprint.";
 }
 
-function buildSddConflictTable(facts: ProjectGovernanceFacts): string {
-  const rows: Array<{ topic: string; decision: string }> = [];
-  const seen = new Set<string>();
-
-  const addRow = (topic: string, decision: string) => {
-    const key = topic.toLowerCase();
-    if (seen.has(key)) return;
-    seen.add(key);
-    rows.push({ topic, decision });
-  };
-
-  for (const c of facts.sddConflicts) {
-    const colon = c.indexOf(":");
-    if (colon > 0) {
-      addRow(c.slice(0, colon).trim(), c.slice(colon + 1).trim());
-    } else {
-      addRow("Conflicto SDD", c);
-    }
-  }
-
-  if (facts.frontendStack?.startsWith("CLI")) {
-    addRow(
-      "Frontend",
-      `MVP: **API REST + CLI** (${CLI_FRONTEND_STACK_LABEL}). Panel web React **fuera de alcance** hasta post-MVP.`,
-    );
-  }
-  if (facts.sddConflicts.some((c) => /BullMQ|Redis|mensajer/i.test(c))) {
-    addRow(
-      "Messaging / outbox",
-      facts.sddConflicts.some((c) => /RabbitMQ del MDD/i.test(c))
-        ? "MDD §2: RabbitMQ como broker. No BullMQ/Bull en workers ni tasks del MVP."
-        : "MDD §2: Bull + Redis para colas de workers. Publicación outbox → **Redis Pub/Sub**. No Kafka ni RabbitMQ en MVP.",
-    );
-  }
-  if (facts.sddConflicts.some((c) => /JWT/i.test(c))) {
-    addRow(
-      "JWT",
-      "**RS256** con par de claves `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` (PEM). `JWT_SECRET` (HS256) quedó **deprecado**.",
-    );
-  }
-  if (facts.sddConflicts.some((c) => /bcrypt|Argon2|Hashing/i.test(c))) {
-    addRow(
-      "Hashing bootstrap",
-      "**bcrypt** (factor 12) para Super Admin de bootstrap; coherente con §6 y Tasks. No Argon2id en manifest salvo que §6 lo exija.",
-    );
-  }
-
-  if (rows.length === 0) return "";
-
-  const lines = [
-    "## Resolución de conflictos SDD\n",
-    "Decisiones acordadas al alinear gobernanza con el MDD. **Prioriza siempre el MDD** ante nuevas contradicciones.\n",
-    "| Tema | Decisión |",
-    "|------|----------|",
-    ...rows.map((r) => `| **${r.topic}** | ${r.decision} |`),
-    "",
-  ];
-  return lines.join("\n");
-}
-
-function buildSddConflictSection(facts: ProjectGovernanceFacts): string {
-  const table = buildSddConflictTable(facts);
-  if (table.trim()) return `${table}\n`;
-  if (facts.sddConflicts.length === 0) return "";
-  const lines = [
-    "## Resolución de conflictos SDD\n\n",
-    "El detector encontró posibles contradicciones entre entregables. **Prioriza el MDD** y documenta la decisión en `docs/sdd/PROGRESO.md`.\n\n",
-  ];
-  for (const c of facts.sddConflicts) lines.push(`- ${c}\n`);
-  lines.push("\n");
-  return lines.join("");
-}
-
-function stripSddConflictSections(content: string): string {
-  return content
-    .replace(/## Resolución de conflictos SDD[\s\S]*?(?=\n## [^#]|\n#\s|$)/gi, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-function contentHasSddConflicts(content: string, facts: ProjectGovernanceFacts): boolean {
-  if (!/Resolución de conflictos SDD/i.test(content)) return false;
-  if (facts.sddConflicts.length === 0) return true;
-  return facts.sddConflicts.every((c) => {
-    const key = c.split(":")[0]?.trim();
-    return key ? content.includes(key) : content.includes(c.slice(0, 40));
-  });
-}
 
 interface CatalogStackSections {
   modules: boolean;
@@ -1170,62 +885,6 @@ function isLlmBoilerplateAgentOnboarding(content: string): boolean {
   );
 }
 
-function buildCursorAgentMd(role: string, description: string, loadPaths: string[]): string {
-  return (
-    `# Subagente: ${role}\n\n` +
-    `${description}\n\n` +
-    "## Cuándo delegar\n\n" +
-    `- Tareas acotadas de ${role.toLowerCase()} sin tocar otras capas.\n\n` +
-    "## Cargar antes de actuar\n\n" +
-    loadPaths.map((p) => `- \`${p}\``).join("\n") +
-    "\n\n## Gates\n\n" +
-    "- Lint, typecheck y tests del paquete tocado.\n" +
-    "- Respeta contratos y auth del MDD.\n"
-  );
-}
-
-function buildDynamicCursorAgents(facts: ProjectGovernanceFacts): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (facts.mobileStack) {
-    out[`${GOVERNANCE_DOCS_PREFIX}agents/mobile-implementer.md`] = buildCursorAgentMd(
-      "Mobile",
-      `Implementación ${facts.mobileStack} según MDD §2 y Blueprint.`,
-      ["AGENTS.md", "docs/sdd/mdd.md", "docs/sdd/blueprint.md", "docs/sdd/tasks.md"],
-    );
-  }
-  if (facts.backendStack) {
-    out[`${GOVERNANCE_DOCS_PREFIX}agents/backend-implementer.md`] = buildCursorAgentMd(
-      "Backend",
-      `API y lógica ${facts.backendStack} según MDD §4 y Architecture.`,
-      ["AGENTS.md", "docs/sdd/mdd.md", "docs/sdd/architecture.md", "docs/sdd/api-contracts.md"],
-    );
-  }
-  if (facts.hasUiSurface && (facts.frontendStack || facts.mobileStack)) {
-    const stack = facts.frontendStack ?? facts.mobileStack ?? "UI";
-    out[`${GOVERNANCE_DOCS_PREFIX}agents/frontend-implementer.md`] = buildCursorAgentMd(
-      "Frontend",
-      `UI ${stack} alineada a UX/UI guide y design system del MDD.`,
-      ["AGENTS.md", "docs/sdd/mdd.md", "docs/sdd/ux-ui-guide.md", "docs/sdd/blueprint.md"],
-    );
-  }
-  return out;
-}
-
-function buildDynamicCursorCommands(facts: ProjectGovernanceFacts): Record<string, string> {
-  const out: Record<string, string> = {};
-  out[`${GOVERNANCE_DOCS_PREFIX}commands/implementar-tarea.md`] =
-    "# Implementar tarea\n\n" +
-    `1. Lee \`${AGENT_PROMPT_PATH}\` y la tarea pendiente en \`docs/sdd/tasks.md\` (espejo spec-kit).\n` +
-    "2. Actualiza `docs/sdd/PROGRESO.md` al terminar.\n" +
-    "3. Ejecuta gates del paquete (lint, typecheck, tests).\n";
-
-  if (facts.backendStack) {
-    out[`${GOVERNANCE_DOCS_PREFIX}commands/revisar-api.md`] =
-      "# Revisar contratos API\n\n" +
-      "Valida cambios contra `docs/sdd/api-contracts.md` y MDD §4.\n";
-  }
-  return out;
-}
 
 const THIN_CONTENT_MIN_CHARS = 140;
 
@@ -1349,13 +1008,6 @@ function overlayProjectFacts(
   return `${base.trimEnd()}\n\n${block}`;
 }
 
-function appendSddConflictToAgents(content: string, facts: ProjectGovernanceFacts): string {
-  const section = buildSddConflictSection(facts);
-  if (!section.trim()) return stripSddConflictSections(content);
-  if (contentHasSddConflicts(content, facts)) return content;
-  const base = stripSddConflictSections(content);
-  return `${base.trimEnd()}\n\n${section.trim()}\n`;
-}
 
 function dropDuplicateGovernancePromptPaths(fileMap: Record<string, string>): void {
   for (const path of DUPLICATE_PROMPT_PATHS) {
@@ -1675,55 +1327,6 @@ function ensureDocConsumptionGuide(fileMap: Record<string, string>, featureDir?:
   }
 }
 
-function ensureAgentsCanonicalSections(fileMap: Record<string, string>, featureDir?: string): void {
-  const path = "AGENTS.md";
-  let current = fileMap[path]?.trim() ?? "";
-
-  if (!current.includes(AGENTS_CRITICAL_RULES_SECTION)) {
-    const critical = buildAgentsCriticalRulesSection().trimEnd();
-    if (current.length > 0) {
-      const lines = current.split("\n");
-      let insertAt = lines[0]?.startsWith("#") ? 1 : 0;
-      while (insertAt < lines.length && (lines[insertAt] ?? "").trim() === "") insertAt++;
-      const before = lines.slice(0, insertAt).join("\n");
-      const after = lines.slice(insertAt).join("\n");
-      current = `${before.trimEnd()}\n\n${critical}${after.trim() ? `\n\n${after}` : ""}`;
-    } else {
-      current = critical;
-    }
-    fileMap[path] = current;
-  }
-
-  current = fileMap[path]?.trim() ?? "";
-  if (!current.includes(AGENTS_SDD_DUAL_SECTION)) {
-    const dualSection = buildAgentsDualSpecKitSection(featureDir).trimEnd();
-    if (current.length > 0) {
-      const lines = current.split("\n");
-      let insertAt = lines[0]?.startsWith("#") ? 1 : 0;
-      while (insertAt < lines.length && (lines[insertAt] ?? "").trim() === "") insertAt++;
-      const before = lines.slice(0, insertAt).join("\n");
-      const after = lines.slice(insertAt).join("\n");
-      current = `${before.trimEnd()}\n\n${dualSection}${after.trim() ? `\n\n${after}` : ""}`;
-    } else {
-      current = dualSection;
-    }
-    fileMap[path] = current;
-  }
-
-  current = fileMap[path]?.trim() ?? "";
-  if (current.includes(AGENTS_INSTALL_SECTION)) {
-    const installSection = extractMarkdownSection(current, AGENTS_INSTALL_SECTION);
-    if (installSection && isStaleAgentsInstallSection(installSection.text)) {
-      fileMap[path] = replaceMarkdownSection(current, AGENTS_INSTALL_SECTION, buildAgentsInstallSection());
-    }
-  } else {
-    fileMap[path] = `${current.trimEnd()}\n\n${buildAgentsInstallSection().trimEnd()}\n`;
-  }
-
-  if (featureDir?.trim()) {
-    fileMap[path] = replaceFeatureDirPlaceholders(fileMap[path] ?? "", featureDir.trim());
-  }
-}
 
 function applyRequiredFileFallbacks(
   fileMap: Record<string, string>,
@@ -1884,26 +1487,7 @@ function enrichGovernanceArtifacts(
   }
 }
 
-function renderRuleFromCatalog(
-  rule: RuleCatalogEntry,
-  ctx: ReturnType<typeof buildArtifactTemplateContext>,
-): string {
-  return rule.template(ctx);
-}
 
-function renderSkillFromCatalog(
-  skill: SkillCatalogEntry,
-  ctx: ReturnType<typeof buildArtifactTemplateContext>,
-  folder: string,
-): string {
-  const prev = ctx.domainSkillFolder;
-  if (skill.dynamicFolder) {
-    ctx.domainSkillFolder = folder;
-  }
-  const content = skill.template(ctx);
-  ctx.domainSkillFolder = prev;
-  return content;
-}
 
 function mergeSuggestedArtifacts(
   fileMap: Record<string, string>,

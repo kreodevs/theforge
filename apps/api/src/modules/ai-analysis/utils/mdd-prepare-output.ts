@@ -1,4 +1,5 @@
 import type { MddStructured } from "../state/mdd-structured.schema.js";
+import { repairInlineHorizontalRuleSectionBreaks } from "@theforge/shared-types";
 import { mddStructuredToMarkdown } from "../render/mdd-structured-to-markdown.js";
 import { injectProposedComponentDiagramIntoSection2 } from "./mdd-component-diagram.util.js";
 import {
@@ -19,6 +20,7 @@ import {
   sanitizeContextSection,
   applyPreDeliveryGateFixes,
   detectCrossConsistencyIssues,
+  prepareMddMarkdownForPersist,
 } from "./mdd-sanitize.js";
 import {
   enrichMddWithUiUxDesignIntent,
@@ -111,12 +113,13 @@ export function draftHasSection6Heading(draft: string): boolean {
 function restoreSections6And7AfterNormalize(source: string, normalized: string): string {
   // No reinyectar desde un borrador con §5/§6/§7 repetidas (evita reintroducir el bucle de duplicación).
   if (mddHasDuplicateSectionHeadings(source)) return normalized;
+  const sourceRepaired = repairInlineHorizontalRuleSectionBreaks(source);
   let out = normalized;
   for (const section of [6, 7] as const) {
-    const srcRange = getSection6Or7Range(source, section);
+    const srcRange = getSection6Or7Range(sourceRepaired, section);
     if (!srcRange) continue;
     if (getSection6Or7Range(out, section)) continue;
-    const sectionMd = source.slice(srcRange.start, srcRange.end).trim();
+    const sectionMd = sourceRepaired.slice(srcRange.start, srcRange.end).trim();
     if (sectionMd.length > 0) out = replaceSection6Or7InDraft(out, section, sectionMd);
   }
   return out;
@@ -142,6 +145,9 @@ export type PrepareMddForOutputOptions = {
   /** BRD/DBGA for domain fidelity blockers inside validateMddForDelivery. */
   brdMarkdown?: string | null;
   dbgaMarkdown?: string | null;
+  specMarkdown?: string | null;
+  /** Borrador pre-regen / Clarificador para restaurar §1–§2 si el pipeline los omitió. */
+  baselineDraft?: string | null;
 };
 
 export async function prepareMddForOutput(
@@ -189,38 +195,56 @@ export async function prepareMddForOutput(
       : withComponentDiagram;
   const enriched = await enrichMddWithUiUxDesignIntent(withUiMcpFrontend, resolver);
   const withGovernance = ensureMddGovernanceSection(enriched, preserved);
-  const reconciled = await reconcileUiUxDesignIntent(finalizeMddDeliverable(withGovernance), resolver);
+  const reconciled = await reconcileUiUxDesignIntent(
+    finalizeMddDeliverable(withGovernance, {
+      baseline: options?.baselineDraft?.trim() || raw,
+    }),
+    resolver,
+  );
   const markdown = applyPreDeliveryGateFixes(reconciled);
   let finalMarkdown = markdown;
-  if (options?.brdMarkdown?.trim() || options?.dbgaMarkdown?.trim()) {
-    try {
-      const { rebuildDomainInventoryPreferringBrd } = await import(
-        "../../engine/domain-inventory-persist.util.js"
-      );
-      const { mergeDomainTablesIntoMdd } = await import(
-        "../../engine/compose-section3-from-inventory.util.js"
-      );
-      const inventory = rebuildDomainInventoryPreferringBrd({
-        brdMarkdown: options.brdMarkdown,
-        dbgaMarkdown: options.dbgaMarkdown,
-        mddMarkdown: markdown,
-      });
-      const merged = mergeDomainTablesIntoMdd(markdown, inventory);
-      if (merged.injected.length > 0) {
-        finalMarkdown = applyPreDeliveryGateFixes(merged.markdown);
-        console.log(
-          `[MDD:DeliveryGate] injected domain table stubs: ${merged.injected.slice(0, 8).join(", ")}`,
-        );
-      }
-    } catch (err) {
-      console.warn(
-        `[MDD:DeliveryGate] domain §3 merge skipped: ${err instanceof Error ? err.message : String(err)}`,
+  try {
+    const { rebuildDomainInventoryPreferringBrd } = await import(
+      "../../engine/domain-inventory-persist.util.js"
+    );
+    const inventory =
+      options?.brdMarkdown?.trim() || options?.dbgaMarkdown?.trim()
+        ? rebuildDomainInventoryPreferringBrd({
+            brdMarkdown: options.brdMarkdown,
+            dbgaMarkdown: options.dbgaMarkdown,
+            mddMarkdown: markdown,
+          })
+        : undefined;
+    finalMarkdown = prepareMddMarkdownForPersist(finalMarkdown);
+    const { reconcileMddSsotBeforeDeliveryGate } = await import(
+      "../../engine/mdd-ssot-repair.util.js"
+    );
+    const repaired = reconcileMddSsotBeforeDeliveryGate(finalMarkdown, {
+      brdMarkdown: options?.brdMarkdown,
+      dbgaMarkdown: options?.dbgaMarkdown,
+      specMarkdown: options?.specMarkdown,
+      inventory,
+    });
+    if (
+      repaired.section3Injected.length > 0 ||
+      repaired.uatInjected.length > 0 ||
+      repaired.section4Injected.length > 0 ||
+      repaired.platformAnnotated.length > 0
+    ) {
+      finalMarkdown = prepareMddMarkdownForPersist(repaired.markdown);
+      console.log(
+        `[MDD:DeliveryGate] SSOT repair — §3:${repaired.section3Injected.length} UAT:${repaired.uatInjected.length} §4:${repaired.section4Injected.length} platform:${repaired.platformAnnotated.length}`,
       );
     }
+  } catch (err) {
+    console.warn(
+      `[MDD:DeliveryGate] SSOT repair skipped: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
   const deliveryGate = validateMddForDelivery(finalMarkdown, {
     brdMarkdown: options?.brdMarkdown,
     dbgaMarkdown: options?.dbgaMarkdown,
+    specMarkdown: options?.specMarkdown,
   });
   if (options?.deliveryGateRef) {
     options.deliveryGateRef.current = deliveryGate;

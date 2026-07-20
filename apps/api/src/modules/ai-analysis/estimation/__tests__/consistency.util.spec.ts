@@ -53,9 +53,32 @@ describe("extractBrdBusinessConcepts", () => {
 });
 
 describe("computeCrossDocumentConsistency", () => {
-  it("retorna score 50 sin BRD o sin MDD destino", () => {
+  it("retorna score 50 sin BRD ni Spec", () => {
     assert.equal(computeCrossDocumentConsistency({}).score, 50);
     assert.equal(computeCrossDocumentConsistency({ brdContent: "## Cap\n**x**" }).score, 50);
+  });
+
+  it("usa Spec como fuente de trazabilidad cuando no hay BRD (greenfield)", () => {
+    const docs = {
+      specContent: `## Capacidades
+### Gestión de inquilinos multi-empresa
+- Aislar datos por tenant con RLS en PostgreSQL
+`,
+      mddContent: `## 1. Contexto
+Plataforma multi-inquilino con aislamiento RLS por tenant.
+
+## 4. Contratos de API
+GET /api/v1/tenants
+
+## 5. Lógica
+RLS por tenant_id en todas las tablas de negocio.
+`,
+    };
+    const r = computeCrossDocumentConsistency(docs);
+    assert.ok(r.score >= 40);
+    if (r.gaps.length > 0) {
+      assert.equal(r.gaps[0]?.from, "Spec");
+    }
   });
 
   it("detecta cobertura BRD→MDD en §1/§4/§5", () => {

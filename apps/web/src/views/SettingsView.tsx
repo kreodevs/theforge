@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, Cable, LayoutTemplate, Puzzle, Settings, Shield, Sparkles } from "lucide-react";
+import { BookOpen, Cable, LayoutTemplate, Puzzle, Settings, Shield, SlidersHorizontal, Sparkles } from "lucide-react";
 import { ProviderInstancesCard } from "@/components/ProviderInstancesCard";
 import { AccountConfigCard } from "@/components/AccountConfigCard";
 import { AriadneConfigCard } from "@/components/AriadneConfigCard";
 import { TechDocsConfigCard } from "@/components/TechDocsConfigCard";
 import { UiMcpInstancesCard } from "@/components/UiMcpInstancesCard";
 import { PluginSettingsSection } from "@/components/PluginSettingsSection";
+import { SystemConfigCard } from "@/components/SystemConfigCard";
 import { UnderlineTabs, type UnderlineTabItem } from "@/components/ui/UnderlineTabs";
 import { getStoredUser } from "@/utils/apiClient";
 
-type SettingsTab = "providers" | "plugins" | "ariadne" | "tech-docs" | "ui-mcp" | "account";
+type SettingsTab = "providers" | "plugins" | "ariadne" | "tech-docs" | "ui-mcp" | "system" | "account";
 
 const BASE_SETTINGS_TABS: UnderlineTabItem<SettingsTab>[] = [
   { id: "providers", label: "Proveedores de IA", shortLabel: "Proveedores", icon: Sparkles },
@@ -20,6 +21,13 @@ const BASE_SETTINGS_TABS: UnderlineTabItem<SettingsTab>[] = [
   { id: "account", label: "Cuenta", shortLabel: "Cuenta", icon: Shield },
 ];
 
+const SYSTEM_SETTINGS_TAB: UnderlineTabItem<SettingsTab> = {
+  id: "system",
+  label: "Sistema",
+  shortLabel: "Sistema",
+  icon: SlidersHorizontal,
+};
+
 interface SettingsViewProps {
   showIaCost: boolean;
   onToggleIaCost: () => void;
@@ -27,13 +35,20 @@ interface SettingsViewProps {
 
 /** Vista de ajustes (proveedores IA, Ariadne, cuenta). Renderizada dentro del layout con sidebar (`App.tsx`). */
 export default function SettingsView({ showIaCost, onToggleIaCost }: SettingsViewProps) {
-  const isDeveloper = getStoredUser()?.role === "developer";
+  const userRole = getStoredUser()?.role;
+  const isDeveloper = userRole === "developer";
+  const isSuperAdmin = userRole === "super_admin";
   const visibleTabs = useMemo(() => {
     if (isDeveloper) {
       return BASE_SETTINGS_TABS.filter((tab) => tab.id === "account");
     }
+    if (isSuperAdmin) {
+      const tabs = [...BASE_SETTINGS_TABS];
+      tabs.splice(tabs.length - 1, 0, SYSTEM_SETTINGS_TAB);
+      return tabs;
+    }
     return BASE_SETTINGS_TABS;
-  }, [isDeveloper]);
+  }, [isDeveloper, isSuperAdmin]);
   const [activeTab, setActiveTab] = useState<SettingsTab>(isDeveloper ? "account" : "providers");
 
   useEffect(() => {
@@ -54,7 +69,9 @@ export default function SettingsView({ showIaCost, onToggleIaCost }: SettingsVie
             <p className="mt-1 text-sm text-[var(--foreground-muted)] sm:text-base">
               {isDeveloper
                 ? "Token MCP y preferencias de tu cuenta"
-                : "Proveedores de IA, Ariadne, documentación técnica y cuenta"}
+                : isSuperAdmin
+                  ? "Proveedores, integraciones, configuración de plataforma y cuenta"
+                  : "Proveedores de IA, Ariadne, documentación técnica y cuenta"}
             </p>
           </div>
 
@@ -121,6 +138,16 @@ export default function SettingsView({ showIaCost, onToggleIaCost }: SettingsVie
               className={activeTab === "ui-mcp" ? "space-y-6" : undefined}
             >
               {activeTab === "ui-mcp" ? <UiMcpInstancesCard /> : null}
+            </div>
+
+            <div
+              id="settings-panel-system"
+              role="tabpanel"
+              aria-labelledby="settings-tab-system"
+              hidden={activeTab !== "system"}
+              className={activeTab === "system" ? "space-y-6" : undefined}
+            >
+              {activeTab === "system" ? <SystemConfigCard /> : null}
             </div>
 
             <div

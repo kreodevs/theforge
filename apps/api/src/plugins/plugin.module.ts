@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { PluginLoaderService, PLUGIN_LOADER_SERVICE } from "./plugin-loader.service.js";
 import { PluginUserSettingsService } from "./plugin-user-settings.service.js";
+import { PluginDocumentPipelineService } from "./plugin-document-pipeline.service.js";
+import { PluginArtifactService } from "./plugin-artifact.service.js";
 import { PrismaModule } from "../prisma/prisma.module.js";
 
 /**
@@ -16,12 +18,20 @@ import { PrismaModule } from "../prisma/prisma.module.js";
   imports: [PrismaModule],
   providers: [
     PluginLoaderService,
+    PluginDocumentPipelineService,
+    PluginArtifactService,
     PluginUserSettingsService,
     {
       provide: PLUGIN_LOADER_SERVICE,
       useExisting: PluginLoaderService,
     },
   ],
-  exports: [PluginLoaderService, PLUGIN_LOADER_SERVICE, PluginUserSettingsService],
+  exports: [
+    PluginLoaderService,
+    PLUGIN_LOADER_SERVICE,
+    PluginDocumentPipelineService,
+    PluginArtifactService,
+    PluginUserSettingsService,
+  ],
 })
 export class PluginModule {}

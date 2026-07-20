@@ -1,9 +1,12 @@
 import type { AuditorGapsState } from "../state/mdd-state.schema.js";
 import {
   detectSection2Section7NodeVersionMismatchIssue,
+  mddHasDuplicateSectionHeadings,
   type ValidateMddStructureResult,
 } from "./mdd-sanitize.js";
 import { computeContractGaps, computeTraceabilityGaps } from "../../engine/mdd-internal-audit.util.js";
+import { collectMddQualityIssues, isAutoRepairableDeliveryGateWarning } from "../../engine/mdd-quality-audit.util.js";
+import { applyPreDeliveryGateFixes } from "./mdd-sanitize.js";
 
 export const MDD_AUDIT_PASS_THRESHOLD = 85;
 
@@ -44,6 +47,8 @@ export function computeDeterministicAuditorScore(
   if (contract.infraStackGap) score -= 10;
   if (contract.securityEdgeCaseGap) score -= 5;
   if (trace.inconsistentSections.length > 0) score -= 15;
+  if (mddHasDuplicateSectionHeadings(draft)) score -= 12;
+  if (collectMddQualityIssues(draft).length > 0) score -= 8;
 
   return Math.max(0, Math.min(100, score));
 }
@@ -56,10 +61,11 @@ export function synthesizeDeterministicAuditorGaps(
   validation: ValidateMddStructureResult,
   score: number,
 ): AuditorGapsState {
+  const repairedDraft = applyPreDeliveryGateFixes((draft ?? "").trim());
   const critical_gaps: AuditorGapsState["critical_gaps"] = [];
   const syntax_errors: string[] = [];
-  const contract = computeContractGaps(draft);
-  const trace = computeTraceabilityGaps(draft);
+  const contract = computeContractGaps(repairedDraft);
+  const trace = computeTraceabilityGaps(repairedDraft);
 
   for (const sec of validation.missingSections) {
     critical_gaps.push({
@@ -101,7 +107,7 @@ export function synthesizeDeterministicAuditorGaps(
     });
   }
 
-  const nodeVersionIssue = detectSection2Section7NodeVersionMismatchIssue(draft);
+  const nodeVersionIssue = detectSection2Section7NodeVersionMismatchIssue(repairedDraft);
   if (nodeVersionIssue) {
     critical_gaps.push({
       sections: ["Sección 2", "Sección 7"],
@@ -133,8 +139,25 @@ export function synthesizeDeterministicAuditorGaps(
   }
 
   for (const issue of validation.issues) {
-    if (/mermaid|erDiagram|syntax|sintaxis|tabla markdown/i.test(issue)) {
+    if (
+      /mermaid|erDiagram|syntax|sintaxis|tabla markdown|huérfana|JSON inválido|duplic/i.test(issue) &&
+      !isAutoRepairableDeliveryGateWarning(issue)
+    ) {
       syntax_errors.push(issue);
+    }
+  }
+
+  if (mddHasDuplicateSectionHeadings(repairedDraft)) {
+    critical_gaps.push({
+      sections: ["Secciones 1–7"],
+      issue: "Headings canónicos §1–§7 duplicados en el borrador",
+      fix: "Ejecutar deduplicateAndReorderMddSections o regenerar las secciones afectadas desde cero.",
+    });
+  }
+
+  for (const q of collectMddQualityIssues(repairedDraft)) {
+    if (/Mermaid|JSON|Manifest|huérfana|placeholder/i.test(q) && !isAutoRepairableDeliveryGateWarning(q)) {
+      syntax_errors.push(q);
     }
   }
 

@@ -2,14 +2,15 @@
 
 Prisma schema y client compartido.
 
-- **Schema:** `schema.prisma` — **`User`** (email único; JWT `sub` tras OTP), `Project` (**`userId`** → propietario), `Session` (**`userId`** redundante con propietario del proyecto), `Estimation`, `Status`, **`Stage`**, **`EpisodicMemory`**, `ArchitecturalPreference`, `AgentStateCheckpoint`.
+- **Schema:** `schema.prisma` — **`User`** (email único; JWT `sub` tras OTP), `Project` (**`userId`** → propietario), `Session` (**`userId`** redundante con propietario del proyecto), `Estimation`, `Status`, **`Stage`**, **`EpisodicMemory`**, `ArchitecturalPreference`, `AgentStateCheckpoint`, **`ProjectAriadneLink`** (enlace Forge ↔ Ariadne).
 - **Migración `20260326150000_user_project_session_ownership`:** crea `User`, enlaza proyectos/sesiones existentes al primer usuario insertado (`jorge.correa@kreoint.mx` si la tabla está vacía) y exige `userId` NOT NULL.
 - **Migración `20260327140000_ensure_pg_enums_idempotent`:** crea con `IF NOT EXISTS` los ENUM de Prisma (`Status`, `ProjectType`, `ComplexityLevel`, `StageStatus`, `EpisodicMemoryKind`) para desbloquear deploys donde faltaba el tipo antes de `ADD COLUMN …`.
+- **Migración `20260718100000_project_ariadne_links`:** tabla `project_ariadne_links` (enlace primario Forge ↔ Ariadne; upsert en alta brownfield / handoff).
 - **Client:** generado en `src/generated`; exportado por el package.
 
 Desde la **raíz** del monorepo: `pnpm run db:generate` (o el `build` del paquete) genera el client. `pnpm run db:push` aplica el schema a la DB. `pnpm run db:migrate` ejecuta migraciones en producción.
 
-**LangGraph (Paso 0 / DBGA):** las tablas `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations` en `public` las crea `PostgresSaver.setup()` al arrancar la API y también la migración `20260513180000_langgraph_checkpoint_tables` (idempotente). Si ves `relation "public.checkpoints" does not exist`, aplica migraciones pendientes y redeploy de la API.
+**LangGraph (Paso 0 / DBGA):** las tablas `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations` en `public` las crea la migración `20260513180000_langgraph_checkpoint_tables` (idempotente) y/o `ensureLangGraphCheckpointSchema` al arrancar la API (advisory lock, sin race multi-réplica). Si ves `relation "public.checkpoints" does not exist`, aplica migraciones pendientes y redeploy. Si ves `pg_type_typname_nsp_index`, redeploy con la versión que incluye el setup idempotente.
 
 **Imagen Docker (API):** el `ENTRYPOINT` del contenedor ejecuta `prisma migrate deploy` en cada arranque antes de levantar Nest; el CLI `prisma` va en `dependencies` de este package para que el deploy no dependa de devDependencies.
 

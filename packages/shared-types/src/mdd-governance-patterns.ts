@@ -2,6 +2,8 @@
  * Gobernanza de patrones del MDD (SSOT). Sección inmutable bajo el título principal.
  */
 
+import { peelDocumentBodyForPersist } from "./theforge-doc-stamp.js";
+
 export const MDD_GOVERNANCE_HEADING_MARKER = "[ARQUITECTURA - SECCIÓN INMUTABLE]";
 
 /** Cuerpo del wizard (sin título H1 del documento). Fuente: prompts/mdd/mdd-governance-patterns-wizard.md */
@@ -242,7 +244,7 @@ export function parseActivePatternsFromMdd(md: string): MddActivePattern[] {
   if (!gov) return [];
   const active: MddActivePattern[] = [];
   for (const line of gov.split("\n")) {
-    const m = line.match(/^- \[\s*[xX]\s*\] \*\*(.+):\*\*\s*(.*)$/);
+    const m = line.match(/^#?\s*- \[\s*[xX]\s*\] \*\*(.+):\*\*\s*(.*)$/);
     if (!m) continue;
     const label = m[1]!.trim();
     const rest = m[2]!.trim();
@@ -333,6 +335,50 @@ function patternIdSetsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boo
   return true;
 }
 
+/** true si la selección [X] difiere entre dos borradores MDD. */
+export function governancePatternSelectionDiffers(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  return !patternIdSetsEqual(
+    selectedPatternIdsFromMdd(a ?? ""),
+    selectedPatternIdsFromMdd(b ?? ""),
+  );
+}
+
+/** true si `received` omitiría algún patrón [X] presente en `sent`. */
+export function serverWouldDropGovernancePatterns(sent: string, received: string): boolean {
+  const sentIds = selectedPatternIdsFromMdd(sent);
+  const recvIds = selectedPatternIdsFromMdd(received);
+  if (sentIds.size === 0) return false;
+  for (const id of sentIds) {
+    if (!recvIds.has(id)) return true;
+  }
+  return false;
+}
+
+/** Detecta [X] en la sección de gobernanza aunque el parser estricto falle (p. ej. markdown corrupto). */
+export function governanceSectionHasCheckedPatternMarkers(md: string): boolean {
+  const gov = extractGovernanceSection(md);
+  if (!gov) return false;
+  return /^#?\s*- \[\s*[xX]\s*\]/m.test(gov);
+}
+
+/**
+ * true si el PATCH debe ir con `allowGovernancePatternChange` para no perder [X]
+ * (p. ej. Grabar con patrones activos sin cambio de selección vs baseline local).
+ */
+export function shouldAllowGovernancePatternChangeOnPersist(
+  incomingMd: string,
+  previousSavedMd: string | null | undefined,
+): boolean {
+  if (governancePatternSelectionDiffers(incomingMd, previousSavedMd)) return true;
+  const incomingIds = selectedPatternIdsFromMdd(incomingMd);
+  if (incomingIds.size === 0) return false;
+  const enforced = enforceMddGovernancePatternsOnPersist(incomingMd, previousSavedMd ?? "", {});
+  return serverWouldDropGovernancePatterns(incomingMd, enforced.markdown);
+}
+
 export type EnforceMddGovernancePatternsResult = {
   markdown: string;
   /** true si se ignoraron cambios manuales en la sección inmutable de patrones. */
@@ -357,6 +403,13 @@ export function enforceMddGovernancePatternsOnPersist(
 
   if (options?.allowPatternChange) {
     const ids = selectedPatternIdsFromMdd(incoming);
+    if (
+      ids.size === 0 &&
+      governanceSectionHasCheckedPatternMarkers(incoming) &&
+      hasGovernanceSection(incoming)
+    ) {
+      return { markdown: incoming, patternsReverted: false };
+    }
     const markdown =
       ids.size > 0 || hasGovernanceSection(incoming)
         ? updateMddGovernancePatterns(incoming, ids)
@@ -387,4 +440,21 @@ export function selectedPatternIdsFromMdd(md: string): Set<string> {
     ids.add(slugifyPatternLabel(p.label));
   }
   return ids;
+}
+
+/** Patrones y sección SSOT a conservar al regenerar MDD (editor cliente > BD). */
+export function resolveMddGovernancePreservation(
+  clientMdd: string | null | undefined,
+  dbMdd: string | null | undefined,
+): { preservedGovernance: string | null; lockedPatternIds: Set<string> } {
+  const client = peelDocumentBodyForPersist((clientMdd ?? "").trim());
+  const db = peelDocumentBodyForPersist((dbMdd ?? "").trim());
+  const clientIds = selectedPatternIdsFromMdd(client);
+  const dbIds = selectedPatternIdsFromMdd(db);
+  const lockedPatternIds = clientIds.size > 0 ? clientIds : dbIds;
+  const preservedGovernance =
+    (clientIds.size > 0 ? extractGovernanceSection(client) : null) ??
+    extractGovernanceSection(db) ??
+    null;
+  return { preservedGovernance, lockedPatternIds };
 }

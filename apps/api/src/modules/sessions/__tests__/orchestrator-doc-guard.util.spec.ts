@@ -98,4 +98,19 @@ describe("orchestrator-doc-guard.util", () => {
       true,
     );
   });
+
+  it("avisa cuando hubo delimitador pero el panel no persistió", () => {
+    assert.equal(
+      shouldWarnOrchestratorDocNotPersisted({
+        tab: "benchmark",
+        userMessage: "¿qué opinas del stack?",
+        assistantContent: "Análisis breve.",
+        flags: { hasDbga: false },
+        currentDocLen: 5000,
+        docPersisted: false,
+        hadDelimiter: true,
+      }),
+      true,
+    );
+  });
 });

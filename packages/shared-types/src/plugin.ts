@@ -4,15 +4,49 @@
 
 /** Definición de un artifact type que un plugin puede registrar */
 export interface ArtifactTypeDefinition {
-  /** Identificador único del artifact (ej: "evd", "ppt-export") */
+  /** Identificador único del artifact (ej: "report", "ppt-export") */
   id: string;
+  /** Plugin dueño (reverse-DNS). Lo rellena el core al registrar. */
+  pluginId: string;
   /** Label legible para humanos (ej: "Executive Visual Deck") */
   label: string;
   /** Nombre del ícono Lucide (ej: "Presentation", "FileText") */
   icon?: string;
   /** Si true, aparece en el sidebar de documentos del Workshop */
   showInSidebar?: boolean;
+  /** Si true, el Workshop muestra acción Generar */
+  generatable?: boolean;
+  /** Cómo mostrar en Workshop: markdown (MddViewer), json (editor), html */
+  contentType?: "markdown" | "json" | "html";
+  /** Campos de entregables core requeridos (ej. specContent, mddContent) */
+  requires?: string[];
 }
+
+/** Contexto que el core pasa a `generateArtifact` del plugin */
+export interface PluginArtifactContext {
+  pluginId: string;
+  artifactId: string;
+  projectId: string;
+  userId: string;
+  stageId?: string | null;
+  deliverables: Record<string, string | null | undefined>;
+  userSettings: Record<string, unknown>;
+  timestamp: Date;
+}
+
+/** Resultado de generación de artifact propio del plugin */
+export interface PluginArtifactResult {
+  data: unknown;
+  metadata?: {
+    durationMs?: number;
+    tokensUsed?: number;
+    provider?: string;
+    model?: string;
+  };
+}
+
+/** Declaración parcial que devuelve el plugin (sin pluginId — lo añade el loader) */
+export type PluginArtifactTypeDeclaration = Omit<ArtifactTypeDefinition, "pluginId">;
 
 /** Datos de un plugin por proyecto: { [pluginId]: any } */
 export type PluginDataMap = Record<string, unknown>;

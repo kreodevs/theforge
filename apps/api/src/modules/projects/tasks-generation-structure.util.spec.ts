@@ -49,6 +49,7 @@ describe("tasks-generation-structure", () => {
       tasksMarkdown: tasks,
       uiScreensMarkdown: ui,
       apiContractsMarkdown: API,
+      mddMarkdown: "## 1. Contexto\nApp\n## 7. Infra\nDocker",
     });
     assert.equal(report.ok, false);
     assert.ok(report.gaps.some((g) => /Frontend/i.test(g)));

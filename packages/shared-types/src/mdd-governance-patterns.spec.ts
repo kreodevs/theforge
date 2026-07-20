@@ -13,9 +13,14 @@ import {
   mddNeedsPatternWizard,
   MDD_GOVERNANCE_WIZARD_BODY,
   parseActivePatternsFromMdd,
+  selectedPatternIdsFromMdd,
+  resolveMddGovernancePreservation,
   stripGovernanceSection,
   updateMddGovernancePatterns,
   enforceMddGovernancePatternsOnPersist,
+  serverWouldDropGovernancePatterns,
+  governanceSectionHasCheckedPatternMarkers,
+  shouldAllowGovernancePatternChangeOnPersist,
 } from "./mdd-governance-patterns.js";
 
 describe("mdd-governance-patterns", () => {
@@ -97,6 +102,48 @@ describe("mdd-governance-patterns", () => {
     assert.ok(parseActivePatternsFromMdd(markdown).some((p) => p.label.includes("CQRS")));
   });
 
+  it("serverWouldDropGovernancePatterns detecta respuesta sin patrones enviados", () => {
+    const base = buildMddWithGovernanceSkeleton();
+    const withPat = updateMddGovernancePatterns(base, new Set([optsId("Singleton")]));
+    assert.equal(serverWouldDropGovernancePatterns(withPat, base), true);
+    assert.equal(serverWouldDropGovernancePatterns(withPat, withPat), false);
+  });
+
+  it("parseActivePatternsFromMdd tolera viñetas corruptas # - [X]", () => {
+    const gov =
+      "## [ARQUITECTURA - SECCIÓN INMUTABLE]\n\n# - [X] **Singleton:** Descripción. *(Afecta a: MDD, Tasks)*\n";
+    const md = `# MDD\n\n---\n\n${gov}\n\n## 1. Contexto\n\nTexto.\n`;
+    assert.ok(parseActivePatternsFromMdd(md).some((p) => p.label.includes("Singleton")));
+  });
+
+  it("enforceMddGovernancePatternsOnPersist no vacía [X] si el parser estricto falla", () => {
+    const gov =
+      "## [ARQUITECTURA - SECCIÓN INMUTABLE]\n\n- [X] Singleton sin formato bold\n\n---\n";
+    const md = `# MDD\n\n---\n\n${gov}\n\n## 1. Contexto\n\nTexto.\n`;
+    assert.equal(selectedPatternIdsFromMdd(md).size, 0);
+    assert.equal(governanceSectionHasCheckedPatternMarkers(md), true);
+    const { markdown, patternsReverted } = enforceMddGovernancePatternsOnPersist(md, "", {
+      allowPatternChange: true,
+    });
+    assert.equal(patternsReverted, false);
+    assert.match(markdown, /- \[X\] Singleton sin formato bold/);
+  });
+
+  it("shouldAllowGovernancePatternChangeOnPersist si la selección difiere del guardado", () => {
+    const base = buildMddWithGovernanceSkeleton();
+    const withPat = updateMddGovernancePatterns(base, new Set([optsId("Singleton")]));
+    assert.equal(shouldAllowGovernancePatternChangeOnPersist(withPat, base), true);
+  });
+
+  it("shouldAllowGovernancePatternChangeOnPersist no exige flag si previous ya tiene los mismos [X]", () => {
+    const base = buildMddWithGovernanceSkeleton();
+    const withPat = updateMddGovernancePatterns(base, new Set([optsId("Singleton")]));
+    const edited =
+      withPat +
+      "\n## 1. Contexto\n\nCuerpo §1 con más de ochenta caracteres para el MDD canónico de prueba.\n";
+    assert.equal(shouldAllowGovernancePatternChangeOnPersist(edited, withPat), false);
+  });
+
   it("preserva gobernanza al preparar salida con §1 sustancial", () => {
     const skeleton = buildMddWithGovernanceSkeleton();
     const withS1 =
@@ -109,6 +156,23 @@ describe("mdd-governance-patterns", () => {
     const restored = ensureMddGovernanceSection(stripped, extractGovernanceSection(withS1));
     assert.ok(hasGovernanceSection(restored));
     assert.match(restored, /## 1\. Contexto/);
+  });
+
+  it("resolveMddGovernancePreservation prefiere patrones del editor cliente sobre BD", () => {
+    const hexId = optsId("Hexagonal");
+    const monoId = optsId("Monolito Modular");
+    const client = updateMddGovernancePatterns(
+      "# Master Design Document\n\n## 1. Contexto\n\nTexto.\n",
+      new Set([hexId]),
+    );
+    const db = updateMddGovernancePatterns(
+      "# Master Design Document\n\n## 1. Contexto\n\nTexto.\n",
+      new Set([monoId]),
+    );
+    const r = resolveMddGovernancePreservation(client, db);
+    assert.equal(r.lockedPatternIds.size, 1);
+    assert.ok(r.lockedPatternIds.has(hexId));
+    assert.ok(r.preservedGovernance?.includes("Hexagonal"));
   });
 });
 

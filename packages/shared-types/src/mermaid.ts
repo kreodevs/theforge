@@ -2192,11 +2192,33 @@ export function classifyMermaidErrors(raw: string): MermaidClassifiedError[] {
   return errors;
 }
 
+/**
+ * Quita líneas de prólogo markdown (headings `### …`, viñetas, texto) que el LLM coloca
+ * ANTES del primer tipo de diagrama válido dentro de un fence ```mermaid.
+ * Típico: `### Flujo: integración de nuevo MCP a skills\nflowchart TD`.
+ * Preserva el diagrama a partir del primer header tipo Mermaid válido; si no encuentra
+ * ninguno devuelve el cuerpo intacto (lo deja para validateMermaid lo rechace con un mensaje útil).
+ */
+export function stripLeadingMarkdownPrologueFromMermaid(raw: string): string {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed) return trimmed;
+  const lines = trimmed.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    if (MERMAID_DIAGRAM_HEADER_LINE.test(lines[i]!.trim())) {
+      return lines.slice(i).join("\n").trim();
+    }
+  }
+  return trimmed;
+}
+
 export function normalizeMermaidDiagramBody(raw: string): string {
   let stripped = stripMermaidFenceWrappers(raw);
   // Strip %% comment lines early — they confuse downstream repairs
   stripped = stripMermaidComments(stripped);
   stripped = stripped.replace(/\bpar\s+ticipant\b/gi, "participant");
+  // Strip markdown headings/prose colados por el LLM ANTES del tipo de diagrama.
+  // Típico: ```mermaid\n### Flujo: integración de...\nflowchart TD\n```
+  stripped = stripLeadingMarkdownPrologueFromMermaid(stripped);
   stripped = normalizeGraphKeywordToFlowchart(stripped);
   stripped = ensureSequenceDiagramHeader(stripped);
   if (/^erDiagram\b/im.test(stripped.trim())) {
@@ -2312,6 +2334,8 @@ export function normalizeMermaidDiagramBody(raw: string): string {
 
     // Replace literal `\n` with space (Mermaid uses `<br/>` for line breaks)
     line = line.replace(/\\n/g, " ");
+    // Normaliza `<br>` / `<br >` suelto (SVG inválido) → `<br/>`; no toca `<br/>`.
+    line = line.replace(/<br\s*>/gi, "<br/>");
 
     if (isFlowchart || (!isErDiagram && !isSequence && !isClassDiagram && !isStateDiagram)) {
       // Quote node labels with special chars / <br/>: `A[x<br/>y: z]` → `A["x<br/>y: z"]`
@@ -2424,8 +2448,23 @@ export function normalizeMermaid(raw: string): string {
 /** Normaliza cada bloque mermaid del documento sin tocar el resto del markdown. */
 export function normalizeMermaidInDocument(document: string): string {
   if (!document?.trim()) return document ?? "";
+  // 0x) Palabras sueltas "text" y "mermaid" antes del fence (LLM artifacts).
+  let merged = document.replace(
+    /\n\s*text\s*\n\s*mermaid\s*\n\s*```mermaid/gi,
+    "\n```mermaid",
+  );
+  // 0xx) Bloques ```text que contienen sintaxis mermaid (flowchart/sequenceDiagram -->).
+  merged = merged.replace(
+    /```text\n([\s\S]*?)```/gi,
+    (_full: string, inner: string) => {
+      const hasMermaidSyntax = /(?:flowchart|graph|sequenceDiagram|erDiagram|stateDiagram)\b/i.test(inner)
+        && /(?:-->|-->>|--|-->|==>|---)/i.test(inner);
+      if (!hasMermaidSyntax) return _full;
+      return "```mermaid\n" + inner.trim() + "\n```";
+    },
+  );
   // 0a) Doble apertura ```mermaid seguida de ```mermaid (LLM / pipeline).
-  let merged = document.replace(/```mermaid\s*\n+\s*```mermaid/gi, "```mermaid");
+  merged = merged.replace(/```mermaid\s*\n+\s*```mermaid/gi, "```mermaid");
   // 0) Cierre erróneo ```mermaid en lugar de ``` (debe ir antes de unfenced repair).
   merged = repairMermaidFenceClosedWithMermaidTag(merged);
   // 0b) Diagramas volcados sin fence ```mermaid (texto plano + listas markdown).
@@ -2440,6 +2479,12 @@ export function normalizeMermaidInDocument(document: string): string {
     const body =
       repairFlattenedWebhookFlowchart(rawDiagram) ?? normalizeMermaidDiagramBody(rawDiagram);
     if (!body) return trailing ? `${trailing}\n` : "```mermaid\n```";
+    // Si tras normalizar el body no contiene ningún tipo de diagrama Mermaid válido,
+    // el LLM metió prosa/headings dentro del fence. Lo convertimos a markdown regular.
+    if (!looksLikeMermaidDiagramBody(body)) {
+      const asProse = body.replace(/^```mermaid\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+      return trailing ? `${asProse}\n\n${trailing}` : asProse;
+    }
     const fence = `\`\`\`mermaid\n${body}\n\`\`\``;
     return trailing ? `${fence}\n\n${trailing}` : fence;
   });

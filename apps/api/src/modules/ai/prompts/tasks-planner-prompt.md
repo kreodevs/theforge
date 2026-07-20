@@ -12,7 +12,7 @@ A partir del MDD (constitución §1–§7), Blueprint, Spec, HU, API, flujos, in
 2. Capas: `Backend` | `Frontend` | `Infra` | `QA`.
 3. IDs estables: `T-001`, `T-002`, … sin saltos.
 4. `dependsOn` solo referencia IDs del mismo plan; sin ciclos.
-5. **Cobertura obligatoria:** cada entidad §3, endpoint §4, flujo §5, control §6 e ítem §7 del MDD que requiera trabajo → al menos un ítem.
+5. **Cobertura obligatoria:** cada entidad §3, endpoint §4, flujo §5, control §6 e ítem §7 del MDD que requiera trabajo → al menos un ítem. **No resumas:** un ítem por endpoint HTTP de api-contracts, una tarea Frontend por ruta de pantallas.md, más Testing/Deploy/Infra cuando aplique §7–§8.
 6. Si hay `pantallas.md` / UI screens: **una tarea Frontend por vista/ruta principal** (`section: Frontend` en el plan y en el markdown final).
 7. El plan debe incluir `sections: ["Backend", "Frontend", "Infra", "QA"]` cuando el stack tenga cliente (§2.2 Frontend o pantallas.md).
 8. Brownfield: `targetFilesHint` con rutas del mapa de navegación / contexto TheForge; si no hay evidencia, `NEW_FILE:` + ruta convencional del Blueprint.

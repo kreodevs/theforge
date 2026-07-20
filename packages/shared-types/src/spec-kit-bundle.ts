@@ -6,6 +6,7 @@
 import { formatDocumentPathMapTable } from "./document-layout.js";
 import { splitPantallasAndUiProject } from "./ui-screens-export.js";
 import { extractTaskCheckpoints } from "./tasks-parse.js";
+import { resolveTasksForConsume } from "./tasks-resolve.js";
 
 export interface SpecKitBundleFile {
   path: string;
@@ -20,6 +21,8 @@ export interface SpecKitBundleInput {
   specContent?: string | null;
   blueprintContent?: string | null;
   tasksContent?: string | null;
+  /** Structured tasks v2 (SSOT when valid; markdown derived for spec-kit). */
+  tasksJson?: unknown;
   apiContractsContent?: string | null;
   logicFlowsContent?: string | null;
   infraContent?: string | null;
@@ -339,7 +342,17 @@ export function buildSpecKitBundleFiles(input: SpecKitBundleInput): SpecKitBundl
 
   pushIf("spec.md", input.specContent);
   pushIf("plan.md", input.blueprintContent);
-  pushIf("tasks.md", input.tasksContent);
+  const tasksResolved = resolveTasksForConsume({
+    tasksContent: input.tasksContent,
+    tasksJson: input.tasksJson,
+  });
+  pushIf("tasks.md", tasksResolved.markdown);
+  if (tasksResolved.hasTasksJson && tasksResolved.tasksJson) {
+    files.push({
+      path: `${featureDir}/tasks-json.json`,
+      content: JSON.stringify(tasksResolved.tasksJson, null, 2),
+    });
+  }
   pushIf("contracts/api-contracts.md", input.apiContractsContent);
   pushIf("logic-flows.md", input.logicFlowsContent);
   pushIf("infra.md", input.infraContent);

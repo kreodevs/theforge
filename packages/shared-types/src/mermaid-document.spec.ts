@@ -23,6 +23,7 @@ import {
   quoteFlowchartEdgeLabels,
   repairFlowchartMissingTargetNodeIds,
   splitFlowchartMultiEdgeLines,
+  normalizeMermaidDiagramBody,
   validateMermaid,
 } from "./mermaid.js";
 import { formatDocumentMarkdown } from "./format-document-markdown.js";
@@ -254,6 +255,13 @@ describe("normalizeMermaidDiagramBody — entrecomilla <br/> y especiales", () =
     assert.match(out, /B\{"Usuario autorizado\?"\}/);
     assert.match(out, /C\["Registrar en failed_request_logs<br\/>failure_type: autorización"\]/);
     assert.match(out, /E\{"Token MCP expirado\?<br\/>pat_expires_at < now"\}/);
+  });
+
+  it("normaliza <br> suelto a <br/>", () => {
+    const body = `flowchart TD
+    A["Portal<br>checkout"]`;
+    const out = normalizeMermaidDiagramBody(body);
+    assert.match(out, /Portal<br\/>checkout/);
   });
 });
 
@@ -996,5 +1004,76 @@ ${BRD_COPILOTO_ER_DIAGRAM}
     assert.ok(out.length > 500);
     assert.match(out, /^erDiagram/);
     assert.match(out, /MCPPLUGIN \|\|--o\{ MCPTOOL/);
+  });
+});
+
+describe("stripLeadingMarkdownPrologueFromMermaid (LLM heading before diagram type)", () => {
+  it("strips ### heading before flowchart and passes validation", () => {
+    const raw = `### Flujo: integración de nuevo MCP a skills
+
+flowchart TD
+    A[Usuario] --> B[Skills Service]
+    B --> C[MCP Client]`;
+    const out = normalizeMermaidDiagramBody(raw);
+    assert.match(out, /^flowchart TD/);
+    assert.doesNotMatch(out, /### Flujo/);
+    assert.deepEqual(validateMermaid(out), []);
+  });
+
+  it("strips multiple prose lines before sequenceDiagram", () => {
+    const raw = `### Flujo de autenticación OAuth
+
+> Nota: este diagrama muestra el flujo completo.
+
+sequenceDiagram
+    participant U as Usuario
+    participant S as Servidor
+    U->>S: GET /auth/callback`;
+    const out = normalizeMermaidDiagramBody(raw);
+    assert.match(out, /^sequenceDiagram/);
+    assert.doesNotMatch(out, /### Flujo/);
+    assert.deepEqual(validateMermaid(out), []);
+  });
+
+  it("returns body unchanged when no diagram type header found", () => {
+    const raw = `### Solo prosa sin diagrama
+Esto no es mermaid`;
+    const out = normalizeMermaidDiagramBody(raw);
+    assert.match(out, /### Solo prosa/);
+  });
+});
+
+describe("normalizeMermaidInDocument convierte mermaid sin tipo válido a prosa", () => {
+  it("strips fence from prose-only mermaid block (### Flujo inside mermaid)", () => {
+    const doc = `## 5. Lógica y Edge Cases
+
+\`\`\`mermaid
+### Flujo: integración de nuevo MCP a skills
+
+Este flujo describe cómo integrar:
+- Paso 1: Registrar
+- Paso 2: Probar
+\`\`\`
+
+## 6. Seguridad
+`;
+    const out = normalizeMermaidInDocument(doc);
+    assert.doesNotMatch(out, /```mermaid/, "no debe quedar ningún fence ```mermaid");
+    assert.match(out, /### Flujo: integración de nuevo MCP a skills/, "el heading debe preservarse como markdown");
+    assert.match(out, /- Paso 1: Registrar/);
+    assert.match(out, /## 6\. Seguridad/);
+  });
+
+  it("preserves valid flowchart fence with leading ### heading stripped", () => {
+    const doc = `\`\`\`mermaid
+### Flujo de autenticación
+
+flowchart TD
+    A[Usuario] --> B[Servidor]
+\`\`\``;
+    const out = normalizeMermaidInDocument(doc);
+    assert.match(out, /```mermaid/);
+    assert.match(out, /^flowchart TD/m);
+    assert.doesNotMatch(out, /### Flujo/);
   });
 });

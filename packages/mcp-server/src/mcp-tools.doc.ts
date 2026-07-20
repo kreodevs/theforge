@@ -29,6 +29,7 @@
  * - **`transition_project_stage`**: `POST /projects/:projectId/stages/:stageId/transition` (activate|complete|archive|reopen)
  * - **`get_project_deliverables`**: `GET /projects/:projectId` (resumen cascada + `agentGovernanceContent`)
  * - **`get_conformance`**: `GET /projects/:projectId/conformance?useLlm=`
+ * - **`audit_documents`**: `GET /projects/:projectId/audit-documents?useLlm=` (conformidad + gaps SDD + resumen)
  * - **`patch_project`**: `PATCH /projects/:projectId` (body parcial MDD/blueprint/spec/groupId/…)
  * - **`generate_benchmark`**: `POST /projects/:projectId/generate-benchmark`
  *
@@ -96,6 +97,10 @@
  * ### Integración The Forge / Ariadne
  *
  * - **`list_theforge_projects`**: `GET /theforge/projects` (índice multi-root en Ariadne)
+ * - **`resolve_forge_project_for_ariadne`**: `POST /theforge/resolve-forge-project-for-ariadne` — input: al menos uno de `ariadneProjectId`, `ariadneRepositoryId`, `projectKey`, `repoSlug`, `gitRemoteUrl`. 200 → `{ forgeProjectId, linkKind, … }`; 404 → `{ error: "not_found" }`; 409 → `{ error: "ambiguous", candidates[] }`
+ * - **`create_stage_from_ariadne_change_pack`**: `POST /theforge/create-stage-from-ariadne-change-pack` — body `{ forgeProjectId, pack: { version:"1", changeDescription, filesToModify?, … }, stageId?, stageName?, activate?, runLegacyStart?, wireAriadne? }`. Crea etapa LEGACY o importa en existente; devuelve `recommendedNextTools`.
+ *
+ * **Secuencia alternativa (sin tool unificada):** `resolve_forge_project_for_ariadne` → `create_project_stage` → aplicar pack vía API integration o `POST …/integration/stages/:stageId/import-handoff` (handoff NEW) → `legacy_generate_mdd` / `legacy_generate_deliverables` con `stageId`.
  *
  * ### Spec-kit / SDD implement
  *
@@ -116,4 +121,4 @@
  * Revisión del catálogo; incrementar si cambia el conjunto de tools.
  * @constant
  */
-export const MCP_THEFORGE_TOOLS_DOC_REVISION = 9;
+export const MCP_THEFORGE_TOOLS_DOC_REVISION = 11;

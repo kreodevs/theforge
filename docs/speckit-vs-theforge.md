@@ -18,7 +18,7 @@ Comparativa técnica entre [github/spec-kit](https://github.com/github/spec-kit)
 | **Clarify pre-MDD** (`/speckit.clarify`) | ✅ | `POST /projects/:id/clarify-spec`; `ClarifySpecPanel` en Spec |
 | **Analyze dashboard** | ✅ | `GET /projects/:id/analyze`; `AnalyzeDashboard` en columna semáforo |
 | **MCP implement hint** | ✅ | `get_next_implementation_task`; `GET /projects/:id/next-task` |
-| Hermes + handoff implement | ✅ | `launch-hermes` incluye `sddBundle`; ZIP gobernanza + bundle spec-kit |
+| Handoff implement | ✅ | Export repo-handoff / bundle spec-kit + ZIP gobernanza; MCP `get_next_implementation_task` |
 
 ---
 
@@ -77,7 +77,7 @@ Flujo vía slash commands en 30+ agentes (Cursor, Copilot, Codex, etc.):
 | `data-model.md` | MDD §3 | ✅ integrado |
 | `research.md` | DBGA / Phase 0 / `phase0-deep-research` | ✅ |
 | `quickstart.md` | — | ❌ no existe |
-| `/speckit.implement` | `launch-hermes` + repo handoff wizard + MCP `get_next_implementation_task` | ✅ handoff + hint |
+| `/speckit.implement` | repo handoff wizard + MCP `get_next_implementation_task` | ✅ handoff + hint |
 | `/speckit.converge` | `POST /projects/:id/converge` | ✅ |
 | `/speckit.taskstoissues` | `POST /projects/:id/tasks-to-issues` | ✅ |
 | `/speckit.analyze` | `GET /projects/:id/analyze` + `ConformanceService` | ✅ |
@@ -191,7 +191,7 @@ Ecosistema/comunidad:                          ██░░░░░░░░  s
 
 4. **Marcadores `[NEEDS CLARIFICATION]`** en generación de Spec — convención en prompt del Clarifier/Spec generator.
 
-5. **No replicar `/implement` a ciegas** — mejorar `launch-hermes` + Agent Governance ZIP para que el agente destino tenga el equivalente a spec-kit implement. Ya existe `docs/THEFORGE-DOC-CONSUMPTION-GUIDE.md` para consumo por agentes.
+5. **No replicar `/implement` a ciegas** — reforzar repo handoff + Agent Governance ZIP para que el agente destino tenga el equivalente a spec-kit implement. Ya existe `docs/THEFORGE-DOC-CONSUMPTION-GUIDE.md` para consumo por agentes.
 
 ---
 

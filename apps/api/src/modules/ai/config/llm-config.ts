@@ -1,6 +1,9 @@
 /**
  * Utilidades LLM globales (sin claves ni modelos desde env — BYOK por usuario).
  */
+import {
+  resolvePlatformConfigNumber,
+} from "../../system-config/platform-config.runtime.js";
 
 export const OPENROUTER_DEFAULT_BASE = "https://openrouter.ai/api/v1";
 export const OPENROUTER_DEFAULT_CHAT_MODEL = "nousresearch/hermes-3-llama-3.1-405b";
@@ -10,9 +13,9 @@ export const OPENROUTER_DEFAULT_VISION_MODEL = "openai/gpt-4o";
 
 /**
  * Tope de tokens de **salida** (`max_tokens` en la API), no ventana de contexto.
- * Default 32K: techo global (`LLM_MAX_TOKENS`); los perfiles por tarea nunca lo superan.
+ * Default 128K: techo global (`LLM_MAX_TOKENS`); los perfiles por tarea nunca lo superan.
  */
-export const LLM_MAX_TOKENS_DEFAULT = 65_536;
+export const LLM_MAX_TOKENS_DEFAULT = 131_072;
 
 /** Perfiles de salida por tipo de tarea (siempre acotados por `llmMaxTokens()`). */
 export const LLM_OUTPUT_TOKEN_PROFILES = {
@@ -29,7 +32,9 @@ export const LLM_OUTPUT_TOKEN_PROFILES = {
   /** Auditor MDD / cross-consistency. */
   auditor: 8_192,
   /** Tasks Planner JSON (plan grande en proyectos HIGH). */
-  tasksPlanner: 65_536,
+  tasksPlanner: 81_920,
+  /** Tasks documento markdown completo (Workshop tab). */
+  tasksDoc: 131_072,
   /** parseChecklist y salidas JSON cortas. */
   checklist: 4_096,
 } as const;
@@ -52,12 +57,9 @@ const WORKSHOP_DOCUMENT_TABS = new Set([
   "phase0",
 ]);
 
-/** Tope global desde env (techo de todos los perfiles). */
+/** Tope global desde catálogo de plataforma (BD → env → default). */
 export function llmMaxTokens(): number {
-  const raw = process.env.LLM_MAX_TOKENS?.trim();
-  if (raw === undefined || raw === "") return LLM_MAX_TOKENS_DEFAULT;
-  const n = parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? Math.min(n, 1_000_000) : LLM_MAX_TOKENS_DEFAULT;
+  return resolvePlatformConfigNumber("llm_max_tokens");
 }
 
 /**
@@ -88,6 +90,9 @@ export function resolveLlmMaxTokensForWorkshopTab(
   if (tab === "ux-ui-guide") {
     return resolveLlmMaxTokensForPurpose("uxGuide");
   }
+  if (tab === "tasks") {
+    return resolveLlmMaxTokensForPurpose("tasksDoc");
+  }
   if (tab && WORKSHOP_DOCUMENT_TABS.has(tab)) {
     return resolveLlmMaxTokensForPurpose("document");
   }
@@ -95,14 +100,10 @@ export function resolveLlmMaxTokensForWorkshopTab(
 }
 
 /**
- * Dimensión de embeddings: preferir runtime BYOK; env solo como fallback de servidor.
- * @deprecated Preferir `runtime.embeddingDimension` desde `resolveEmbeddingRuntime`.
+ * Dimensión de embeddings: runtime BYOK/instancia tenant (`embeddingDimension` en Ajustes → Proveedores).
  */
 export function resolveEmbeddingDimension(runtimeDim?: number | null): number {
   if (runtimeDim != null && runtimeDim > 0) return runtimeDim;
-  const envDim = process.env.OPENAI_EMBEDDING_DIM || process.env.EMBEDDING_DIM;
-  const dim = envDim ? parseInt(envDim, 10) : 0;
-  if (Number.isFinite(dim) && dim > 0) return dim;
   return 1536;
 }
 
@@ -121,10 +122,7 @@ export function getLlmProvidersSnapshot(): { id: string; chatConfigured: boolean
   return [];
 }
 
-/** Fallback 429 en cadena de modelos (cuando el usuario define chatModelFallbacks en extras). */
+/** Fallback 429 en cadena cuando el proveedor activo define `chatModelFallbacks` (Ajustes → Proveedores). */
 export function isChatFallbackOn429Enabled(hasFallbacks = true): boolean {
-  if (!hasFallbacks) return false;
-  const raw = process.env.OPENROUTER_CHAT_FALLBACK_ON_429?.trim().toLowerCase();
-  if (raw === "0" || raw === "false" || raw === "off" || raw === "no") return false;
-  return true;
+  return hasFallbacks;
 }

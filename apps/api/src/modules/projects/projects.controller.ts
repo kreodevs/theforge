@@ -10,7 +10,11 @@ import {
   Post,
   Query,
   Res,
+  UploadedFile,
+  UploadedFiles,
+  UseInterceptors,
 } from "@nestjs/common";
+import { FileFieldsInterceptor, FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { requireAdmin } from "../../common/guards/role.helpers.js";
 import { DeliverablesQueueService, type GenerateJobType } from "./deliverables-queue.service.js";
@@ -32,6 +36,7 @@ import {
 } from "@theforge/shared-types";
 import { SddIntegrationService } from "./sdd-integration.service.js";
 import { PlanValidationService } from "./plan-validation.service.js";
+import { ProjectNotionPortabilityService } from "./project-notion-portability.service.js";
 
 @Controller("projects")
 export class ProjectsController {
@@ -43,6 +48,7 @@ export class ProjectsController {
     private readonly sddIntegration: SddIntegrationService,
     private readonly planValidation: PlanValidationService,
     private readonly mddQueue: MddQueueService,
+    private readonly notionPortability: ProjectNotionPortabilityService,
   ) {}
 
   @Post("merge")
@@ -53,6 +59,34 @@ export class ProjectsController {
   @Post()
   create(@Body() body: unknown) {
     return this.projects.create(createProjectSchema.parse(body));
+  }
+
+  /** Importa un proyecto desde ZIP Markdown & CSV (formato Notion / The Forge). */
+  @Post("import/notion")
+  @UseInterceptors(FileInterceptor("file"))
+  importNotionProject(@UploadedFile() file: Express.Multer.File, @Body() body: unknown) {
+    return this.notionPortability.importZip(file, body);
+  }
+
+  /** Importa pareja NEW + LEGACY y restaura vínculo de integración. */
+  @Post("import/notion/pair")
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: "newProject", maxCount: 1 },
+      { name: "legacyProject", maxCount: 1 },
+      { name: "bundle", maxCount: 1 },
+    ]),
+  )
+  importNotionProjectPair(
+    @UploadedFiles()
+    files: {
+      newProject?: Express.Multer.File[];
+      legacyProject?: Express.Multer.File[];
+      bundle?: Express.Multer.File[];
+    },
+    @Body() body: unknown,
+  ) {
+    return this.notionPortability.importPairZip(files, body);
   }
 
   @Get()
@@ -147,6 +181,12 @@ export class ProjectsController {
     return status;
   }
 
+  /** Cancela job MDD encolado o solicita abort del pipeline activo. */
+  @Delete(":id/mdd-jobs/:jobId")
+  async cancelMddJob(@Param("id") projectId: string, @Param("jobId") jobId: string) {
+    return this.mddQueue.cancelJob(jobId, projectId);
+  }
+
   /** SSE: progreso de cascada de entregables en cola BullMQ (`REDIS_URL`). */
   @Get(":id/deliverables-jobs/:jobId/stream")
   async deliverablesJobStream(
@@ -192,16 +232,9 @@ export class ProjectsController {
     return status;
   }
 
-  /** Indica si Hermes Agent está configurado (env vars presentes). */
-  @Get("hermes-status")
-  hermesStatus() {
-    const configured = !!(process.env.HERMES_WEBHOOK_URL?.trim() && process.env.HERMES_API_KEY?.trim());
-    return { configured };
-  }
-
   @Get(":id/generation-status")
-  async generationStatus(@Param("id") id: string) {
-    const status = await this.generationGuard.getStatus(id);
+  async generationStatus(@Param("id") id: string, @Query("stageId") stageId?: string) {
+    const status = await this.generationGuard.getStatus(id, stageId?.trim() || undefined);
     const { complexity: _c, contentReady: _r, ...publicStatus } = status;
     return publicStatus;
   }
@@ -216,10 +249,35 @@ export class ProjectsController {
     return this.projects.getConformance(id, { useLlm: useLlm === "true" });
   }
 
+  /** Auditoría integral de calidad documental (conformidad + gaps SDD). */
+  @Get(":id/audit-documents")
+  auditDocuments(@Param("id") id: string, @Query("useLlm") useLlm?: string) {
+    return this.projects.auditDocuments(id, { useLlm: useLlm === "true" });
+  }
+
   /** Bundle SDD compatible con spec-kit (JSON para cliente o integraciones). */
   @Get(":id/export/sdd-bundle")
   exportSddBundle(@Param("id") id: string) {
     return this.sddIntegration.getExportBundle(id);
+  }
+
+  /** Export completo del proyecto en ZIP Markdown & CSV (convención Notion). */
+  @Get(":id/export/notion")
+  async exportNotionProject(
+    @Param("id") id: string,
+    @Query("includeIntegration") includeIntegration: string | undefined,
+    @Query("includeSessions") includeSessions: string | undefined,
+    @Res() res: Response,
+  ) {
+    const { buffer, filename } = await this.notionPortability.exportZip(id, {
+      includeIntegration,
+      includeSessions,
+    });
+    res.set({
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+    });
+    res.send(buffer);
   }
 
   /**
@@ -570,12 +628,6 @@ export class ProjectsController {
   ) {
     const deliverable = body?.deliverable ?? "blueprint";
     return this.projects.verifyDeliverable(id, deliverable);
-  }
-
-  /** Notifica a Hermes Agent que este proyecto está listo para desarrollo. */
-  @Post(":id/launch-hermes")
-  launchHermes(@Param("id") id: string) {
-    return this.projects.launchHermes(id);
   }
 
   @Delete(":id")

@@ -32,7 +32,11 @@ Desactivar el guardarraíl: `LEGACY_SDD_INDEX_GATE=0`. Umbrales: `LEGACY_SDD_IND
 
 ## Servicios
 
-- **LegacyCoordinatorService:** Orquesta start (TheForge), answer, generateMdd, generateAsIsManual, suggestBrdFromCodebaseDoc, generateDeliverables. To-Be/As-Is eliminados (Jul 2026) — solo BRD. Usa knowledge pack y AiService para generación. Inyecta **GraphMemoryService** para el gate índice/SDD (Falkor) y **AgentSupervisorService** para resolver `theforgeProjectId` de etapa en el descubrimiento escalonado... *(resto del detalle de descubrimiento escalonado sin cambios)*
+- **LegacyCoordinatorService:** Orquesta start (TheForge), answer, generateCodebaseDoc, suggestBrd, generateFromCodebase; delega `generateMdd` y `generateDeliverables`.
+- **LegacyStageContextService:** Proyecto legacy, etapa gate, lectura/persistencia de `legacyChangeState`, gate índice↔SDD, sync Falkor.
+- **LegacyMddGenerationService:** `POST …/legacy/generate-mdd` — descubrimiento TheForge, prompt AS-IS/cambio, revisor, persist.
+- **LegacyDeliverablesOrchestratorService:** Cascada bulk `generate-deliverables` (paralelo, section merge, telemetría `lastDeliverablesDebug`).
+- **legacy-coordinator.util.ts** / **legacy-coordinator.types.ts:** Helpers compartidos (429 retries, clip debug, tipos de traza).
 - **`legacy-generate-options.util.ts`:** `buildLegacyGenerateOptions` — `legacyBaselineStage` + TheForge para cascada legacy y regeneración individual (`ProjectsService.generateBlueprint|ApiContracts|LogicFlows|Infra` en proyectos `LEGACY`). **`mergeLegacyTasksGenerateOptions`** — combina esas opciones con entregables del proyecto (Spec, HU, API, Flujos, Infra) y mapa de navegación MCP; lo usa **`generateTasks`** en cascada (`runStepWithMdd`) y en **`generate-from-codebase`** (tipo `tasks`), alineado con `ProjectsService.generateTasks`.
 - **`legacy-flow-state-debug.util.ts`:** parches parciales a `legacyFlowState.lastDeliverablesDebug` (p. ej. `logicFlowsSection5Coverage` tras regen individual de flujos etapa 1).
 - **LegacyReviewerService:** Revisa lista archivos/preguntas y borrador MDD. Si el MDD casi no cita rutas (menos de 3 referencias tipo `archivo.ts`), antepone aviso SDD al prompt de revisión.

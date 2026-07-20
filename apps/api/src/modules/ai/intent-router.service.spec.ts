@@ -107,4 +107,16 @@ describe("IntentRouterService", () => {
     await router.route(message, { activeTab: "benchmark", hasDocumentContent: true });
     assert.equal(llmCalls, 1);
   });
+
+  it("confirma edición tras oferta del asistente (heurística)", async () => {
+    const router = buildRouter();
+    const route = await router.route("dale", {
+      activeTab: "mdd",
+      hasDocumentContent: true,
+      lastAssistantMessage: "¿Te parece bien? Si es así lo integro al MDD.",
+    });
+    assert.equal(route.action, "edit_document");
+    assert.equal(route.source, "heuristic");
+    assert.equal(llmCalls, 0);
+  });
 });

@@ -4,6 +4,7 @@ import {
   normEp,
   type ApiConformanceResult,
 } from "./conformance.service.js";
+import { unifyApiContractsPrefix } from "./api-prefix-unify.util.js";
 
 export function runApiConformanceCheck(
   mddContent: string,
@@ -67,7 +68,8 @@ export function injectMissingApiEndpoints(mddContent: string, apiContent: string
   return apiContent.trimEnd() + block;
 }
 
-/** Reparación post-IA: filas faltantes del MDD §4. */
+/** Reparación post-IA: prefijo unificado + filas faltantes del MDD §4. */
 export function repairApiProgrammaticGaps(mddContent: string, apiContent: string): string {
-  return injectMissingApiEndpoints(mddContent, apiContent);
+  const unified = unifyApiContractsPrefix(mddContent, apiContent);
+  return injectMissingApiEndpoints(mddContent, unified.content);
 }

@@ -7,10 +7,14 @@ import {
   repairMetadataCoverTable,
   repairOrphanSqlBlocks,
   repairOrphanContratosApiFences,
+  repairOrphanFenceBeforeContractLabels,
   repairPastedMarkdown,
+  repairJsonFenceIntegrity,
   repairTableBoundaries,
   repairTabSeparatedTables,
   repairUnclosedCodeFences,
+  repairIndentedProseBlocks,
+  repairMddInfraManifestJsonBlock,
 } from "./repair-pasted-markdown.js";
 import { formatDocumentMarkdown } from "./format-document-markdown.js";
 import { readFileSync } from "node:fs";
@@ -207,5 +211,229 @@ describe("repairOrphanContratosApiFences", () => {
     const out = repairOrphanContratosApiFences(raw);
     assert.match(out, /---\n\n### POST \/api\/v1\/auth\/sso\/login/);
     assert.doesNotMatch(out, /---\n```\n\n### POST/);
+  });
+});
+
+describe("repairMddInfraManifestJsonBlock", () => {
+  it("envuelve JSON suelto tras ### Manifest de Infraestructura", () => {
+    const raw = `## 7. Infraestructura
+
+### Manifest de Infraestructura
+
+{ "project_id": "copiloto", "stack": { "backend": "NestJS" }, "integration_metadata": { "api_prefix": "/api/v1" } }
+
+## UI/UX Design Intent
+
+### Personas y journeys
+`;
+    const out = repairMddInfraManifestJsonBlock(raw);
+    assert.match(out, /### Manifest de Infraestructura\n\n```json\n[\s\S]*"project_id"/);
+    assert.match(out, /```\n+## UI\/UX Design Intent/);
+  });
+});
+
+describe("repairIndentedProseBlocks", () => {
+  it("desindenta headings y tablas UI/UX en lugar de convertirlos a bullets", () => {
+    const raw = `    ### Personas y journeys
+    | Ruta | Componentes |
+    |------|---------------|
+    | /login | LoginForm |`;
+    const out = repairIndentedProseBlocks(raw);
+    assert.match(out, /^### Personas y journeys/m);
+    assert.match(out, /^\| Ruta \| Componentes \|/m);
+    assert.doesNotMatch(out, /^- ### Personas/m);
+  });
+});
+
+describe("MDD §4 API contract format repairs (patrones genéricos)", () => {
+  it("quita --- pegado al final de prosa en riesgos §1", () => {
+    const raw =
+      "- **Bucle Infinito de Agentes:** Riesgo de ciclos. **Mitigación:** límite de iteraciones en el agente. ---\n\n---\n\n## 2. Arquitectura";
+    const out = repairPastedMarkdown(raw);
+    assert.match(out, /agente\.\n[\s\S]*---[\s\S]*## 2\. Arquitectura/);
+    assert.doesNotMatch(out, /agente\. ---/);
+  });
+
+  it("elimina línea basura # ``` tras erDiagram §3", () => {
+    const raw = "```mermaid\nerDiagram\n  tenants ||--o{ companies : tenant\n```\n# ```\n\n---\n\n## 4.";
+    const out = repairPastedMarkdown(raw);
+    assert.doesNotMatch(out, /^#\s*```/m);
+    assert.match(out, /```[\s\S]*## 4\./);
+  });
+
+  it("repara JSON §4 sin cierre antes del siguiente endpoint", () => {
+    const raw = `### POST /api/v1/auth/m2m/token
+Intercambia credenciales.
+**Response 200:**
+\`\`\`json
+{
+  "access_token": "jwt_string",
+  "expires_in": 3600,
+  "token_type": "Bearer"
+
+### POST /api/v1/chat/message
+Recibe el mensaje.
+**Request body:**
+\`\`\`json
+{ "device_token": "string" }
+\`\`\`
+`;
+    const out = repairPastedMarkdown(raw);
+    assert.match(out, /"token_type": "Bearer"\n}\n```\n\n### POST \/api\/v1\/chat\/message/);
+    assert.doesNotMatch(out, /\n}\n```\n\n\*\*Request body:\*\*/);
+  });
+
+  it("elimina } y fence huérfanos entre descripción y Request body", () => {
+    const raw = `### POST /api/v1/chat/message
+Recibe el mensaje del webhook.
+}
+\`\`\`
+
+**Request body:**
+\`\`\`json
+{ "ok": true }
+\`\`\`
+`;
+    const out = repairPastedMarkdown(raw);
+    assert.match(out, /webhook\.\n+\*\*Request body:\*\*/);
+    assert.doesNotMatch(out, /webhook\.\n}\n```/);
+  });
+
+  it("elimina fence huérfano antes de Request body (§4)", () => {
+    const raw = `### POST /api/v1/chat/message
+Recibe el mensaje del webhook de WhatsApp y orquesta la respuesta.
+\`\`\`
+
+**Request body:**
+\`\`\`json
+{ "device_token": "string" }
+\`\`\`
+`;
+    const out = repairPastedMarkdown(raw);
+    assert.match(out, /respuesta\.\n+\*\*Request body:\*\*/);
+    assert.doesNotMatch(out, /respuesta\.\n```\n\n\*\*Request body/);
+  });
+
+  it("conserva cierre ```json antes de **Response 200:** (no confundir con huérfano)", () => {
+    const raw = `**Request body:**
+\`\`\`json
+{
+  "client_id": "string",
+  "client_secret": "string"
+}
+\`\`\`
+
+**Response 200:**
+\`\`\`json
+{ "access_token": "jwt" }
+\`\`\`
+`;
+    const out = repairOrphanFenceBeforeContractLabels(raw);
+    assert.match(out, /"client_secret": "string"\n}\n```\n\n\*\*Response 200:/);
+  });
+
+  it("normaliza Response 204 sin # No Content", () => {
+    const raw = `**Response 204:**
+# \`No Content\`
+`;
+    const out = repairPastedMarkdown(raw);
+    assert.match(out, /\*\*Response 204:\*\*\n\n_No Content_/);
+    assert.doesNotMatch(out, /# `No Content`/);
+  });
+
+  it("normaliza Response 204 con # _No Content_", () => {
+    const raw = `**Response 204:**
+# _No Content_
+`;
+    const out = repairPastedMarkdown(raw);
+    assert.match(out, /\*\*Response 204:\*\*\n\n_No Content_/);
+    assert.doesNotMatch(out, /# _No Content_/);
+  });
+
+  it("fusiona Matriz UI/UX partida por heading erróneo", () => {
+    const raw = `### Matriz pantalla→componente
+
+### Detalle ejecutable en
+
+**\`pantallas.md\`** (spec-kit). Resumen:`;
+    const out = repairPastedMarkdown(raw);
+    assert.match(out, /### Matriz pantalla→componente\n\nDetalle ejecutable en \*\*`pantallas\.md`\*\*/);
+    assert.doesNotMatch(out, /### Detalle ejecutable en/);
+  });
+
+  it("formatDocumentMarkdown repara §4 tras repairMarkdownFences sin perder cierres json", () => {
+    const raw = `## 1. Contexto
+
+- **Riesgo:** bucle. **Mitigación:** timeout. ---
+
+---
+
+## 4. Contratos de API
+
+### POST /api/v1/auth/m2m/token
+**Response 200:**
+\`\`\`json
+{ "access_token": "x", "token_type": "Bearer"
+
+### POST /api/v1/chat/message
+}
+\`\`\`
+
+**Request body:**
+\`\`\`json
+{ "msg": "hi" }
+\`\`\`
+
+## UI/UX Design Intent
+
+### Matriz pantalla→componente
+
+### Detalle ejecutable en
+
+**\`pantallas.md\`**
+`;
+    const out = formatDocumentMarkdown(raw);
+    assert.doesNotMatch(out, /timeout\. ---/);
+    assert.match(out, /"token_type": "Bearer"\n}\n```/);
+    assert.match(out, /Detalle ejecutable en \*\*`pantallas\.md`\*\*/);
+    assert.doesNotMatch(out, /### Detalle ejecutable en/);
+  });
+
+  it("repairJsonFenceIntegrity no elimina cierre válido antes de **Response N:**", () => {
+    const raw = `**Request body:**
+\`\`\`json
+{ "a": 1 }
+\`\`\`
+
+**Response 200:**
+\`\`\`json
+{ "b": 2 }
+\`\`\`
+
+### POST /api/v1/next
+`;
+    const out = repairJsonFenceIntegrity(raw);
+    assert.match(out, /\{ "a": 1 \}\n```\n+\*\*Response 200:/);
+    assert.match(out, /\{ "b": 2 \}\n```\n+### POST/);
+  });
+
+  it("cadena de endpoints: json sin cierre antes de **Response** y ### DELETE", () => {
+    const raw = `### POST /api/v1/a
+**Request body:**
+\`\`\`json
+{ "id": "1" }
+
+**Response 200:**
+\`\`\`json
+{ "ok": true }
+
+### DELETE /api/v1/a/:id
+**Response 204:**
+# _No Content_
+`;
+    const out = repairPastedMarkdown(raw);
+    assert.match(out, /\{ "id": "1" \}\n```[\s\S]*?\*\*Response 200:/);
+    assert.match(out, /\{ "ok": true \}\n```[\s\S]*?### DELETE/);
+    assert.match(out, /\*\*Response 204:\*\*\n+_No Content_/);
   });
 });

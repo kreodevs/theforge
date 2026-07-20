@@ -21,6 +21,9 @@ export const stageDeliverableFieldsSchema = z.object({
 export const stageDeliverableSnapshotSchema = stageDeliverableFieldsSchema.extend({
   capturedAt: z.string(),
   source: z.enum(["project_flat", "manual", "cascade"]).optional(),
+  /** Cross-artifact bundle version (US + pantallas + API + tasks regenerated together). */
+  bundleVersion: z.string().optional(),
+  bundleGeneratedAt: z.string().optional(),
 });
 
 export type StageDeliverableSnapshot = z.infer<typeof stageDeliverableSnapshotSchema>;

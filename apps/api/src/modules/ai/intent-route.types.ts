@@ -10,6 +10,8 @@ export interface IntentRouteContext {
   activeTab?: string;
   /** Hay contenido de documento en el panel (p. ej. DBGA existente). */
   hasDocumentContent?: boolean;
+  /** Último mensaje del asistente en el tab (confirmaciones «sí» / «aplica»). */
+  lastAssistantMessage?: string;
 }
 
 export interface IntentRouteResult {

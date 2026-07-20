@@ -1,0 +1,46 @@
+import type { GenerationJobType } from "@theforge/shared-types";
+import type { BuildWorkshopDocClarification } from "./workshopStandardDocPanels.types";
+
+export interface WorkshopMddPanelProps {
+  projectId: string;
+  activeStageId: string | null;
+  mddContent: string;
+  effectiveMddTrimmed: string;
+  mddViewMode: "preview" | "source";
+  mddDirty: boolean;
+  mddReviewing: boolean;
+  mddPersisting: boolean;
+  mddReapplyingFormat: boolean;
+  mddJustGeneratedFromBenchmark: boolean;
+  loading: boolean;
+  loadingReason: string | null;
+  notice: string | null;
+  isLegacyProject: boolean;
+  isStage1Legacy: boolean;
+  legacyMddNeedsCodebaseDoc: boolean;
+  legacyHandoffGatePending: boolean;
+  legacyChangeGateBlocked: boolean;
+  legacyHandoffGateBlocked: boolean;
+  legacyGenerateBlocked: boolean;
+  handoffGateStrict: boolean;
+  patternsWizardAnalyzing: boolean;
+  canGenerate: boolean;
+  cascadeRunning: boolean;
+  cascadeCompleted: number;
+  cascadeTotal: number;
+  cascadePostPassRunning: boolean;
+  buildDocClarification: BuildWorkshopDocClarification;
+  isGenerationGateBlocked: (type: GenerationJobType) => boolean;
+  onHandoffGateStrictChange: (strict: boolean) => void;
+  onClearMddJustGeneratedFromBenchmark: () => void;
+  onRequestGenerateMdd: () => void;
+  onReapplyMddFormat: () => void;
+  onOpenSuggestMddPatterns: () => void;
+  onOpenEditMddPatterns: () => void;
+  onOpenClearMddConfirm: () => void;
+  onGenerateDeliverables: () => void;
+  onMddContentChange: (content: string) => void;
+  onRevertMddContent: () => void;
+  onPersistAndReviewMdd: () => void;
+  onMddAuditUpdated: () => void | Promise<void>;
+}

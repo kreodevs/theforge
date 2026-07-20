@@ -1,7 +1,7 @@
 /**
  * Dashboard projects panel header: integrated title, copy, and actions.
  */
-import { Loader2, Plus, RefreshCw, BookOpen } from "lucide-react";
+import { Loader2, Plus, RefreshCw, BookOpen, Upload } from "lucide-react";
 import { Button } from "@/components/ui";
 
 export interface DashboardPanelHeaderProps {
@@ -9,6 +9,8 @@ export interface DashboardPanelHeaderProps {
   onCreateProject: () => void;
   onRefresh: () => void;
   onOpenTutorial?: () => void;
+  onImportProject?: () => void;
+  onImportIntegrationPair?: () => void;
 }
 
 export function DashboardPanelHeader({
@@ -16,6 +18,8 @@ export function DashboardPanelHeader({
   onCreateProject,
   onRefresh,
   onOpenTutorial,
+  onImportProject,
+  onImportIntegrationPair,
 }: DashboardPanelHeaderProps) {
   return (
     <header className="flex flex-col gap-3 border-b border-[var(--border)] pb-4 sm:flex-row sm:items-end sm:justify-between sm:gap-4 sm:pb-5">
@@ -81,6 +85,27 @@ export function DashboardPanelHeader({
           <Plus className="h-4 w-4 shrink-0" aria-hidden />
           Crear nuevo proyecto
         </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="hidden w-full touch-manipulation min-h-11 sm:inline-flex sm:w-auto sm:min-h-10"
+          onClick={onImportProject}
+          disabled={loading || !onImportProject}
+        >
+          <Upload className="h-4 w-4 shrink-0" aria-hidden />
+          Importar
+        </Button>
+        {onImportIntegrationPair ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="hidden w-full touch-manipulation min-h-11 sm:inline-flex sm:w-auto sm:min-h-10"
+            onClick={onImportIntegrationPair}
+            disabled={loading}
+          >
+            Importar NEW+LEG
+          </Button>
+        ) : null}
         <Button
           type="button"
           variant="outline"

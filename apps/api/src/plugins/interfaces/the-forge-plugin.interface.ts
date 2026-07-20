@@ -5,7 +5,12 @@ import type {
   AfterDocumentPersistPayload,
   ProjectLifecyclePayload,
 } from "../types/plugin-payloads.js";
-import type { ArtifactTypeDefinition, PluginSettingsPanelDefinition } from "@theforge/shared-types";
+import type {
+  PluginArtifactContext,
+  PluginArtifactResult,
+  PluginArtifactTypeDeclaration,
+  PluginSettingsPanelDefinition,
+} from "@theforge/shared-types";
 
 /**
  * Ciclo de vida completo de un plugin The Forge.
@@ -158,6 +163,16 @@ export interface ITheForgePlugin {
   // ────────────────────────
 
   /**
+   * Genera un artifact propio del plugin (Modo B). El core persiste el resultado en
+   * `project.pluginData[pluginId]`.
+   *
+   * @optional
+   */
+  generateArtifact?(
+    context: PluginArtifactContext,
+  ): Promise<PluginArtifactResult> | PluginArtifactResult;
+
+  /**
    * Registra los tipos de documento/artifact que este plugin genera.
    *
    * El core expone esta información vía GET /api/plugins/artifacts
@@ -170,19 +185,8 @@ export interface ITheForgePlugin {
    *
    * @returns Lista de definiciones de artifact (vacío si no aplica)
    * @optional
-   * @example
-   * ```typescript
-   * getArtifactTypes(): ArtifactTypeDefinition[] {
-   *   return [{
-   *     id: "evd",
-   *     label: "Executive Visual Deck",
-   *     icon: "Presentation",
-   *     showInSidebar: true,
-   *   }];
-   * }
-   * ```
    */
-  getArtifactTypes?(): ArtifactTypeDefinition[];
+  getArtifactTypes?(): PluginArtifactTypeDeclaration[];
 
   // ────────────────────────
   // Ajustes de usuario (UI enganchada en Ajustes)

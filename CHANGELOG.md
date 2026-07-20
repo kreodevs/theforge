@@ -4,26 +4,300 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+### Fixed
+
+- **Chat Fase 0 (DBGA) — cambios que no se persistían:** (1) `parseBenchmarkResponse` tolera variantes del marcador (`---FIN_DBGA`, `FIN_DBGA---`, `## FIN_DBGA`, `**FIN_DBGA**`). (2) `isDbgaContentNearlyIdentical` con tolerancia acotada (cap 200 chars) para no descartar ediciones pequeñas en DBGA grandes. (3) Imperativo «Haz los cambios al documento» y renombres propuestos (p. ej. **PAT Wasender** / **PAT SSO**) se detectan y validan sin rechazar acrónimos cortos.
+
+## [v1.6.2] — 2026-07-19
+
+> **MDD SSOT — UAT, §4 journeys y tablas plataforma** — Paridad escenarios UAT BRD→MDD, contratos CRUD/journey en §4, gate MCP/memoria alineado con contexto BRD.
+
 ### Added
 
-- **Cascade accuracy — C7/C8:** componentes `C7_useCases` y `C8_userStories` en `computeDocAccuracy` para validar presencia y sustancia de Use Cases y User Stories; pesos redistribuidos (C1:25, C2:18, C3:12, C4:10, C5:8, C6:7, C7:10, C8:10).
-- **Tasks planner — orphan detection:** `evaluateTasksStructure()` detecta tareas sin `target_files`/`verification` y las reporta como gaps.
-- **Governance — CLAUDE.md contextual:** genera CLAUDE.md con stack, capas, módulos y scripts del proyecto en vez de shim `@AGENTS.md`.
-- **Governance — reglas enriquecidas:** `architecture-patterns` y `api-contracts` inyectan capas Blueprint y módulos del proyecto en su contenido.
+- **`brd-mdd-uat-conformance.util.ts`:** paridad escenarios UAT BRD → MDD §1; inyección determinista de escenarios faltantes (p. ej. límite IA, stop-loss).
+- **`mdd-journey-section4.util.ts`:** requisitos §4 para watchlists, strategies, credentials, `/dashboards/me`, `/tenants/:id/quota` y WebSocket si §2 lo describe.
+- **`mdd-ssot-repair.util.ts`:** orquestación pre-gate (plataforma + UAT + §4) en `mdd-prepare-output` y estimación.
+- **`platform-table-justify.util.ts`:** ancla tablas MCP/memoria en BRD §3, MDD §1 o Spec; auto-comentarios `[platform:*]`.
+- **Specs:** brd-mdd-uat, mdd-journey-section4, mdd-ssot-repair, platform-table-justify.
+
+### Changed
+
+- **Delivery gate / W4 / `collectConformanceGaps`:** blockers `domain-uat-regression` y `domain-section4-journey`.
+- **`DBGA_CORE_ENTITIES`:** incluye `strategies`.
+- **`domain-inventory.util.ts`:** aliases `strategy` / `estrategia`.
+
+### Fixed
+
+- **Regresión UAT:** MDD ya no pierde escenarios 3–4 tras regeneración cuando el BRD los mantiene.
+- **§4 sin contratos journey:** tablas §3 con endpoints CRUD y rutas especiales ausentes en contratos.
+- **`normalizeApiPathForCompare`:** `{id}` ya no produce doble barra (`/tenants//*/quota`).
+- **Gate tablas plataforma:** `mcp_plugins` / `conversation_memory` justificables por contexto MCP/memoria en corpus.
+
+## [v1.6.1] — 2026-07-19
+
+> **MDD como SSOT — brechas críticas de dominio** — Entidades DBGA en §3, tablas plataforma, prefijo API unificado, decision log BRD, trazabilidad entidad→API e integraciones externas.
+
+### Added
+
+- **`domain-inventory-conformance.util.ts`:** gate entidades DBGA faltantes (`users`, `watchlists`, `operations`, `credentials`, `dashboard_configs`, `otp_sessions`) y tablas plataforma (`messages`, `mcp_plugins`, `conversation_memory`) sin ancla BRD/DBGA.
+- **`brd-decision-log.util.ts`:** cierre decision log (fiscal %, `$N$`, tokens/plan, «Por validar»).
+- **`api-prefix-unify.util.ts`:** reconcilia `/api/` → `/api/v1/` en contratos según MDD §4.
+- **`entity-api-trace.util.ts`:** matriz explícita entidad → §3 → endpoint API.
+- **`dbga-benchmark-matrix.util.ts`:** aviso si DBGA promete matriz competitiva sin tabla.
+- **`sdd-external-contracts.util.ts`:** WebSocket gateway, Banxico, Polygon cuando DBGA/BRD los mantienen en alcance.
+- **`PLATFORM_ORPHAN_TABLES` / `DBGA_CORE_ENTITIES`** en `@theforge/shared-types`.
+- **Specs:** domain-inventory-conformance, mdd-ssot-gaps.
+
+### Changed
+
+- **Delivery gate MDD** y **cascada W4:** blockers de dominio + decision log; retry API/Architecture ante gaps SSOT.
+- **`collectConformanceGaps` / `audit_documents`:** incluye inventario, trazabilidad, benchmark DBGA e integraciones.
+- **`repairApiProgrammaticGaps`:** unifica prefijo antes de inyectar endpoints §4 faltantes.
+- **`mdd-quality-audit.util.ts`:** DLQ distingue RabbitMQ vs Celery; Argon2id sin cambio de contrato.
+
+### Fixed
+
+- **MDD auth-skewed:** inventario DBGA alimenta `suggestedEntities` y stubs §3 deterministas.
+- **Drift API prefix:** contratos ya no mezclan `/api/` y `/api/v1/` tras reparación programática.
+
+## [v1.6.0] — 2026-07-19
+
+> **Pipeline de generación — 10 brechas post GOD-REFACTOR** — IDs US estables, SSOT tasks, bundle version atómico, conformidad cross-artifact, partición por journey, alcance v1 de pantallas, cardinalidad Prisma, parser tasksJson v2, re-estimación post-consolidación y cableado MCP/spec-kit.
+
+### Added
+
+- **`us-id-registry.ts`:** namespaces `US-CRUD-*` / `US-JRN-*` para IDs de user stories estables entre regeneraciones.
+- **`tasks-resolve.ts` + `resolveProjectTasksSsot`:** SSOT único (`tasksJson` v2 → fallback `tasksContent`) para Workshop, spec-kit, next-task y MCP.
+- **`deliverable-bundle.ts` + `deliverable-bundle-persist.util.ts`:** `bundleVersion` en snapshot de etapa tras oleadas de regeneración atómica.
+- **`cross-artifact-trace.util.ts`:** conformidad pantalla → API → US → task en post-pase W4.
+- **`tasks-journey-partition.util.ts`:** generación de tasks particionada por journey/fases.
+- **`ui-screens-v1-scope.util.ts`:** política de pantallas fuera de alcance v1 (`v1InScope`).
+- **`model-cardinality.util.ts`:** alineación cardinalidad MDD §3 = inventario = T-002 Prisma.
+- **Parser `tasks-parser-v2`:** metadata solo bajo `## Metadata`; strip de `---` anidados.
+- **MCP `mcp-ssot.util.ts`:** tool `get_tasks_json`; `tasksSsot` en `get_project_deliverables`; `deliverableBundleVersion` en `get_project_stages` y `get_next_implementation_task`.
+- **Specs:** us-id, tasks-resolve, ui-screens-v1-scope, tasks-journey-partition, tasks-parser-v2, tasks-ssot-resolve, mcp-ssot.
+
+### Changed
+
+- **`buildThinUserStoriesFromInventory`:** user stories delgadas con `usId` estable desde inventario de dominio.
+- **`deliverables-cascade.service.ts`:** persistencia de bundle version post-oleadas; trazabilidad cross-artifact.
+- **`tasks-generation-pipeline.service.ts`:** redactor por fases/journey; heurística mín. 1 task frontend por pantalla v1 con API.
+- **`tasks-coverage-checklist.util.ts` / `tasks-heuristic-plan.util.ts`:** rutas v1 en checklist y plan heurístico.
+- **`spec-kit-bundle.ts` / handoff export:** `buildSpecKitBundleFiles` consume SSOT `tasksJson`.
+- **`project-estimation-recalc.service.ts`:** re-estimación con `consolidatedTaskCount` tras `generateTasks`.
+- **`ProjectNextTaskResponse`:** expone `tasksSource`, `hasTasksJson`, `taskCount`, `deliverableBundleVersion`.
+
+### Fixed
+
+- **Regeneración parcial:** snapshot de entregables versionado evita mezcla de artefactos de oleadas distintas.
+- **Drift tasks markdown vs JSON:** consumidores (MCP, spec-kit, next-task) leen la misma fuente resuelta.
+
+### Architecture
+
+- Sin cambios en fórmulas MXN (`packages/business-rules`) ni contratos REST públicos breaking.
+- Workshop web sigue leyendo `tasksContent` directamente (fuera de scope MCP; SSOT ya disponible vía API/MCP).
+
+
+> **GOD-REFACTOR (Fases 0–6)** — Descomposición de god modules sin cambiar contratos públicos: MDD sanitize/manager, chat API, `projects.service`, Workshop UI/store, legacy coordinator, MCP server y gobernanía IA por artefacto. Build monorepo verde.
+
+### Added
+
+- **Fase 0:** red de specs de regresión (golden MDD, workshop store smoke, MCP tools).
+- **`store/workshop/`:** 7 slices Zustand (`project`, `session-chat`, `mdd`, `deliverables`, `clarify`, `legacy-debug`, `ui`) + composición en `workshopStore.ts` (~51 L).
+- **`packages/mcp-server/src/tools/`:** tools MCP por dominio (`project`, `generation`, `analysis`, `orchestrator`, `legacy`, `integration`, `markdown`); bootstrap HTTP/stdio ~248 L.
+- **`agent-governance/`:** módulos por artefacto (`rules-artifacts`, `skills-artifacts`, `agents-artifacts`, `install-map`, `sdd-conflict`).
+- **Legacy-flow:** `legacy-stage-context`, `legacy-mdd-generation`, `legacy-deliverables-orchestrator` + util/types compartidos.
+
+### Changed
+
+- **`mdd-sanitize.ts`:** barrel sobre submódulos (`section-merge`, `persist-pipeline`, `sql-repair`, `mermaid-fences`, …).
+- **`mdd-manager`:** plan, heuristics, LLM turn, state handlers y delegate en archivos dedicados.
+- **Chat API:** `workshop-system-prompt.builder.ts`, runner compartido de turnos en `sessions`; duplicación sync/stream reducida.
+- **`projects.service.ts`:** fachada ~420 L; lógica en servicios por dominio (MDD persist, entregables, etapas, conformidad, …).
+- **`WorkshopView.tsx`:** layout shell, paneles, hooks de props y métricas extraídos (~5 140 L vs ~5 917).
+- **`legacy-coordinator.service.ts`:** ~680 L; delega MDD y entregables en orchestrators.
+- **`packages/mcp-server`:** cliente API, tipos y registry en `tools/index.ts`; `.gitignore` corrige exclusión de `packages/mcp-server/src/tools/`.
+
+### Fixed
+
+- **Build API (Nest):** typo `systemPrompt` en multimodal; import `buildApiRetryFeedback`; narrowing `MddUpdatePipelineResult`; `legacyChangeState` con `Prisma.JsonNull`; imports muertos tras split `mdd-sanitize/internal.ts`.
+- **`mdd-golden.util.ts`:** `__dirname` compatible con salida CJS del build.
+
+### Architecture
+
+- Documentación: `docs/GOD-REFACTOR.md` (incrementos 5a–6-4), READMEs de carpetas afectadas.
+- **Sin cambios** en fórmulas MXN (`packages/business-rules`), delimitadores `---FIN_*---`, contratos MCP/REST públicos ni flujo legacy de negocio.
+
+### Removed
+
+- **Integración Hermes Agent:** eliminados webhook (`HERMES_*`), endpoints `GET /projects/hermes-status` y `POST /projects/:id/launch-hermes`, botón «Lanzar a Hermes» en Workshop y claves en Ajustes → Sistema. Handoff sigue vía export ZIP / repo-handoff / MCP.
+
+## [v1.4.0] — 2026-07-18
+
+> **Tasks — cobertura 100% determinista** — Pipeline endurecido para que el documento Tasks sea ejecutable por cualquier IA sin gaps en API, pantallas, Testing ni Deploy.
+
+### Added
+
+- **`tasks-coverage-checklist.util.ts`:** checklist determinista endpoint↔task, ruta↔Frontend, drift API, secciones Testing/Deploy; serialización JSON para auditor/repair LLM.
+- **Use Cases en pipeline Tasks:** planner, redactor y contexto slim incluyen `useCasesContent`.
+- **`tasksGenerationPrerequisites.ts` (web):** botón Tasks deshabilitado hasta cumplir MDD + Spec + Blueprint + API (+ Pantallas si UX team).
+
+### Changed
+
+- **Redactor Tasks:** `max_tokens` perfil **`tasksDoc` (131K)** — corrige truncado silencioso a 8K en MVPs grandes.
+- **Caps upstream redactor:** API y pantallas a 20K; user stories a 12K; use cases a 10K.
+- **Gates estructurales:** 1 task Backend por endpoint de `api-contracts`; 1 task Frontend por ruta en `pantallas.md`; drift API desde ≥1 ruta inventada; Testing/Deploy obligatorios cuando aplica §7/§8.
+- **Task auditor v2:** `mdd_ref` error en tareas de implementación; `story_ref` error si hay user stories upstream.
+- **Planner heurístico:** 1 ítem plan por endpoint (no agrupación por resource).
+- **Auditor/repair LLM:** contexto ampliado (API, pantallas, checklist determinista); repair usa `tasksDoc` tokens.
+- **Reparaciones:** 3 ciclos si documento truncado (`TASKS_PIPELINE_MAX_REPAIRS_TRUNCATED`).
+- **W4 cascada:** `acknowledgeGaps` en retry Tasks solo si DocAccuracy upstream &lt; 70.
+
+### Fixed
+
+- **Tasks truncados en proyectos grandes:** el pipeline ya no usa el perfil `chat` (8K) para generar el markdown completo.
+
+## [v1.3.0] — 2026-07-18
+
+> **Configuración de plataforma en UI** — Tunables operativos migrados de `.env` a Ajustes → Sistema con defaults y persistencia en `AppConfig`.
+
+### Added
+
+- **Catálogo `system-config` (`@theforge/shared-types`):** allowlist de ~40 claves (integraciones, LLM, BullMQ, MCP, legacy, debug) con tipo, default, categoría y metadatos.
+- **API `SystemConfigModule`:** `GET/PATCH /admin/system-config` (solo `super_admin`); resolución runtime **BD → env → default** vía `platform-config.runtime.ts`.
+- **Web — pestaña Sistema:** `SystemConfigCard` en Ajustes (visible solo para `super_admin`); badges de origen (default/env/guardado) y aviso de reinicio para concurrencia BullMQ.
+
+### Changed
+
+- **Runtime API:** LLM (`llm_max_tokens`, embeddings, fallback 429), LangGraph recursion, concurrencia BullMQ, timeouts MCP, Hermes, brownfield Ariadne, caché contexto TheForge y evaluador legacy leen el catálogo de plataforma.
+- **`.env.example`:** recortado a bootstrap (DB, Redis, JWT, SMTP, BYOK, MCP M2M, build); tunables documentados como override opcional o vía UI.
+
+## [v1.2.2] — 2026-07-17
+
+> **Workshop MDD — progreso unificado y portabilidad Notion** — Panel de avance estable en chat, detección correcta de cambios sin guardar, export/import de proyecto y jobs MDD en background.
+
+### Added
+
+- **Portabilidad de proyecto (formato Notion):** export/import ZIP Markdown & CSV a nivel proyecto — páginas `.md` por documento, carpetas por etapa, `Integración/Handoff items.csv`, `Integración/Trazas integración.csv`, `Etapas.csv`, `index.html` y metadatos en `_theforge/`. API: `GET /projects/:id/export/notion`, `POST /projects/import/notion`, `POST /projects/import/notion/pair` (restaura vínculo NEW↔LEGACY y matriz de trazas). UI: export en configuración del proyecto; import e import pareja en el dashboard.
+- **Resolución Forge ↔ Ariadne:** tabla `project_ariadne_links`, `POST /theforge/resolve-forge-project-for-ariadne` y MCP `resolve_forge_project_for_ariadne` (404/409 con candidatos para modal en Ariadne). Enlace primario al crear proyecto LEGACY o promover handoff.
+- **Change pack Ariadne → etapa LEGACY:** `POST /theforge/create-stage-from-ariadne-change-pack` y MCP `create_stage_from_ariadne_change_pack` (pack v1, `recommendedNextTools` para MDD/entregables).
+- **MDD jobs — visibilidad y cancelación:** `GET /projects/:id/generation-status` incluye `mddJobs[]` (jobId, mode, status, progreso). `DELETE /projects/:id/mdd-jobs/:jobId` cancela jobs en cola o aborta pipeline activo entre nodos LangGraph. Banner Workshop con detalle del job y botón «Cancelar MDD».
+- **Worker BullMQ dedicado:** proceso `worker.js` (`THEFORGE_RUNTIME_ROLE=worker`) y servicio `theforge-worker` en compose; la API (`http`) solo encola. Config `bullmq-runtime.config.ts` con concurrencia por cola (`MDD_BULLMQ_CONCURRENCY`, default 2).
+- **MDD upstream sync:** banner «Sincronizar MDD» cuando Fase 0 / BRD / Benchmark cambian; regeneración parcial por secciones afectadas; baseline por etapa en BD.
+
+### Changed
+
+- **Producción:** `REDIS_URL` obligatorio (`NODE_ENV=production`); entrypoint, `main.ts` y `worker.ts` abortan si falta. Sin Redis queda fallback in-memory solo en desarrollo.
+- **Etiquetas MDD en progreso:** `getAgentLabel` y mensajes para nodos `diagram_injector`, `format_after_architect`, `cross_consistency_checker`, etc.
+- **`docker-compose.yml`:** `theforge-api` con `THEFORGE_RUNTIME_ROLE=http`; nuevo `theforge-worker` con rol `worker`.
+- **Progreso MDD en chat:** un solo panel «Progreso del flujo» (sin burbuja «Generando…» duplicada); regeneración §N incluida; historial colapsado tras 6 pasos; agentes repetidos etiquetados «2ª pasada».
+
+### Fixed
+
+- **MDD «cambios sin guardar» falsos:** baseline alineado con `normalizeWorkshopDocumentForEditor` y `workshopDocumentBodiesEqual` tras refresh o `/formatear`.
+- **Progreso MDD stream ↔ poll:** `mergeAgentProgressFromMddEvent` fusiona eventos NDJSON y snapshot del job sin acortar la lista visible al cambiar de fuente.
+- **Panel «Progreso del flujo» MDD:** deduplicación de pasos idénticos reemitidos por polling del job en background (evita decenas de filas `diagram_injector`).
+- **Poll MDD en Workshop:** reintentos de red (~30 s) antes de error fatal; aviso amarillo si el job sigue en servidor tras fallo de poll.
+- **Listas ordenadas partidas:** `repairSplitOrderedListItems` en `formatDocumentMarkdown` une marcadores `1.` en línea sola con el texto en la siguiente.
+- **Mermaid en viewer:** `<br>` → `<br/>` en SVG generado.
+- **Stamp MDD en editor:** el panel MDD quita cabecera API al cargar (paridad con DBGA/Spec).
+
+## [v1.2.1] — 2026-07-17
+
+> **Workshop — edición DBGA y covenant de delimitadores** — Pipeline de edición en chat endurecido, heurística «revisa gaps», avisos sin jerga `---FIN_*---` para el usuario y regla firmada para agentes.
+
+### Added
+
+- **Workshop — pipeline de edición de documentos (3 fases):**
+  - `workshop-document-turn.util.ts` — gate de persistencia por intención (`chat_only` / `confirm_then_edit` no guardan aunque venga `---FIN_*---`), `sanitizeLlmResponse` (strip thinking), prefijo `[MODO EDICIÓN]`, validación estructural MDD (§1–§7), métricas `[DocumentTurn]`.
+  - `document-refine.util.ts` + `refineDocumentFromUserRequest` — segunda pasada barata de refinado para todos los tabs (paridad con DBGA).
+  - `resolveMddContentForReturn` / `resolveDeliverableContentForReturn` — merge + `validateDocumentForPersist` + retry si falta delimitador o el doc no refleja la petición.
+  - Dual Output RFC-001 solo en `edit_document` + tab `mdd`.
+  - Intent router: contexto `lastAssistantMessage` y heurística de confirmación (`assistantOfferedDocumentEdit` + «dale» / «sí»).
+- **`workshop-fin-delimiter-covenant.ts`:** covenant LLM (`WORKSHOP_DBGA_EDIT_COVENANT`, `workshopFinDelimiterCovenant`) y mensajes al usuario cuando el panel no persistió.
+
+### Changed
+
+- **`SessionsService.chat` / `chatStream`:** aplican gate de intención, sanitización, resolución unificada de documentos y log `[DocumentTurn]` en cada turno.
+- **`IntentRouterService`:** cache incluye último mensaje del asistente; prompt LLM del router recibe contexto del turno anterior.
+- **Heurística DBGA «revisa gaps»:** mensajes tipo «revisa que no tenga gaps / motor agnóstico» clasifican como edición (`looksLikeDbgaEditRequest`) aunque el router LLM diga `chat_only`.
+- **Aviso UI/API con delimitador sin persistencia:** si el modelo emite documento (`hadDelimiter`) pero el panel no cambia, warning en chat + banner en Workshop (`documentHadDelimiter` / `documentPersisted` en SSE `done`).
+- **Mensajes al usuario sin jerga `---FIN_*---`:** avisos de panel no persistido ya no piden reformular con delimitadores; el covenant refuerza la regla solo para agentes.
+- **`AiService` / `phase0-benchmark-refine-prompt.md`:** regla firmada DBGA — documento completo + `---FIN_DBGA---`; si hay duda, preguntar en chat sin pedir delimitadores al usuario.
+
+### Fixed
+
+- **Ediciones accidentales en modo exploración:** el modelo ya no puede persistir documento cuando el router clasifica `chat_only` o `confirm_then_edit`, aunque emita delimitador.
+- **Validación server-side alineada con web:** entregables del chat pasan por `validateDocumentForPersist` completo (no solo shrink peligroso).
+- **SSE `done`:** el orquestador reenvía `documentHadDelimiter` / `documentPersisted` al frontend para el banner del Workshop.
+
+## [v1.2.0] — 2026-07-17
+
+> **Auditoría SDD y calidad de cascada** — Endurecimiento agnóstico del pipeline MDD→entregables: gates de calidad estructural, conformidad Infra/API ampliada, semáforo alineado con cascada, MCP `audit_documents` y panel Workshop.
+
+### Added
+
+- **Cascade accuracy — C7/C8:** componentes `C7_useCases` y `C8_userStories` en `computeDocAccuracy`; pesos redistribuidos.
+- **Tasks planner — orphan detection:** `evaluateTasksStructure()` reporta tareas sin `target_files`/`verification`.
+- **Governance — CLAUDE.md contextual** y reglas enriquecidas (`architecture-patterns`, `api-contracts`).
+- **`mdd-quality-audit.util`:** detección determinista de JSON §4 desbalanceado, Mermaid sin fence, tablas SQL huérfanas, manifest §7 truncado, placeholders en §1; extracción de requisitos Infra desde manifest; alias semánticos API.
+- **Delivery gate MDD:** blockers por §5/§6/§7 duplicadas y issues de calidad estructural; `applyPreDeliveryGateFixes` repara Mermaid suelto y deduplica secciones.
+- **Auditor determinista:** penalización y `syntax_errors` por duplicados, JSON roto y tablas huérfanas.
+- **Conformidad Infra:** `checkInfraManifestConformance` (Argon2id, DLQ, rate limits, CloudFront vs nginx, `/health` Celery).
+- **API post-generación:** doble pasada de `repairApiProgrammaticGaps`; change log JSON estructurado en gaps de conformance.
+- **Cascada:** `runCascadeConformanceRetry` (hasta 2 iteraciones API+Infra) tras generar entregables.
+- **Estimación en vivo:** penalización por gaps API/Infra; `conformanceSummary` en `get_estimation`; Spec sustituto de BRD en trazabilidad greenfield; Use Cases thin capados a 50% completitud.
+- **API:** `GET /projects/:id/audit-documents` — auditoría integral (conformidad + gaps SDD).
+- **MCP:** tool `audit_documents`.
+- **Workshop:** panel «Conformidad cascada» cuando `conformanceSummary.ok === false`.
 
 ### Changed
 
 - **LLM maxTokens:** `document`, `tasksPlanner` y `default` elevados a 65,536 tokens.
-- **Tasks pipeline caps:** MDD 24K→40K, Blueprint 12K→20K, Spec 10K→15K, API Contracts 12K→20K, Logic Flows 8K→12K, Infra 6K→10K; planner context §1 4K→6K, §3 8K→12K, §4 6K→8K, §5 5K→7K, §6 3K→4K, §7 3K→4K, Spec 5K→8K, Blueprint 6K→8K.
-- **Infra prompt:** secciones obligatorias CI/CD Pipeline, Cloud Deploy, Variables de entorno, mTLS/JWT, Monitoring, Manifest de infra.
-- **Tasks prompt:** §8 Testing tasks y §9 Deploy tasks como secciones obligatorias.
-- **`preferThinLiteraryDocs`:** default cambiado de `true` a `false`.
-- **`generateInfra`:** checklist de cobertura anexa al system prompt tras governance patterns.
+- **Tasks pipeline caps** ampliados (MDD, Blueprint, Spec, API, Logic Flows, Infra).
+- **Infra/Tasks prompts:** secciones CI/CD, Deploy y Testing obligatorias; `preferThinLiteraryDocs` default `false`.
+- **`generateInfra`:** retry con `buildInfraConformanceGapFeedback` (incluye manifest §7).
+- **Semáforo:** no puede quedar verde con `conformanceSummary` roto o >3 endpoints API faltantes.
 
 ### Fixed
 
-- **Chat Fase 0 (DBGA) — cambios que no se persistían:** dos causas del mensaje «No se guardaron cambios en Fase 0 (DBGA)». (1) `parseBenchmarkResponse` exigía guiones a **ambos** lados del marcador (`-{1,}…-{1,}`), así que cierres reales como `---FIN_DBGA` (sin guiones finales), `FIN_DBGA---`, `## FIN_DBGA` o `**FIN_DBGA**` no se detectaban; ahora un único `FIN_DBGA_MARKER_RE` tolera esas variantes. (2) `isDbgaContentNearlyIdentical` usaba una tolerancia proporcional (`b.length * 0.008`) que en un DBGA grande (~90 KB) llegaba a ~720 chars y descartaba ediciones legítimas pequeñas (1–2 frases) como «sin cambios»; ahora la tolerancia está acotada (cap 200 chars).
-- **Tasks parser front-matter:** `rawMarkdown` limpiado con `stripFrontMatterFromRaw()` para evitar duplicación de campos parseados.
+- **Tasks parser front-matter:** `stripFrontMatterFromRaw()` evita duplicación de campos parseados.
+- **Consistencia transversal:** proyectos sin BRD ya no quedan penalizados con score 50 fijo si tienen Spec trazable.
+
+## [v1.1.0] — 2026-07-16
+
+> **Motor de plugins genérico** — implementación completa del framework anunciado en `v1.0.0-RC`: hooks en todos los generadores LLM de entregables, artifacts encolables, Workshop con cola + polling, lifecycle y health de boot. Sin plugins cargados, el core se comporta igual que en v1.0.0.
+
+### Added
+
+- **Motor de plugins (API):**
+  - `PluginDocumentPipelineService` — orquesta `beforeDocumentRender`, `afterDocumentRender`, `afterDocumentPersist` y lifecycle.
+  - `PluginArtifactService` — `generateArtifact` → persistencia en `project.pluginData[pluginId]`.
+  - `PluginProjectContext` — `buildProjectHookContext`, `pickPrimaryStageForHooks`, validación `requires`.
+  - Cola BullMQ / in-memory: job `plugin-artifact` en `DeliverablesQueueService`.
+  - Endpoints: `POST /plugins/projects/:id/generate/:pluginId/:artifactId`, `GET /plugins/health` (plugins cargados, artifacts, conteo de hooks).
+  - Stub de desarrollo: `plugins-enabled/stub-plugin` (`dev.theforge.stub-plugin`, artifact `demo-report`).
+  - Template terceros: `plugins-enabled/template/README.md`.
+- **Hooks en generadores LLM:** `AiService.finishDocumentGeneration` integrado en Spec, Architecture, Tasks, Blueprint, API Contracts, Logic Flows, Infra, Use Cases, User Stories, Agent Governance, AEM y UX/UI Guide; `ProjectsService` pasa `hookContext` y dispara `afterDocumentPersist` tras persistir.
+- **Lifecycle:** `onProjectCreate` (ya existente) + **`onProjectUpdate`** al persistir cambios de proyecto.
+- **Workshop (web):**
+  - `PluginDocPanel` — generación encolada con `generateAndPollPluginArtifact`, guards `requires` y `generationStatus.busy`.
+  - `pluginData` en `useWorkshopStore` (sincronizado desde API).
+  - `contentType` en artifacts (`markdown` | `json` | `html`) y util `pluginArtifactContent`.
+  - Sidebar: `pluginId` correcto por artifact (sin hardcode EVD).
+- **Shared-types:** `ArtifactTypeDefinition` ampliado (`generatable`, `requires`, `contentType`); gate `plugin-artifact` en `buildGenerationGates`.
+- **CI:** spec `plugin-project-context.util.spec.ts`.
+
+### Changed
+
+- **`generateSpec`:** unificado en `finishDocumentGeneration` (sin rama duplicada).
+- **DashboardSidebar:** deja de fetchear `pluginData` por plugin; usa el store del Workshop.
+
+### Architecture
+
+- **Modo A (hooks):** generación LLM con `projectId` → hooks opcionales; sin plugins = `generateResponse` directo (zero overhead).
+- **Modo B (artifacts):** generación propia del plugin vía cola o sync; no entra en cascada automática de entregables core.
+- **Graceful degradation:** plugin roto al boot → skip + log; la API arranca sin plugins.
 
 ## [v1.0.0] — 2026-07-15
 

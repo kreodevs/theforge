@@ -20,6 +20,11 @@ import {
   resolveAriadneIngestApiConfig,
 } from "./ariadne-ingest-api.util.js";
 import {
+  resolvePlatformConfigBoolean,
+  resolvePlatformConfigByKey,
+  resolvePlatformConfigNumber,
+} from "../system-config/platform-config.runtime.js";
+import {
   legacyDocumentationRepoIds,
   mergeLegacyDocumentationByRepo,
   repoLabelFromProjectsCatalog,
@@ -28,6 +33,7 @@ import { formatRawEvidenceObjectToMarkdown } from "./theforge-raw-evidence-markd
 import { normalizeLegacyMddToolText } from "./legacy-mdd-v1-markdown.util.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { getRequestUserId } from "../../common/request-user.store.js";
+import { ProjectAriadneLinkService } from "./project-ariadne-link.service.js";
 
 /** Repo (root) dentro de un proyecto multi-repo. */
 export interface TheForgeProjectRoot {
@@ -130,13 +136,11 @@ function truncateForMcpDebug(s: string, max: number): string {
 }
 
 function debugMcpRequestMaxChars(): number {
-  const n = parseInt(process.env.DEBUG_MCP_MAX_REQUEST_CHARS ?? "65536", 10);
-  return Number.isFinite(n) && n > 0 ? n : 65536;
+  return resolvePlatformConfigNumber("debug_mcp_max_request_chars");
 }
 
 function debugMcpResponseMaxChars(): number {
-  const n = parseInt(process.env.DEBUG_MCP_MAX_RESPONSE_CHARS ?? "32768", 10);
-  return Number.isFinite(n) && n > 0 ? n : 32768;
+  return resolvePlatformConfigNumber("debug_mcp_max_response_chars");
 }
 
 /**
@@ -154,6 +158,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   constructor(
     private readonly contextCache: TheForgeContextCacheService,
     private readonly prisma: PrismaService,
+    private readonly ariadneLinks: ProjectAriadneLinkService,
   ) {
   }
 
@@ -172,8 +177,8 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   }
 
   private get baseUrl(): string {
-    const url = process.env.THEFORGE_MCP_URL?.trim();
-    if (url) return url;
+    const platformUrl = resolvePlatformConfigByKey("theforge_mcp_url").trim();
+    if (platformUrl) return platformUrl;
     const legacyUrl = process.env.ARIADNE_MCP_URL?.trim();
     if (legacyUrl) return legacyUrl;
     return this.ariadneConfig?.url ?? "";
@@ -210,8 +215,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
    * @see docs/notebooklm/MCP-ARQUITECTURA-THEFORGE.md
    */
   private theforgeMcpTimeoutMs(): number {
-    const n = parseInt(process.env.THEFORGE_MCP_TIMEOUT_MS ?? "60000", 10);
-    return Number.isFinite(n) && n > 0 ? n : 60000;
+    return resolvePlatformConfigNumber("theforge_mcp_timeout_ms");
   }
 
   /**
@@ -220,20 +224,12 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
    * el cliente Nest mientras el MCP sigue vivo (`THEFORGE_MCP_TIMEOUT_MS` sigue valiendo para el resto).
    */
   private theforgeMcpAskCodebaseTimeoutMs(): number {
-    const raw = process.env.THEFORGE_MCP_ASK_CODEBASE_TIMEOUT_MS?.trim();
-    if (raw) {
-      const n = parseInt(raw, 10);
-      if (Number.isFinite(n) && n > 0) return n;
-    }
-    const fallback = 900000;
-    return fallback;
+    return resolvePlatformConfigNumber("theforge_mcp_ask_codebase_timeout_ms");
   }
 
   /** `DEBUG_MCP=1` o `true`: loguea JSON-RPC enviado y respuesta cruda del MCP Ariadne (TheForge). */
   private isDebugMcp(): boolean {
-    const v = process.env.DEBUG_MCP?.trim().toLowerCase();
-    if (!v) return false;
-    return v === "1" || v === "true" || v === "yes" || v === "on";
+    return resolvePlatformConfigBoolean("debug_mcp");
   }
 
   /**
@@ -393,8 +389,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
   }
 
   private projectsCatalogCacheTtlMs(): number {
-    const n = parseInt(process.env.THEFORGE_LIST_PROJECTS_CACHE_MS ?? "60000", 10);
-    return Number.isFinite(n) && n >= 0 ? n : 60000;
+    return resolvePlatformConfigNumber("theforge_list_projects_cache_ms");
   }
 
   /**
@@ -1166,7 +1161,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     if (!isAriadneBrownfieldConvergeAutoEnabled()) return empty("auto_wire_disabled");
 
     const triggerMode = normalizeAriadneBrownfieldConvergeMode(
-      process.env.ARIADNE_BROWNFIELD_CONVERGE_MODE,
+      resolvePlatformConfigByKey("ariadne_brownfield_converge_mode"),
     );
     if (triggerMode === "off") return empty("converge_mode_off");
 
@@ -1207,9 +1202,7 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
       return empty("no_ariadne_repositories_resolved");
     }
 
-    const persist =
-      process.env.ARIADNE_BROWNFIELD_CONVERGE_PERSIST?.trim().toLowerCase() === "true" ||
-      process.env.ARIADNE_BROWNFIELD_CONVERGE_PERSIST?.trim() === "1";
+    const persist = resolvePlatformConfigBoolean("ariadne_brownfield_converge_persist");
     const patchBody = buildAriadneBrownfieldWirePatchBody({
       workshopProjectId: input.workshopProjectId,
       workshopStageId: input.workshopStageId,
@@ -1269,7 +1262,19 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
     logLabel = "TheForge",
   ): void {
     const label = logLabel.trim() || "TheForge";
-    void this.wireAriadneBrownfieldConverge(input)
+    void this.persistAriadneForgePrimaryLink(
+      {
+        ariadneSourceId: input.ariadneSourceId,
+        workshopProjectId: input.workshopProjectId,
+      },
+      label,
+    )
+      .catch((err) => {
+        this.logger.warn(
+          `[${label}] Ariadne forge link upsert error: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      })
+      .then(() => this.wireAriadneBrownfieldConverge(input))
       .then((wire) => {
         if (wire.wired) return;
         if (wire.skippedReason) {
@@ -1287,5 +1292,30 @@ export class TheForgeService implements OnModuleInit, IOrchestratorTheForgePort 
           `[${label}] Ariadne brownfield auto-wire error: ${err instanceof Error ? err.message : String(err)}`,
         );
       });
+  }
+
+  /** Persiste fila primaria en `project_ariadne_links` (brownfield / handoff import). */
+  private async persistAriadneForgePrimaryLink(
+    input: {
+      ariadneSourceId: string;
+      workshopProjectId: string;
+    },
+    logLabel: string,
+  ): Promise<void> {
+    let catalog = null as Awaited<ReturnType<TheForgeService["getProjectsCatalog"]>> | null;
+    if (this.isConfigured()) {
+      try {
+        catalog = await this.getProjectsCatalog();
+      } catch (err) {
+        this.logger.debug(
+          `[${logLabel}] Ariadne catalog unavailable for forge link: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    await this.ariadneLinks.upsertPrimaryFromBrownfield({
+      forgeProjectId: input.workshopProjectId,
+      ariadneSourceId: input.ariadneSourceId,
+      catalog,
+    });
   }
 }

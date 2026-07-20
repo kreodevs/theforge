@@ -8,7 +8,7 @@ The Forge encola la **generación y regeneración de entregables SDD** como jobs
 |--------|----------------|
 | **Generar todos los documentos** (cascada) | Un job `cascade` recorre las oleadas W0→W4 según complejidad |
 | **Regenerar Spec, Arquitectura, Blueprint, API, Tasks, etc.** | Un job por entregable (`?queue=true` por defecto) |
-| **Regenerar MDD** (pipeline / sección / legacy) | Job en cola `theforge-mdd`; persiste en servidor; **bloquea** otros entregables mientras corre |
+| **Regenerar MDD** (pipeline / sección / upstream-sync / legacy) | Job en cola `theforge-mdd`; persiste en servidor; **bloquea** otros entregables mientras corre |
 
 ## Reglas de orden (importante)
 
@@ -33,7 +33,7 @@ No puedes pulsar «Regenerar Spec» si el MDD acaba de encolarse en cascada pero
 ## Cómo saber el estado
 
 - **Workshop:** banner cuando hay generación en curso; botones de regenerar deshabilitados si el gate lo impide.
-- **API:** `GET /projects/:id/generation-status` devuelve `{ busy, activeJob, queuedJobs, mddStreamActive, gates }`.
+- **API:** `GET /projects/:id/generation-status` devuelve `{ busy, activeJob, queuedJobs, mddStreamActive, mddJobs, gates, mddUpstreamSync }`. Los jobs MDD (`mddJobs`) incluyen `jobId`, `mode`, `status`, `progressSteps[]` (historial) y `progressActive` (nodo en curso). Análisis upstream: `GET /ai-analysis/mdd/upstream-sync/analysis?projectId=`. Cancelación: `DELETE /projects/:id/mdd-jobs/:jobId`.
 - **Job concreto:** `GET /projects/:id/deliverables-jobs/:jobId`, `GET /projects/:id/mdd-jobs/:jobId` (MDD greenfield) o `GET /projects/jobs/:jobId`.
 
 ## Sin Redis (desarrollo local)
@@ -46,7 +46,7 @@ Si intentas generar fuera de orden, la API responde **409** con un mensaje expl�
 
 ## Buenas prácticas
 
-1. Tras **Regenerar MDD**, espera a que termine y se persista antes de la cascada o entregables sueltos.
+1. Tras **Regenerar MDD** o **Sincronizar desde upstream**, espera a que termine y se persista antes de la cascada o entregables sueltos.
 2. Usa **Generar todos** cuando quieras el orden completo; usa regeneración individual solo para un artefacto concreto.
 3. Si vuelves al día siguiente, **recarga el proyecto** — no hace falta dejar la pestaña abierta durante horas (igual que con entregables).
 

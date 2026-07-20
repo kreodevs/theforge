@@ -381,11 +381,27 @@ export class PluginLoaderService implements OnModuleInit {
       if (plugin.getArtifactTypes) {
         const pluginTypes = plugin.getArtifactTypes();
         if (Array.isArray(pluginTypes)) {
-          types.push(...pluginTypes);
+          for (const decl of pluginTypes) {
+            types.push({ ...decl, pluginId: plugin.id });
+          }
         }
       }
     }
     return types;
+  }
+
+  /** Resuelve artifact + plugin cargado */
+  resolveArtifact(
+    pluginId: string,
+    artifactId: string,
+  ): { plugin: ITheForgePlugin; artifact: ArtifactTypeDefinition } | undefined {
+    const artifact = this.getArtifactTypes().find(
+      (a) => a.pluginId === pluginId && a.id === artifactId,
+    );
+    if (!artifact) return undefined;
+    const plugin = this.plugins.get(pluginId);
+    if (!plugin) return undefined;
+    return { plugin, artifact };
   }
 
   /** Paneles de ajustes declarados por plugins cargados */
@@ -427,5 +443,26 @@ export class PluginLoaderService implements OnModuleInit {
       default:
         return false;
     }
+  }
+
+  /** Snapshot para GET /plugins/health (métricas de boot). */
+  getHealthSnapshot(): {
+    loaded: number;
+    pluginIds: string[];
+    artifactCount: number;
+    hooks: Record<string, number>;
+  } {
+    return {
+      loaded: this.plugins.size,
+      pluginIds: [...this.plugins.keys()],
+      artifactCount: this.getArtifactTypes().length,
+      hooks: {
+        beforeDocumentRender: this.beforeDocumentRenderHooks.length,
+        afterDocumentRender: this.afterDocumentRenderHooks.length,
+        afterDocumentPersist: this.afterDocumentPersistHooks.length,
+        onProjectCreate: this.onProjectCreateHooks.length,
+        onProjectUpdate: this.onProjectUpdateHooks.length,
+      },
+    };
   }
 }

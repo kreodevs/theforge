@@ -154,6 +154,18 @@ export function looksLikeDbgaEditRequest(message: string): boolean {
 
   if (/\b(?:hay que|debe|necesit)\b/i.test(m) && DBGA_DOC_TARGET_RE.test(m)) return true;
 
+  // Revisión/auditoría con gaps o enfoque de dominio → actualizar panel (no solo Q&A en chat).
+  if (
+    /\b(?:revis(?:a|ar|alo|en)|verific(?:a|ar|alo)|audit(?:a|ar|alo)|comprueb(?:a|ar|alo)|aseg[uú]r(?:a|ar|ate))\b/i.test(
+      m,
+    ) &&
+    /\b(?:gap|brecha|gaps?|no\s+tenga\s+gaps?|sin\s+gaps?|agn[oó]stic|coherente|completo|omisiones?|motor\s+de\s+licenciamiento)\b/i.test(
+      m,
+    )
+  ) {
+    return true;
+  }
+
   return false;
 }
 

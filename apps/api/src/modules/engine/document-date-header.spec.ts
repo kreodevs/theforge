@@ -79,4 +79,32 @@ describe("document-date-header", () => {
       true,
     );
   });
+
+  it("re-stamp cleans corrupted glued stamp before H1", () => {
+    const corrupted =
+      "Última modificación: 2026-07-18T06:25:57.540Z --> 📅 Creado: 18 de julio de 2026, 06:25:57 UTC · Última modificación: 18 de julio de 2026, 06:25:57 UTC --- # Master Design Document --- ## 1. Contexto\n\nTexto.";
+    const out = prependDocumentTimestamps(corrupted, later);
+    assert.ok(out.startsWith("<!-- theforge-doc:created="));
+    assert.ok(out.includes("> 📅 Creado:"));
+    assert.match(out, /---\n\n# Master Design Document\n\n---\n\n## 1\. Contexto/);
+    assert.doesNotMatch(out, /Última modificación: 2026-07-18T06:25:57/);
+  });
+
+  it("re-stamp no pierde patrones SSOT [X] si el peel del stamp falla", async () => {
+    const { updateMddGovernancePatterns, selectedPatternIdsFromMdd, listGovernancePatternOptions } =
+      await import("@theforge/shared-types/mdd-governance-patterns");
+    const id = listGovernancePatternOptions().find((o) => o.label.includes("Singleton"))!.id;
+    const govBody = updateMddGovernancePatterns("", new Set([id])).replace(
+      /^# Master Design Document\n\n---\n\n/,
+      "",
+    );
+    const corrupted =
+      "<!-- theforge-doc:created=2026-07-18T20:07:32.000Z|updated=2026-07-18T20:07:32.000Z -->\n" +
+      "> 📅 Creado: 18 de julio de 2026, 14:07:32 UTC · Última modificación: 18 de julio de 2026, 14:07:32 UTC\n\n" +
+      govBody +
+      "\n\n## 1. Contexto\n\nCuerpo §1 con más de ochenta caracteres para el MDD canónico de prueba.\n";
+    const out = prependDocumentTimestamps(corrupted, later);
+    assert.equal(selectedPatternIdsFromMdd(out).size, 1);
+    assert.match(out, /\[ARQUITECTURA - SECCIÓN INMUTABLE\]/);
+  });
 });

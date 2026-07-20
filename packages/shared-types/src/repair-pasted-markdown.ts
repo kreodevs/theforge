@@ -73,6 +73,16 @@ export function repairUnclosedCodeFences(text: string): string {
           trimmed,
         ))
     ) {
+      if (fenceLang === "json") {
+        let jsonStart = out.length - 1;
+        while (jsonStart >= 0 && !/^```json/i.test(out[jsonStart]!.trim())) jsonStart--;
+        const jsonBody = out.slice(jsonStart + 1).join("\n");
+        const balanced = balanceJsonFenceBody(jsonBody);
+        if (balanced !== jsonBody.trimEnd()) {
+          out.splice(jsonStart + 1);
+          out.push(...balanced.split("\n"));
+        }
+      }
       out.push("```");
       inFence = false;
       fenceLang = "";
@@ -184,6 +194,11 @@ export function repairIndentedProseBlocks(text: string): string {
       i--;
       if (block.some((l) => INDENTED_CODE_HINT.test(l))) {
         for (const l of block) out.push(`    ${l}`);
+      } else if (block.some((l) => /^#{1,6}\s/.test(l) || /^\|/.test(l))) {
+        for (const l of block) {
+          out.push(l.replace(/^ {4,}/, ""));
+        }
+        out.push("");
       } else {
         for (const l of block) {
           const item = l.replace(/^ {4,}/, "");
@@ -244,6 +259,32 @@ function findBalancedJsonObjectEnd(s: string): number {
   return -1;
 }
 
+/** True cuando la línea anterior a `}` parece cierre legítimo de un objeto JSON. */
+function isLikelyJsonClosingBrace(prevLine: string): boolean {
+  const t = prevLine.trim();
+  if (!t) return false;
+  if (t === "{" || t.endsWith("{")) return true;
+  if (/^[\]}]|,\s*$/.test(t)) return true;
+  if (/:\s*["\d\[\{nulltruefals-]/i.test(t)) return true;
+  if (/^\s*"[^"]+"\s*:\s*/.test(t)) return true;
+  return false;
+}
+
+/** Añade `}` faltantes antes de cerrar un fence ```json. */
+function balanceJsonFenceBody(body: string): string {
+  let depth = 0;
+  for (const ch of body) {
+    if (ch === "{") depth++;
+    if (ch === "}") depth--;
+  }
+  let fixed = body.trimEnd();
+  while (depth > 0) {
+    fixed += "\n}";
+    depth--;
+  }
+  return fixed;
+}
+
 /** Cierra ```json abiertos antes de **Response**, **Beneficios**, headings, etc. */
 export function repairCloseJsonBeforeContractMarkers(text: string): string {
   return text.replace(
@@ -251,7 +292,10 @@ export function repairCloseJsonBeforeContractMarkers(text: string): string {
     (full, inner: string) => {
       if (/\n```/.test(inner)) return full;
       const end = findBalancedJsonObjectEnd(inner);
-      if (end < 0) return full;
+      if (end < 0) {
+        const fixed = balanceJsonFenceBody(inner);
+        return `\`\`\`json\n${fixed}\n\`\`\`\n`;
+      }
       const json = inner.slice(0, end + 1).trimEnd();
       const leak = inner.slice(end + 1).trim();
       return `\`\`\`json\n${json}\n\`\`\`${leak ? `\n\n${leak}` : ""}`;
@@ -335,7 +379,13 @@ export function repairStackedCodeFences(text: string): string {
   out = out.replace(/^```\s*\n(\*\*Response)/gim, "$1");
   out = out.replace(/(\*\*Response \d+:\*\*)\s*\n+```\s*\n+(?=\{)/gi, "$1\n\n```json\n");
   out = out.replace(/(\*\*Response \d+:\*\*)\s*\n+```\s*\n+```json/gi, "$1\n\n```json");
-  out = out.replace(/\n\}\s*```\s*\n/g, "\n```\n\n");
+  out = out.replace(/\n\}\s*\n```\s*\n/g, (match, offset) => {
+    const before = out.slice(0, offset);
+    const prevLines = before.split("\n").map((l) => l.trim()).filter(Boolean);
+    const prev = prevLines[prevLines.length - 1] ?? "";
+    if (isLikelyJsonClosingBrace(prev)) return match;
+    return "\n```\n\n";
+  });
   out = out.replace(/\n###[^\n]+\n\}\s*\n```/g, (m) => m.replace(/\n\}\s*\n```/, "\n\n"));
   out = out.replace(/(#{1,6}[^\n]*\n)\}\s*\n+(?=\*\*|```)/g, "$1");
   out = out.replace(/\n\}\s*\n+(?=\*\*Backend|\*\*Frontends|```env\b)/gi, "\n\n");
@@ -349,13 +399,21 @@ export function repairJsonFenceIntegrity(text: string): string {
     /\*\*Response (\d+)[^*]*\*\*\s*:?\s*\n+```\s*\n+```json/gi,
     "**Response $1:**\n\n```json",
   );
-  out = out.replace(/```json\n([\s\S]*?)(\n\*\*[^\n]+\*\*)/g, (full, body: string, after: string) => {
-    const trimmed = body.trimEnd();
-    if (trimmed.endsWith("```")) return full;
-    let fixed = trimmed;
-    if (!fixed.endsWith("}")) fixed += "\n}";
-    return `\`\`\`json\n${fixed}\n\`\`\`\n${after}`;
-  });
+  // Solo marcadores de contrato API (**Request body:** / **Response N:**), no cualquier **bold**.
+  out = repairCloseJsonBeforeContractMarkers(out);
+  out = out.replace(
+    /```json\n([\s\S]*?)(?=\n###\s+(?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s)/gi,
+    (full, inner: string) => {
+      if (/^\s*```/m.test(inner)) return full;
+      const end = findBalancedJsonObjectEnd(inner);
+      if (end >= 0) {
+        const json = inner.slice(0, end + 1).trimEnd();
+        return `\`\`\`json\n${json}\n\`\`\`\n`;
+      }
+      const fixed = balanceJsonFenceBody(inner);
+      return `\`\`\`json\n${fixed}\n\`\`\`\n`;
+    },
+  );
   out = out.replace(/(\n```json\n[\s\S]*?\n)(\n\*\*Beneficios)/g, (m, block: string, rest: string) => {
     if (block.trimEnd().endsWith("```")) return m;
     const inner = block.replace(/^```json\n/, "").trimEnd();
@@ -398,7 +456,7 @@ export function repairMetadataCoverTable(text: string): string {
 }
 
 const DO_NOT_PROMOTE_TITLE =
-  /^(Headers?:|Request body|Response \d+|Recibe eventos|Content-Type|X-Odoo|Beneficios de las|Flujo de procesamiento|Seguridad|Donde:|OBP4MO \(normalizado\):|OBP \(desnormalizado\):|Este microservicio tiene|Odoo genera|Endpoint receptor de webhooks$)/i;
+  /^(Headers?:|Request body|Response \d+|Recibe eventos|Content-Type|X-Odoo|Beneficios de las|Flujo de procesamiento|Seguridad|Donde:|Detalle ejecutable|OBP4MO \(normalizado\):|OBP \(desnormalizado\):|Este microservicio tiene|Odoo genera|Endpoint receptor de webhooks$)/i;
 
 /** Encabezados sueltos (sin #) que deberían ser sección. */
 export function repairPromoteBareSectionHeadings(text: string): string {
@@ -415,6 +473,7 @@ export function repairPromoteBareSectionHeadings(text: string): string {
     if (/^(GET|POST|PUT|PATCH|DELETE)\s+\//.test(t)) return false;
     if (/^Módulo \d+ —/.test(t)) return false;
     if (/^contexto:/i.test(t)) return false;
+    if (/[.!?]\s*$/.test(t) && t.length > 40) return false;
     if (/:$/.test(t) && t.length < 60) return false;
     if (!/^[A-ZÁÉÍÓÚÑ0-9]/.test(t)) return false;
     if (/^[{\[]/.test(next)) return true;
@@ -784,6 +843,69 @@ export function repairDemoteFalseApiHeadings(text: string): string {
   return out;
 }
 
+/** Envuelve manifest §7 suelto en ```json (incl. ### Manifest de Infraestructura). */
+export function repairMddInfraManifestJsonBlock(text: string): string {
+  const sectionRe = /(?:^|\n)(##\s+(?:7\.\s+)?(?:Infraestructura|Integración)\b[^\n]*)/i;
+  const sectionMatch = text.match(sectionRe);
+  if (!sectionMatch || sectionMatch.index === undefined) return text;
+
+  const sectionStart = sectionMatch.index + sectionMatch[1]!.length;
+  const rest = text.slice(sectionStart);
+  const nextH2 = rest.search(/\n##\s+/);
+  const sectionEnd = nextH2 === -1 ? text.length : sectionStart + nextH2;
+  const body = text.slice(sectionStart, sectionEnd);
+
+  const manifestRe = /\n#{3,4}\s+Manifest(?:\s+de\s+Infraestructura)?\s*\n+/i;
+  const manifestMatch = body.match(manifestRe);
+  if (!manifestMatch || manifestMatch.index === undefined) return text;
+
+  const afterHeadingStart = manifestMatch.index + manifestMatch[0].length;
+  let afterHeading = body.slice(afterHeadingStart).trimStart();
+
+  const tryFenceJson = (raw: string): string | null => {
+    const normalized = raw.replace(/^-\s+(")/gm, "$1");
+    const braceStart = normalized.indexOf("{");
+    if (braceStart === -1) return null;
+    const end = findBalancedJsonObjectEnd(normalized.slice(braceStart));
+    if (end === -1) return null;
+    const slice = normalized.slice(braceStart, braceStart + end + 1);
+    try {
+      return JSON.stringify(JSON.parse(slice) as unknown, null, 2);
+    } catch {
+      return null;
+    }
+  };
+
+  let pretty: string | null = null;
+  let tail = "";
+
+  if (/^```json\s*\n/i.test(afterHeading)) {
+    const inner = afterHeading.replace(/^```json\s*\n/i, "");
+    pretty = tryFenceJson(inner);
+    if (pretty) {
+      const normalized = inner.replace(/^-\s+(")/gm, "$1");
+      const braceStart = normalized.indexOf("{");
+      const end =
+        braceStart >= 0 ? findBalancedJsonObjectEnd(normalized.slice(braceStart)) : -1;
+      tail = end >= 0 ? inner.slice(braceStart + end + 1).replace(/^\s*```\s*/m, "").trim() : "";
+    }
+  } else {
+    pretty = tryFenceJson(afterHeading);
+    if (pretty) {
+      const normalized = afterHeading.replace(/^-\s+(")/gm, "$1");
+      const braceStart = normalized.indexOf("{");
+      const end = findBalancedJsonObjectEnd(normalized.slice(braceStart));
+      tail = end >= 0 ? normalized.slice(braceStart + end + 1).trim() : "";
+    }
+  }
+
+  if (!pretty) return text;
+
+  const headingPart = body.slice(0, afterHeadingStart);
+  const newBody = `${headingPart}\`\`\`json\n${pretty}\n\`\`\`${tail ? `\n\n${tail}` : ""}`;
+  return text.slice(0, sectionStart) + newBody + text.slice(sectionEnd);
+}
+
 /** Bloques JSON sueltos (webhook / Odoo) → fence json. */
 export function repairLooseJsonBlocks(text: string): string {
   const lines = text.split("\n");
@@ -844,12 +966,282 @@ export function repairSplitJsonFragments(text: string): string {
   );
 }
 
+/**
+ * Separa líneas pegadas en §4 Contratos de API donde el LLM comprime
+ * Request body / Response / Errores / Nota en una sola línea.
+ * Patrones:
+ *   - `**Label:**{` → `**Label:**\n{`
+ *   - `"value"**Label:**{` → `"value"\n**Label:**\n{`
+ *   - `"value"**Label:**` → `"value"\n**Label:**`
+ *   - `}**Label:**` → `}\n**Label:**`
+ *   - `### Heading.**Label:**` → `### Heading.\n**Label:**`
+ */
+export function repairGluedApiContractLines(text: string): string {
+  // 1. "}**Label:**" → "}\n**Label:**" — closing brace glued to next label
+  let out = text.replace(
+    /(\})\s*(\*\*(?:Request body|Response\s+\d+|Errores|Nota|Beneficios|Headers?)\b[^*]*\*\*)/gi,
+    "$1\n$2",
+  );
+  // 2. "**Label:**{" at start of line (no preceding content) → "**Label:**\n{"
+  out = out.replace(
+    /^(\*\*(?:Request body[^*]*|Response\s+\d+[^*]*|Errores[^*]*|Nota[^*]*)\*\*)\s*\{/gim,
+    "$1\n{",
+  );
+  // 3. Content before "**Label:**{" — "value"**Label:**{  or  ### Heading.**Label:**{
+  out = out.replace(
+    /([^\n{])\s*(\*\*(?:Request body|Response\s+\d+|Errores|Nota|Beneficios|Headers?)\b[^*]*\*\*)\s*\{/g,
+    "$1\n$2\n{",
+  );
+  // 4. Content before "**Label:**" without { — "value"**Label:**  or  ### Heading.**Label:**
+  out = out.replace(
+    /([^\n])\s*(\*\*(?:Request body|Response\s+\d+|Errores|Nota|Beneficios|Headers?)\b[^*]*\*\*)\s*$/gm,
+    "$1\n$2",
+  );
+  return out;
+}
+
+/**
+ * Elimina llaves `}` y `{` sueltas que quedan fuera de fences ```json en §4.
+ * Patrones:
+ *   - `}\n```json` → ` ```json` (llave de cierre suelta antes de fence)
+ *   - `**Response 200:**\n},\n{` → `**Response 200:**\n{` (doble llave suelta)
+ *   - Línea suelta `}` o `},`紧跟 antes de un heading o **Label**
+ */
+export function repairOrphanBracesInContratos(text: string): string {
+  const lines = text.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const t = lines[i]!.trim();
+    const next = (lines[i + 1] ?? "").trim();
+    // "}**Label:**" ya manejado por repairGluedApiContractLines
+    // "}\n```json" → remove lone "}"
+    if (/^\}\s*$/.test(t) && /^```json/i.test(next)) {
+      i++;
+      continue;
+    }
+    // "},\n{" → just "{"
+    if (/^\}\s*,\s*$/.test(t) && /^\{\s*$/.test(next)) {
+      out.push("{");
+      i += 2;
+      continue;
+    }
+    // "},\n```json" → "```json"
+    if (/^\}\s*,?\s*$/.test(t) && /^```json/i.test(next)) {
+      i++;
+      continue;
+    }
+    // Orphan "}" before heading or bold label
+    if (/^\}\s*$/.test(t)) {
+      let k = i + 1;
+      while (k < lines.length && lines[k]!.trim() === "") k++;
+      if (k < lines.length && lines[k]!.trim() === "```") {
+        let m = k + 1;
+        while (m < lines.length && lines[m]!.trim() === "") m++;
+        const afterFence = (lines[m] ?? "").trim();
+        if (/^\*\*(?:Request body|Response)/i.test(afterFence)) {
+          i = m;
+          continue;
+        }
+      }
+      if (/^#{1,6}\s/.test(next) || /^\*\*/.test(next)) {
+        i++;
+        continue;
+      }
+    }
+    // Orphan lone "{" immediately after **Response:** or **Request body:** (already on prev line)
+    if (/^\{\s*$/.test(t) && i > 0) {
+      const prev = (out[out.length - 1] ?? "").trim();
+      if (/^\*\*(?:Response|Request body|Errores)/i.test(prev)) {
+        // Keep it — it's the start of the JSON block
+        out.push(lines[i]!);
+        i++;
+        continue;
+      }
+    }
+    out.push(lines[i]!);
+    i++;
+  }
+  return out.join("\n");
+}
+
+/**
+ * Envuelve en ```json los bloques de Request/Response que están como texto plano
+ * (sin fence) después de **Request body:** o **Response N:**.
+ * Solo aplica dentro de §4 Contratos de API.
+ */
+export function repairUnfencedJsonInContratos(text: string): string {
+  const lines = text.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const t = lines[i]!.trim();
+    // Detect **Response 200:** or **Request body:** followed by { on next line
+    const labelMatch = t.match(/^\*\*(Response\s+\d+[^*]*|Request body[^*]*)\*\*\s*$/i);
+    if (labelMatch && i + 1 < lines.length) {
+      const next = lines[i + 1]!.trim();
+      if (next === "{" || /^\{\s*$/.test(next)) {
+        // Check if this is already inside a ```json fence
+        const prevLine = (out[out.length - 1] ?? "").trim();
+        if (/^```json/i.test(prevLine)) {
+          out.push(lines[i]!);
+          i++;
+          continue;
+        }
+        // Collect JSON content until we hit a label, heading, fence, or blank line
+        const jsonLines: string[] = [];
+        let j = i + 1;
+        let depth = 0;
+        let closed = false;
+        while (j < lines.length) {
+          const jt = lines[j]!.trim();
+          jsonLines.push(lines[j]!);
+          // Count braces
+          for (const ch of jt) {
+            if (ch === "{") depth++;
+            if (ch === "}") depth--;
+          }
+          if (depth <= 0 && jsonLines.length > 0) {
+            closed = true;
+            j++;
+            break;
+          }
+          // Stop if we hit a label or heading (unclosed)
+          if (/^\*\*(?:Response|Request body|Errores|Nota|Beneficios|Headers?)\b/i.test(jt)) {
+            jsonLines.pop(); // remove the label line
+            break;
+          }
+          if (/^#{1,6}\s/.test(jt) && depth <= 0) {
+            jsonLines.pop();
+            break;
+          }
+          if (/^```/.test(jt)) {
+            jsonLines.pop();
+            break;
+          }
+          j++;
+        }
+        if (jsonLines.length >= 1) {
+          out.push(lines[i]!);
+          out.push("```json");
+          out.push(...jsonLines);
+          if (!closed) {
+            let balance = 0;
+            for (const jl of jsonLines) {
+              for (const ch of jl) {
+                if (ch === "{") balance++;
+                if (ch === "}") balance--;
+              }
+            }
+            while (balance > 0) {
+              out.push("}");
+              balance--;
+            }
+          }
+          out.push("```");
+          i = j;
+          continue;
+        }
+      }
+    }
+    out.push(lines[i]!);
+    i++;
+  }
+  return out.join("\n");
+}
+
+/** Fusiona heading partido del bloque UI/UX «Matriz pantalla→componente». */
+export function repairSplitUiUxMatrizHeading(text: string): string {
+  return text.replace(
+    /(### Matriz pantalla→componente\s*\n+)\s*### Detalle ejecutable en\s*\n+\s*(\*\*`pantallas\.md`\*\*)/i,
+    "$1Detalle ejecutable en $2",
+  );
+}
+
+/** Elimina líneas basura `# ```` / `# ``` tras fences (MDD §3 mermaid). */
+export function repairStrayHashFenceLines(text: string): string {
+  let out = text.replace(/^\s*#\s*```+\s*$/gm, "");
+  out = out.replace(/(\n```\s*\n)#\s*```+\s*\n/g, "$1");
+  out = out.replace(/(\*\*Response\s+204:\*\*)\s*\n+#\s+_No Content_/gim, "$1\n\n_No Content_");
+  return out;
+}
+
+/** Quita fences ``` huérfanos antes de **Request body:** / **Response N:** en §4. */
+export function repairOrphanFenceBeforeContractLabels(text: string): string {
+  const lines = text.split("\n");
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i]!.trim();
+    if (t === "```") {
+      let open = false;
+      for (let j = 0; j < i; j++) {
+        const ft = lines[j]!.trim();
+        if (/^```/.test(ft)) open = !open;
+      }
+      // Cierra un bloque abierto — conservar aunque siga **Request body:** / **Response N:**
+      if (open) {
+        out.push(lines[i]!);
+        continue;
+      }
+      let k = i + 1;
+      while (k < lines.length && lines[k]!.trim() === "") k++;
+      const after = (lines[k] ?? "").trim();
+      if (/^\*\*(?:Request body|Response\s+\d+)/i.test(after)) {
+        continue;
+      }
+    }
+    out.push(lines[i]!);
+  }
+  return out.join("\n");
+}
+
+/** Quita ` ---` pegado al final de prosa antes de un separador horizontal. */
+export function repairGluedHrSuffixInProse(text: string): string {
+  return text.replace(/([.!?])\s+---\s*$/gm, "$1");
+}
+
+/** Cierra ```json incompletos antes del siguiente endpoint ### POST/GET…. */
+export function repairUnclosedJsonBeforeApiEndpoint(text: string): string {
+  return text.replace(
+    /```json\n([\s\S]*?)(?=\n###\s+(?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s)/gi,
+    (full, inner: string) => {
+      if (/^\s*```/m.test(inner)) return full;
+      let body = inner.replace(/^-\s+(")/gm, "$1").trimEnd();
+      const end = findBalancedJsonObjectEnd(body);
+      if (end >= 0) {
+        const json = body.slice(0, end + 1).trimEnd();
+        const leak = body.slice(end + 1).trim();
+        return `\`\`\`json\n${json}\n\`\`\`${leak ? `\n\n${leak}\n` : "\n"}`;
+      }
+      const fixed = balanceJsonFenceBody(body);
+      return `\`\`\`json\n${fixed}\n\`\`\`\n`;
+    },
+  );
+}
+
+/** Normaliza Response 204 con `# No Content` / `# _No Content_` erróneo. */
+export function repairApiResponse204NoContent(text: string): string {
+  return text.replace(
+    /(\*\*Response\s+204:\*\*)\s*\n+#\s+(?:`No Content`|_No Content_)/gim,
+    "$1\n\n_No Content_",
+  );
+}
+
 export function repairPastedMarkdown(text: string): string {
   if (!text?.trim()) return text ?? "";
   let out = text.replace(/\r\n/g, "\n");
   out = repairMetadataCoverTable(out);
   out = repairGluedBoldFlowTitles(out);
+  out = repairGluedHrSuffixInProse(out);
+  out = repairSplitUiUxMatrizHeading(out);
+  out = repairStrayHashFenceLines(out);
+  out = repairOrphanFenceBeforeContractLabels(out);
+  out = repairGluedApiContractLines(out);
+  out = repairOrphanBracesInContratos(out);
+  out = repairUnclosedJsonBeforeApiEndpoint(out);
+  out = repairUnfencedJsonInContratos(out);
   out = repairApiContractJsonFences(out);
+  out = repairApiResponse204NoContent(out);
   out = repairOrphanContratosApiFences(out);
   out = repairStackedCodeFences(out);
   out = repairSplitJsonFragments(out);
@@ -857,6 +1249,7 @@ export function repairPastedMarkdown(text: string): string {
   out = repairIndentedProseBlocks(out);
   out = repairStrayCodeFences(out);
   out = repairPromoteBareSectionHeadings(out);
+  out = repairSplitUiUxMatrizHeading(out);
   out = repairDemoteFalseApiHeadings(out);
   out = repairCollapsedSqlParagraphs(out);
   out = repairFragmentedSqlFences(out);
@@ -864,6 +1257,7 @@ export function repairPastedMarkdown(text: string): string {
   out = repairOrphanSqlBlocks(out);
   out = repairFragmentedSqlFences(out);
   out = repairLooseJsonBlocks(out);
+  out = repairMddInfraManifestJsonBlock(out);
   out = repairJsonFenceIntegrity(out);
   out = repairGluedSqlTokens(out);
   out = repairApiContractJsonFences(out);
@@ -892,6 +1286,10 @@ export function repairPastedMarkdown(text: string): string {
   out = repairFragmentedSqlFences(out);
   out = repairOrphanSqlBlocks(out);
   out = repairStrayCodeFences(out);
+  out = repairUnclosedJsonBeforeApiEndpoint(out);
+  out = repairApiResponse204NoContent(out);
+  out = repairOrphanFenceBeforeContractLabels(out);
+  out = repairSplitUiUxMatrizHeading(out);
   out = out.replace(/\n(🔴|🟡|🟢)/g, "\n\n$1");
   out = out.replace(/\n-{3,}\n/g, "\n\n---\n\n");
   return out;

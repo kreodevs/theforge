@@ -4,6 +4,7 @@ import {
   tasksLlmAuditorOutputSchema,
   TASKS_LLM_AUDITOR_PASS_THRESHOLD,
   TASKS_PIPELINE_MAX_REPAIRS,
+  TASKS_PIPELINE_MAX_REPAIRS_TRUNCATED,
   type TasksGenerationPlan,
   type TasksLlmAuditorOutput,
   type TasksPipelineQualitySnapshot,
@@ -23,8 +24,17 @@ import {
   type TasksQualityReport,
 } from "./tasks-generation-quality.util.js";
 import { runTasksPreflightStrict } from "./tasks-preflight.util.js";
-import { buildHeuristicTasksPlan } from "./tasks-heuristic-plan.util.js";
+import { buildHeuristicTasksPlan, type HeuristicTasksPlanInput } from "./tasks-heuristic-plan.util.js";
 import { buildSlimTasksPlannerContext } from "./tasks-planner-context.util.js";
+import { mergeTasksPlanWithCoverageFloor } from "./tasks-plan-merge.util.js";
+import { partitionTasksPlanByJourney } from "./tasks-journey-partition.util.js";
+import { extractHttpEndpointsFromMarkdown } from "../ui-mcp/api-contract-endpoints.util.js";
+import { extractPantallaRoutes } from "./tasks-generation-structure.util.js";
+import {
+  buildTasksCoverageChecklist,
+  serializeTasksCoverageChecklist,
+} from "./tasks-coverage-checklist.util.js";
+import { isTasksDocumentTruncated } from "./tasks-generation-structure.util.js";
 
 export type TasksPipelineInput = {
   mddMarkdown: string;
@@ -39,6 +49,7 @@ export type TasksPipelineInput = {
   taskOpts: LegacyGenerateOptions & {
     navigationMap?: string;
     specContent?: string | null;
+    useCasesContent?: string | null;
     userStoriesContent?: string | null;
     apiContractsContent?: string | null;
     logicFlowsContent?: string | null;
@@ -58,6 +69,9 @@ export type TasksPipelineResult = {
   plan: TasksGenerationPlan | null;
   snapshot: TasksPipelineQualitySnapshot;
 };
+
+/** Ítems por lote de redacción (~500 tok/tarea YAML → 18 caben en 8K; lotes evitan truncado). */
+const TASKS_REDACTOR_BATCH_SIZE = 18;
 
 @Injectable()
 export class TasksGenerationPipelineService {
@@ -100,29 +114,42 @@ export class TasksGenerationPipelineService {
 
     const plannerContext = this.buildPlannerContext(input);
     const plan = await this.runPlanner(plannerContext, input);
-    const planJson = JSON.stringify(plan, null, 2);
+    const redactorMaxTokens = resolveLlmMaxTokensForPurpose("tasksDoc");
+    this.logger.log(
+      `[Tasks pipeline] plan ${plan.items.length} items → redactor max_tokens=${redactorMaxTokens} (global ceiling llm_max_tokens)`,
+    );
 
-    let tasksMarkdown = await this.ai.generateTasks(input.mddMarkdown, input.blueprintMarkdown ?? null, {
-      ...input.taskOpts,
-      tasksPlanJson: planJson,
-      gapsFeedback: input.gapsFeedback,
-    });
+    let tasksMarkdown = await this.runRedactor(plan, input, input.gapsFeedback);
 
     let llmAuditor = await this.runLlmAuditor(tasksMarkdown, input);
     let quality = this.evaluateQuality(tasksMarkdown, input);
     let repairAttempts = 0;
+    const isTruncated = isTasksDocumentTruncated(tasksMarkdown);
+    const taskDeficitRatio = plan.items.length > 0 && quality.taskCount > 0
+      ? quality.taskCount / plan.items.length
+      : 1;
+    // Adaptive repairs: more when truncated OR when task count far below plan
+    let maxRepairs = isTruncated
+      ? TASKS_PIPELINE_MAX_REPAIRS_TRUNCATED
+      : TASKS_PIPELINE_MAX_REPAIRS;
+    if (taskDeficitRatio < 0.5 && quality.taskCount > 0) {
+      maxRepairs = Math.max(maxRepairs, 5);
+      this.logger.warn(
+        `[Tasks pipeline] task deficit: ${quality.taskCount}/${plan.items.length} (${Math.round(taskDeficitRatio * 100)}%) — allowing ${maxRepairs} repair attempts`,
+      );
+    }
 
     while (
-      repairAttempts < TASKS_PIPELINE_MAX_REPAIRS &&
+      repairAttempts < maxRepairs &&
       (!quality.ok || !llmAuditor.passed || llmAuditor.score < TASKS_LLM_AUDITOR_PASS_THRESHOLD)
     ) {
       repairAttempts += 1;
       this.logger.warn(
-        `[Tasks pipeline] repair ${repairAttempts}/${TASKS_PIPELINE_MAX_REPAIRS} ` +
+        `[Tasks pipeline] repair ${repairAttempts}/${maxRepairs} ` +
           `(det=${quality.score}, llm=${llmAuditor.score})`,
       );
       const repairFeedback = this.composeRepairFeedback(quality, llmAuditor, input.gapsFeedback);
-      tasksMarkdown = await this.runRepair(tasksMarkdown, planJson, repairFeedback, input);
+      tasksMarkdown = await this.runRepair(tasksMarkdown, plan, repairFeedback, input);
       llmAuditor = await this.runLlmAuditor(tasksMarkdown, input);
       quality = this.evaluateQuality(tasksMarkdown, input);
     }
@@ -174,24 +201,27 @@ export class TasksGenerationPipelineService {
 
   private buildPlannerContext(input: TasksPipelineInput): string {
     const parts: string[] = [
-      "Genera el plan JSON de Tasks según el system prompt.",
+      "Genera el plan JSON de Tasks según el system prompt. " +
+      "Cada fase/roadmap del blueprint debe generar al menos una sección de tasks con ítems por hito.",
       "\n\nMDD:\n---\n" + input.mddMarkdown.trim().slice(0, 40_000) + "\n---",
     ];
     const append = (label: string, content?: string | null, cap = 10_000) => {
       const t = (content ?? "").trim();
       if (t.length > 0) parts.push(`\n\n${label}:\n---\n` + t.slice(0, cap) + "\n---");
     };
-    append("Blueprint", input.blueprintMarkdown, 20_000);
+    // Blueprint gets 40K chars — ForgeOps and similar projects have 8 phases across 17 sections
+    append("Blueprint", input.blueprintMarkdown, 40_000);
     append("Spec", input.taskOpts.specContent, 15_000);
-    append("User Stories", input.taskOpts.userStoriesContent, 6_000);
+    append("Use Cases", input.taskOpts.useCasesContent, 10_000);
+    append("User Stories", input.taskOpts.userStoriesContent, 10_000);
     append("API Contracts", input.taskOpts.apiContractsContent, 20_000);
     append("Logic Flows", input.taskOpts.logicFlowsContent, 12_000);
     append("Infra", input.taskOpts.infraContent, 10_000);
-    append("Architecture", input.taskOpts.architectureContent, 8_000);
+    append("Architecture", input.taskOpts.architectureContent, 12_000);
     if (input.hasUxTeam) {
-      append("UX Guide", input.taskOpts.uxUiGuideContent, 6_000);
+      append("UX Guide", input.taskOpts.uxUiGuideContent, 8_000);
     }
-    append("Pantallas", input.taskOpts.uiScreensContent, 8_000);
+    append("Pantallas", input.taskOpts.uiScreensContent, 20_000);
     if (input.taskOpts.navigationMap?.trim()) {
       append("Navigation map", input.taskOpts.navigationMap, 8_000);
     }
@@ -201,7 +231,128 @@ export class TasksGenerationPipelineService {
     return parts.join("");
   }
 
+  /** Redacta tasks.md desde el plan; lotes por journey o por tamaño (evita truncado). */
+  private async runRedactor(
+    plan: TasksGenerationPlan,
+    input: TasksPipelineInput,
+    gapsFeedback?: string | null,
+  ): Promise<string> {
+    const journeyPartitions =
+      (input.inventory?.processes?.length ?? 0) > 0
+        ? partitionTasksPlanByJourney(plan, input.inventory)
+        : null;
+
+    if (journeyPartitions && journeyPartitions.length > 1) {
+      this.logger.log(
+        `[Tasks pipeline] redactor por journey: ${journeyPartitions.length} fases`,
+      );
+      const parts: string[] = [];
+      for (let ji = 0; ji < journeyPartitions.length; ji++) {
+        const partition = journeyPartitions[ji]!;
+        const slicePlan: TasksGenerationPlan = {
+          sections: plan.sections,
+          items: partition.items,
+        };
+        const batchFeedback =
+          ji === 0
+            ? gapsFeedback
+            : [
+                gapsFeedback?.trim(),
+                `Fase journey ${ji + 1}/${journeyPartitions.length}: «${partition.label}». ` +
+                  `Cubre US: ${partition.storyRefs.join(", ") || "núcleo"}.`,
+              ]
+                .filter(Boolean)
+                .join("\n\n");
+        const chunk = await this.redactorSlice(slicePlan, input, batchFeedback, ji === 0);
+        parts.push(chunk);
+      }
+      return parts.filter(Boolean).join("\n\n");
+    }
+
+    return this.redactorSlice(plan, input, gapsFeedback, true);
+  }
+
+  private async redactorSlice(
+    plan: TasksGenerationPlan,
+    input: TasksPipelineInput,
+    gapsFeedback?: string | null,
+    isFirstChunk = true,
+  ): Promise<string> {
+    const planJson = JSON.stringify(plan, null, 2);
+    if (plan.items.length <= TASKS_REDACTOR_BATCH_SIZE) {
+      const chunk = await this.ai.generateTasks(input.mddMarkdown, input.blueprintMarkdown ?? null, {
+        ...input.taskOpts,
+        tasksPlanJson: planJson,
+        gapsFeedback,
+      });
+      return isFirstChunk ? chunk.trim() : chunk.trim().replace(/^#\s*Tasks\s*\n+/im, "").trim();
+    }
+
+    this.logger.log(
+      `[Tasks pipeline] redactor en lotes: ${plan.items.length} ítems, batch=${TASKS_REDACTOR_BATCH_SIZE}`,
+    );
+    const parts: string[] = [];
+    for (let offset = 0; offset < plan.items.length; offset += TASKS_REDACTOR_BATCH_SIZE) {
+      const sliceItems = plan.items.slice(offset, offset + TASKS_REDACTOR_BATCH_SIZE);
+      const slicePlan: TasksGenerationPlan = { sections: plan.sections, items: sliceItems };
+      const batchIndex = Math.floor(offset / TASKS_REDACTOR_BATCH_SIZE) + 1;
+      const batchTotal = Math.ceil(plan.items.length / TASKS_REDACTOR_BATCH_SIZE);
+      const batchFeedback =
+        offset === 0
+          ? gapsFeedback
+          : [
+              gapsFeedback?.trim(),
+              `Lote ${batchIndex}/${batchTotal} del plan Tasks. Continúa desde ${sliceItems[0]!.id}. ` +
+                "No repitas el título # Tasks ni secciones H2 ya generadas en lotes anteriores.",
+            ]
+              .filter(Boolean)
+              .join("\n\n");
+
+      const chunk = await this.ai.generateTasks(input.mddMarkdown, input.blueprintMarkdown ?? null, {
+        ...input.taskOpts,
+        tasksPlanJson: JSON.stringify(slicePlan, null, 2),
+        gapsFeedback: batchFeedback,
+      });
+      const trimmed = chunk.trim();
+      if (offset === 0 && isFirstChunk) {
+        parts.push(trimmed);
+      } else {
+        parts.push(trimmed.replace(/^#\s*Tasks\s*\n+/im, "").trim());
+      }
+    }
+    return parts.filter(Boolean).join("\n\n");
+  }
+
+  private heuristicPlanInput(input: TasksPipelineInput): HeuristicTasksPlanInput {
+    return {
+      mddMarkdown: input.mddMarkdown,
+      apiContractsMarkdown: input.taskOpts.apiContractsContent,
+      uiScreensMarkdown: input.taskOpts.uiScreensContent,
+      inventory: input.inventory,
+      hasUxTeam: input.hasUxTeam,
+      blueprintMarkdown: input.blueprintMarkdown,
+    };
+  }
+
+  /** Expande plan LLM con piso heurístico (API, pantallas, entidades, infra, QA). */
+  private expandPlanWithCoverageFloor(
+    plan: TasksGenerationPlan,
+    input: TasksPipelineInput,
+  ): TasksGenerationPlan {
+    const floor = buildHeuristicTasksPlan(this.heuristicPlanInput(input));
+    const merged = mergeTasksPlanWithCoverageFloor(plan, floor);
+    if (merged.items.length > plan.items.length) {
+      this.logger.warn(
+        `[Tasks pipeline] plan LLM ${plan.items.length} → ${merged.items.length} ítems tras piso heurístico`,
+      );
+    }
+    return merged;
+  }
+
   private async runPlanner(context: string, input: TasksPipelineInput): Promise<TasksGenerationPlan> {
+    const heuristicFallback = () =>
+      buildHeuristicTasksPlan(this.heuristicPlanInput(input));
+
     const contexts: Array<{ label: string; prompt: string }> = [
       { label: "full", prompt: context },
       {
@@ -226,8 +377,7 @@ export class TasksGenerationPipelineService {
         maxTokensPurpose: "tasksPlanner",
       });
       if (parsed) {
-        this.logger.log(`[Tasks pipeline] planner OK (${label}, ${parsed.items.length} items)`);
-        return {
+        let plan: TasksGenerationPlan = {
           sections: parsed.sections ?? [],
           items: parsed.items.map((item) => ({
             ...item,
@@ -238,34 +388,178 @@ export class TasksGenerationPipelineService {
             targetFilesHint: item.targetFilesHint ?? [],
           })),
         };
+        plan = this.expandPlanWithCoverageFloor(plan, input);
+        try {
+          this.validatePlanCompleteness(plan, input);
+          this.logger.log(`[Tasks pipeline] planner OK (${label}, ${plan.items.length} items)`);
+          return plan;
+        } catch (validationErr) {
+          this.logger.warn(`[Tasks pipeline] planner plan rechazado (${label}): ${(validationErr as Error).message}`);
+        }
       }
       this.logger.warn(`[Tasks pipeline] planner JSON failed (${label})`);
     }
 
-    const heuristic = buildHeuristicTasksPlan({
-      mddMarkdown: input.mddMarkdown,
-      apiContractsMarkdown: input.taskOpts.apiContractsContent,
-      uiScreensMarkdown: input.taskOpts.uiScreensContent,
-      inventory: input.inventory,
-      hasUxTeam: input.hasUxTeam,
-    });
+    const heuristic = heuristicFallback();
     this.logger.warn(
       `[Tasks pipeline] planner heuristic fallback (${heuristic.items.length} items) — revisa auditorChatModel o upstream`,
     );
     return heuristic;
   }
 
+  /**
+   * Valida que el plan cubra todas las fases/roadmap del blueprint.
+   * Si el blueprint tiene 8 fases pero el plan solo cubre 3, rechaza el plan
+   * para forzar reintentos con el planner o el fallback heurístico.
+   */
+  private validatePlanCompleteness(plan: TasksGenerationPlan, input: TasksPipelineInput): void {
+    const endpoints = extractHttpEndpointsFromMarkdown(input.taskOpts.apiContractsContent ?? "");
+    if (endpoints.length >= 2) {
+      const covered = endpoints.filter((ep) =>
+        plan.items.some((item) =>
+          item.upstreamRefs.some(
+            (ref) =>
+              ref === `api-contracts:${ep.method} ${ep.path}` ||
+              ref.toLowerCase().includes(ep.path.toLowerCase()),
+          ),
+        ),
+      );
+      if (covered.length < endpoints.length) {
+        throw new BadRequestException({
+          code: "TASKS_PLAN_MISSING_ENDPOINTS",
+          message: `Plan incompleto: ${covered.length}/${endpoints.length} endpoints de api-contracts.`,
+          endpointCount: endpoints.length,
+          coveredEndpoints: covered.length,
+          planItemCount: plan.items.length,
+        });
+      }
+    }
+
+    const routes = extractPantallaRoutes(input.taskOpts.uiScreensContent ?? "").filter(
+      (r) => !/\/admin\/proc-cap/i.test(r),
+    );
+    if (routes.length >= 1) {
+      const coveredRoutes = routes.filter((route) =>
+        plan.items.some(
+          (item) =>
+            item.layer === "Frontend" &&
+            (item.upstreamRefs.some((ref) => ref === `pantallas:${route}`) ||
+              item.title.includes(route)),
+        ),
+      );
+      if (coveredRoutes.length < routes.length) {
+        throw new BadRequestException({
+          code: "TASKS_PLAN_MISSING_ROUTES",
+          message: `Plan incompleto: ${coveredRoutes.length}/${routes.length} rutas de pantallas.md.`,
+          routeCount: routes.length,
+          coveredRoutes: coveredRoutes.length,
+          planItemCount: plan.items.length,
+        });
+      }
+    }
+
+    const blueprint = (input.blueprintMarkdown ?? "").trim();
+    if (blueprint.length < 200) return; // No hay blueprint significativo
+
+    // Extract phase/roadmap headings from blueprint
+    const phaseRegex = /^##\s+(?:(?:Fase|Phase|Roadmap|Milestone|Sprint|Hitos|Etapa)\s+\d+[^#\n]*)/gim;
+    const phaseMatches = [...blueprint.matchAll(phaseRegex)];
+
+    if (phaseMatches.length <= 1) return; // No hay múltiples fases detectables
+
+    const phaseCount = phaseMatches.length;
+    const planItemCount = plan.items.length;
+
+    // Heuristic: each phase should generate at least 5 tasks (backend + frontend + test + infra + doc)
+    const minExpectedTasks = phaseCount * 5;
+    if (planItemCount < minExpectedTasks) {
+      this.logger.warn(
+        `[Tasks pipeline] plan incompleto: blueprint tiene ${phaseCount} fases (~${phaseMatches.map((m) => m[0]?.trim()).join(", ")}) ` +
+        `pero plan solo tiene ${planItemCount} items (mínimo esperado: ${minExpectedTasks}). ` +
+        `Falling back to heuristic plan.`,
+      );
+      throw new BadRequestException({
+        code: "TASKS_PLAN_TOO_SMALL",
+        message: `Plan demasiado pequeño: ${planItemCount} items vs ${minExpectedTasks} esperados para ${phaseCount} fases del blueprint.`,
+        phaseCount,
+        coveredPhases: 0,
+        planItemCount,
+      });
+    }
+
+    // Check if plan covers at least 50% of blueprint phases
+    // Extract phase keywords from blueprint headings
+    const blueprintPhaseKeywords = phaseMatches.map((m) => {
+      const heading = m[0]?.trim() ?? "";
+      // Extract meaningful words from heading (e.g., "Fase 1" → ["fase", "1"], "Hitos de seguridad" → ["seguridad"])
+      return heading.toLowerCase().replace(/^##\s+/, "").split(/\s+/);
+    });
+
+    // Check how many blueprint phases are referenced in plan items
+    let coveredPhases = 0;
+    for (const keywords of blueprintPhaseKeywords) {
+      const isCovered = plan.items.some((item) => {
+        const itemText = `${item.title} ${item.upstreamRefs.join(" ")}`.toLowerCase();
+        return keywords.some((kw) => kw.length > 2 && itemText.includes(kw));
+      });
+      if (isCovered) coveredPhases += 1;
+    }
+
+    const coverageRatio = blueprintPhaseKeywords.length > 0
+      ? coveredPhases / blueprintPhaseKeywords.length
+      : 1;
+
+    if (coverageRatio < 0.5) {
+      throw new BadRequestException({
+        code: "TASKS_PLAN_INCOMPLETE",
+        message: `El plan solo cubre ${Math.round(coverageRatio * 100)}% de las fases del blueprint (${coveredPhases}/${blueprintPhaseKeywords.length}). Regenerar con cobertura completa.`,
+        phaseCount,
+        coveredPhases,
+        planItemCount,
+      });
+    }
+
+    // Log phase headings for traceability
+    this.logger.log(
+      `[Tasks pipeline] blueprint phases detectadas: ${phaseMatches.map((m) => m[0]?.trim()).join(" | ")}`,
+    );
+  }
+
+  private buildAuditorUpstreamContext(input: TasksPipelineInput, tasksMarkdown: string): string {
+    const append = (label: string, content?: string | null, cap = 8_000) => {
+      const t = (content ?? "").trim();
+      if (!t) return "";
+      return `\n\n${label}:\n---\n${t.slice(0, cap)}\n---`;
+    };
+    const checklist = buildTasksCoverageChecklist({
+      tasksMarkdown,
+      apiContractsMarkdown: input.taskOpts.apiContractsContent,
+      uiScreensMarkdown: input.taskOpts.uiScreensContent,
+      mddMarkdown: input.mddMarkdown,
+      infraMarkdown: input.taskOpts.infraContent,
+    });
+    return (
+      append("API Contracts", input.taskOpts.apiContractsContent, 12_000) +
+      append("Pantallas", input.taskOpts.uiScreensContent, 12_000) +
+      append("User Stories", input.taskOpts.userStoriesContent, 6_000) +
+      append("Use Cases", input.taskOpts.useCasesContent, 6_000) +
+      `\n\nChecklist determinista (gaps conocidos):\n---\n${serializeTasksCoverageChecklist(checklist)}\n---`
+    );
+  }
+
   private async runLlmAuditor(
     tasksMarkdown: string,
     input: TasksPipelineInput,
   ): Promise<TasksLlmAuditorOutput> {
+    const upstream = this.buildAuditorUpstreamContext(input, tasksMarkdown);
     const prompt =
       "Audita el siguiente tasks.md contra el MDD y upstream del contexto.\n\n" +
       "MDD (extracto):\n---\n" +
-      input.mddMarkdown.trim().slice(0, 12_000) +
+      input.mddMarkdown.trim().slice(0, 16_000) +
       "\n---\n\n" +
-      "tasks.md:\n---\n" +
-      tasksMarkdown.trim().slice(0, 20_000) +
+      upstream +
+      "\n\ntasks.md:\n---\n" +
+      tasksMarkdown.trim().slice(0, 24_000) +
       "\n---";
     const parsed = await this.callAuditorJson({
       step: "auditor",
@@ -358,10 +652,12 @@ export class TasksGenerationPipelineService {
 
   private async runRepair(
     tasksMarkdown: string,
-    planJson: string,
+    plan: TasksGenerationPlan,
     feedback: string,
     input: TasksPipelineInput,
   ): Promise<string> {
+    const planJson = JSON.stringify(plan, null, 2);
+    const upstream = this.buildAuditorUpstreamContext(input, tasksMarkdown);
     const prompt =
       "Repara el documento Tasks según gaps.\n\n" +
       "Plan JSON:\n---\n" +
@@ -370,26 +666,22 @@ export class TasksGenerationPipelineService {
       "Gaps:\n---\n" +
       feedback +
       "\n---\n\n" +
-      "tasks.md actual:\n---\n" +
+      upstream +
+      "\n\ntasks.md actual:\n---\n" +
       tasksMarkdown.trim().slice(0, 22_000) +
       "\n---\n\n" +
       "MDD (referencia):\n---\n" +
-      input.mddMarkdown.trim().slice(0, 8_000) +
+      input.mddMarkdown.trim().slice(0, 10_000) +
       "\n---";
     const repaired = await this.ai.generateAuditorResponse(prompt, [], {
       systemPrompt: TASKS_REPAIR_PROMPT,
-      maxTokensOverride: resolveLlmMaxTokensForPurpose("document"),
+      maxTokensOverride: resolveLlmMaxTokensForPurpose("tasksDoc"),
     });
     const trimmed = repaired.trim();
     if (trimmed.startsWith("#") || trimmed.includes("## Backend")) {
       return trimmed;
     }
-    return await this.ai.generateTasks(input.mddMarkdown, input.blueprintMarkdown ?? null, {
-      ...input.taskOpts,
-      tasksPlanJson: planJson,
-      gapsFeedback: feedback,
-      tasksAuditorFeedback: feedback,
-    });
+    return await this.runRedactor(plan, input, feedback);
   }
 
   private evaluateQuality(tasksMarkdown: string, input: TasksPipelineInput): TasksQualityReport {
@@ -401,6 +693,9 @@ export class TasksGenerationPipelineService {
       inventory: input.inventory,
       uiScreensMarkdown: input.taskOpts.uiScreensContent,
       apiContractsMarkdown: input.taskOpts.apiContractsContent,
+      infraMarkdown: input.taskOpts.infraContent,
+      userStoriesMarkdown: input.taskOpts.userStoriesContent,
+      blueprintMarkdown: input.blueprintMarkdown,
     });
   }
 

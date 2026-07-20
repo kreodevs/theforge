@@ -6,6 +6,7 @@
 import { AUTH_ENTITY_FAMILY, type DomainInventory } from "@theforge/shared-types";
 import { extractEntities } from "./conformance.service.js";
 import { extractSectionByNumber } from "./mdd-markdown-parser.js";
+import { checkMissingDbgaCoreEntitiesInMdd } from "./domain-inventory-conformance.util.js";
 
 function stubCreateTable(entity: string): string {
   return `CREATE TABLE ${entity} (
@@ -74,6 +75,44 @@ export function mergeDomainTablesIntoMdd(
   const injection = `\n\n\`\`\`sql\n${stubs}\n\`\`\`\n`;
   const newSection3 = section3.trimEnd() + injection;
   return { markdown: draft.replace(section3, newSection3), injected };
+}
+
+/** Inyecta stubs CREATE TABLE para entidades núcleo DBGA ausentes en §3. */
+export function mergeDbgaCoreGapsIntoMdd(
+  mddMarkdown: string,
+  params: { dbgaMarkdown?: string | null; brdMarkdown?: string | null },
+): { markdown: string; injected: string[] } {
+  const missing = checkMissingDbgaCoreEntitiesInMdd({
+    dbgaMarkdown: params.dbgaMarkdown,
+    brdMarkdown: params.brdMarkdown,
+    mddMarkdown: mddMarkdown,
+  });
+  if (missing.length === 0) return { markdown: mddMarkdown, injected: [] };
+
+  const stubs = missing.map(stubCreateTable).join("\n\n");
+  const draft = (mddMarkdown ?? "").trim();
+  if (!draft) return { markdown: draft, injected: [] };
+
+  const section3 = extractSectionByNumber(draft, 3);
+  if (!section3 || section3.length < 20) {
+    const appendix =
+      `\n\n## 3. Modelo de Datos\n\n\`\`\`sql\n${stubs}\n\`\`\`\n\n` +
+      "```TechnicalMetadata\n[dbga_core_stubs]\n```\n";
+    return { markdown: draft + appendix, injected: missing };
+  }
+
+  const sqlFence = /```sql\n([\s\S]*?)```/i;
+  const match = section3.match(sqlFence);
+  if (match) {
+    const existingSql = match[1] ?? "";
+    const mergedSql = `${existingSql.trimEnd()}\n\n-- DBGA core stubs (deterministic)\n${stubs}\n`;
+    const newSection3 = section3.replace(sqlFence, `\`\`\`sql\n${mergedSql}\`\`\``);
+    return { markdown: draft.replace(section3, newSection3), injected: missing };
+  }
+
+  const injection = `\n\n\`\`\`sql\n${stubs}\n\`\`\`\n`;
+  const newSection3 = section3.trimEnd() + injection;
+  return { markdown: draft.replace(section3, newSection3), injected: missing };
 }
 
 /** Prompt block forcing SA to expand stubs into real columns. */

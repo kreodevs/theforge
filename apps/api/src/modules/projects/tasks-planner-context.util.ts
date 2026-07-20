@@ -16,46 +16,58 @@ export type SlimTasksPlannerContextInput = {
   blueprintMarkdown?: string | null;
   taskOpts: {
     specContent?: string | null;
+    useCasesContent?: string | null;
     apiContractsContent?: string | null;
     uiScreensContent?: string | null;
   };
 };
 
-/** Contexto reducido (~35–45k chars) para reintento del planner. */
+/**
+ * Contexto reducido (~55–70k chars) para reintento del planner.
+ * Caps elevados para capturar la totalidad de fases del blueprint
+ * (proyectos grandes como ForgeOps tienen 8+ fases en 17 secciones).
+ */
 export function buildSlimTasksPlannerContext(
   input: SlimTasksPlannerContextInput,
   inventory?: DomainInventory | null,
 ): string {
   const mdd = input.mddMarkdown.trim();
   const parts: string[] = [
-    "Genera el plan JSON de Tasks (solo JSON). Prioriza cobertura MVP con IDs T-001… sin saltos.",
-    "\n\nMDD §1 Contexto:\n---\n" + mddSection(mdd, 1, 6_000) + "\n---",
-    "\n\nMDD §3 Modelo:\n---\n" + mddSection(mdd, 3, 12_000) + "\n---",
-    "\n\nMDD §4 API:\n---\n" + mddSection(mdd, 4, 8_000) + "\n---",
-    "\n\nMDD §5 Lógica:\n---\n" + mddSection(mdd, 5, 7_000) + "\n---",
-    "\n\nMDD §6 Seguridad:\n---\n" + mddSection(mdd, 6, 4_000) + "\n---",
-    "\n\nMDD §7 Infra:\n---\n" + mddSection(mdd, 7, 4_000) + "\n---",
+    "Genera el plan JSON de Tasks (solo JSON). Prioriza cobertura COMPLETA del blueprint/roadmap con IDs T-001… sin saltos. " +
+    "Cada fase del blueprint debe generar al menos una sección de tasks con ítems por hito.",
+    "\n\nMDD §1 Contexto:\n---\n" + mddSection(mdd, 1, 10_000) + "\n---",
+    "\n\nMDD §3 Modelo:\n---\n" + mddSection(mdd, 3, 18_000) + "\n---",
+    "\n\nMDD §4 API:\n---\n" + mddSection(mdd, 4, 12_000) + "\n---",
+    "\n\nMDD §5 Lógica:\n---\n" + mddSection(mdd, 5, 10_000) + "\n---",
+    "\n\nMDD §6 Seguridad:\n---\n" + mddSection(mdd, 6, 6_000) + "\n---",
+    "\n\nMDD §7 Infra:\n---\n" + mddSection(mdd, 7, 6_000) + "\n---",
   ];
 
   const spec = (input.taskOpts.specContent ?? "").trim();
-  if (spec) parts.push("\n\nSpec (extracto):\n---\n" + spec.slice(0, 8_000) + "\n---");
+  if (spec) parts.push("\n\nSpec (extracto):\n---\n" + spec.slice(0, 10_000) + "\n---");
+
+  const useCases = (input.taskOpts.useCasesContent ?? "").trim();
+  if (useCases) parts.push("\n\nUse Cases (extracto):\n---\n" + useCases.slice(0, 8_000) + "\n---");
 
   const api = (input.taskOpts.apiContractsContent ?? "").trim();
-  if (api) parts.push("\n\nAPI Contracts (resumen):\n---\n" + apiEndpointSummary(api) + "\n---");
+  if (api) parts.push("\n\nAPI Contracts (resumen):\n---\n" + apiEndpointSummary(api, 120) + "\n---");
 
   const blueprint = (input.blueprintMarkdown ?? "").trim();
-  if (blueprint) parts.push("\n\nBlueprint (extracto):\n---\n" + blueprint.slice(0, 8_000) + "\n---");
+  if (blueprint) {
+    // Include full blueprint to capture all phases — projects like ForgeOps have 8 phases across 17 sections
+    parts.push("\n\nBlueprint (COMPLETO — todas las fases/roadmap):\n---\n" + blueprint.slice(0, 40_000) + "\n---");
+  }
 
   const ui = (input.taskOpts.uiScreensContent ?? "").trim();
-  if (ui) parts.push("\n\nPantallas (rutas):\n---\n" + pantallaRouteSummary(ui) + "\n---");
+  if (ui) parts.push("\n\nPantallas (rutas):\n---\n" + pantallaRouteSummary(ui, 60) + "\n---");
 
   if (inventory) {
     parts.push(
-      "\n\nInventario dominio:\n---\n" + formatDomainInventoryForPrompt(inventory, 2_500) + "\n---",
+      "\n\nInventario dominio:\n---\n" + formatDomainInventoryForPrompt(inventory, 3_500) + "\n---",
     );
   } else if (api) {
     const eps = extractHttpEndpointsFromMarkdown(api);
-    parts.push("\n\nEndpoints clave: " + formatEndpointList(eps, 12));
+    parts.push("\n\nEndpoints clave: " + formatEndpointList(eps, 20));
   }
 
   return parts.join("");

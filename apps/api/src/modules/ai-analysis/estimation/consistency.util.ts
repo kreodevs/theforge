@@ -352,21 +352,24 @@ export function computeCrossDocumentConsistency(
   const mdd = docs.mddContent?.trim() ?? "";
   const spec = docs.specContent?.trim() ?? "";
 
-  if (!brd) {
+  const traceSource = brd || spec;
+  if (!traceSource) {
     return { score: 50, gaps: [] };
   }
 
-  const items = extractBrdTraceabilityItems(brd);
+  const items = extractBrdTraceabilityItems(traceSource);
   if (items.length === 0) {
-    return { score: 50, gaps: [] };
+    return { score: brd ? 50 : 70, gaps: [] };
   }
 
   const targets: Array<{ name: string; content: string }> = [];
   if (mdd) {
     targets.push({ name: "MDD", content: extractMddTraceabilityCorpus(mdd) });
   }
-  if (spec) {
+  if (spec && brd) {
     targets.push({ name: "Spec", content: spec });
+  } else if (spec && !brd) {
+    // Greenfield sin BRD: Spec ya actuó como fuente de trazabilidad
   }
 
   if (targets.length === 0) {
@@ -399,7 +402,7 @@ export function computeCrossDocumentConsistency(
     } else {
       const severity: CrossDocumentGap["severity"] = bestRatio >= 0.2 ? "partial" : "missing";
       gaps.push({
-        from: "BRD",
+        from: brd ? "BRD" : "Spec",
         to: bestTarget,
         concept: item.label.slice(0, 120),
         severity,

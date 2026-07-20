@@ -1,6 +1,6 @@
 {
   "name": "@theforge/shared-types",
-  "version": "1.0.0",
+  "version": "1.6.2",
   "private": true,
   "type": "module",
   "author": "Jorge Correa <jcorrea@e-personal.net>",
@@ -96,6 +96,16 @@
       "require": {
         "types": "./dist-cjs/mdd-governance-patterns.d.ts",
         "default": "./dist-cjs/mdd-governance-patterns.js"
+      }
+    },
+    "./mdd-upstream-sync-node": {
+      "import": {
+        "types": "./dist/mdd-upstream-sync-node.d.ts",
+        "default": "./dist/mdd-upstream-sync-node.js"
+      },
+      "require": {
+        "types": "./dist-cjs/mdd-upstream-sync-node.d.ts",
+        "default": "./dist-cjs/mdd-upstream-sync-node.js"
       }
     },
     "./document-ast": {

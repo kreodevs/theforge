@@ -1,0 +1,303 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, Loader2, RefreshCw, RotateCcw, Save, SlidersHorizontal } from "lucide-react";
+import type { SystemConfigCategory, SystemConfigSnapshot } from "@theforge/shared-types";
+import { UnderlineTabs, type UnderlineTabItem } from "./ui/UnderlineTabs";
+import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input } from "./ui";
+import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
+
+const SOURCE_LABELS = {
+  database: "Guardado",
+  env: "Env",
+  default: "Default",
+} as const;
+
+const CATEGORY_ORDER: SystemConfigCategory[] = [
+  "integrations",
+  "llm",
+  "queues",
+  "mcp",
+  "legacy",
+  "debug",
+];
+
+const CATEGORY_SHORT_LABELS: Partial<Record<SystemConfigCategory, string>> = {
+  integrations: "Integ.",
+  llm: "LLM",
+  queues: "Colas",
+  mcp: "MCP",
+  legacy: "Legacy",
+  debug: "Debug",
+};
+
+type SystemConfigSettingRow = SystemConfigSnapshot["settings"][number];
+
+function isTruthy(value: string): boolean {
+  const v = value.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+function SystemConfigSettingField({
+  setting,
+  value,
+  changed,
+  onChange,
+}: {
+  setting: SystemConfigSettingRow;
+  value: string;
+  changed: boolean;
+  onChange: (key: string, value: string) => void;
+}) {
+  return (
+    <div
+      className="grid gap-2 border-b border-[var(--border)] pb-5 last:border-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] sm:gap-4"
+    >
+      <div className="min-w-0 space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="font-medium text-[var(--foreground)]">{setting.label}</p>
+          <Badge variant="outline">{SOURCE_LABELS[setting.source]}</Badge>
+          {setting.restartRequired ? <Badge variant="secondary">Reinicio worker</Badge> : null}
+        </div>
+        <p className="text-sm text-[var(--foreground-muted)]">{setting.description}</p>
+        <p className="font-mono text-xs text-[var(--foreground-muted)]">
+          {setting.envKey} · default: {setting.defaultValue || "∅"}
+        </p>
+      </div>
+
+      <div className="min-w-0">
+        {setting.type === "boolean" ? (
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-[var(--border)]"
+              checked={isTruthy(value)}
+              onChange={(e) => onChange(setting.key, e.target.checked ? "1" : "0")}
+            />
+            {isTruthy(value) ? "Activado" : "Desactivado"}
+          </label>
+        ) : (
+          <Input
+            type={setting.type === "secret" ? "password" : setting.type === "number" ? "number" : "text"}
+            value={value}
+            placeholder={setting.defaultValue || setting.envKey}
+            min={setting.min}
+            max={setting.max}
+            autoComplete={setting.type === "secret" ? "off" : undefined}
+            onChange={(e) => onChange(setting.key, e.target.value)}
+            className={cn(changed && "ring-1 ring-[var(--primary)]")}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function SystemConfigCard() {
+  const [snapshot, setSnapshot] = useState<SystemConfigSnapshot | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [activeCategory, setActiveCategory] = useState<SystemConfigCategory>("integrations");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  const fetchSnapshot = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    setSuccess("");
+    try {
+      const res = await api.get("/api/admin/system-config");
+      if (!res.ok) {
+        if (res.status === 403) throw new Error("Se requiere rol super_admin");
+        throw new Error("No se pudo cargar la configuración");
+      }
+      const data = (await res.json()) as SystemConfigSnapshot;
+      setSnapshot(data);
+      setDraft(Object.fromEntries(data.settings.map((s) => [s.key, s.value])));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al cargar configuración");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchSnapshot();
+  }, [fetchSnapshot]);
+
+  const categories = useMemo(() => {
+    if (!snapshot) return [];
+    const labelById = new Map(snapshot.categories.map((c) => [c.id, c.label]));
+    const descriptionById = new Map(snapshot.categories.map((c) => [c.id, c.description]));
+    return CATEGORY_ORDER.filter((id) =>
+      snapshot.settings.some((s) => s.category === id),
+    ).map((id) => ({
+      id,
+      label: labelById.get(id) ?? id,
+      description: descriptionById.get(id) ?? "",
+      settings: snapshot.settings.filter((s) => s.category === id),
+    }));
+  }, [snapshot]);
+
+  const categoryTabs = useMemo((): UnderlineTabItem<SystemConfigCategory>[] => {
+    return categories.map(({ id, label }) => ({
+      id,
+      label,
+      shortLabel: CATEGORY_SHORT_LABELS[id] ?? label,
+    }));
+  }, [categories]);
+
+  const activeCategoryData = useMemo(
+    () => categories.find((c) => c.id === activeCategory) ?? categories[0] ?? null,
+    [activeCategory, categories],
+  );
+
+  useEffect(() => {
+    if (categories.length === 0) return;
+    if (!categories.some((c) => c.id === activeCategory)) {
+      setActiveCategory(categories[0]!.id);
+    }
+  }, [activeCategory, categories]);
+
+  const changedKeys = useMemo(() => {
+    if (!snapshot) return [];
+    return snapshot.settings
+      .filter((s) => draft[s.key] !== s.value)
+      .map((s) => s.key);
+  }, [draft, snapshot]);
+
+  const handleSave = async () => {
+    if (!snapshot || changedKeys.length === 0) return;
+    setSaving(true);
+    setError("");
+    setSuccess("");
+    try {
+      const settings: Record<string, string | null> = {};
+      for (const key of changedKeys) {
+        const value = draft[key]?.trim() ?? "";
+        settings[key] = value === "" ? null : value;
+      }
+      const res = await api.patch("/api/admin/system-config", { settings });
+      if (!res.ok) throw new Error("Error al guardar");
+      const data = (await res.json()) as SystemConfigSnapshot;
+      setSnapshot(data);
+      setDraft(Object.fromEntries(data.settings.map((s) => [s.key, s.value])));
+      setSuccess("Configuración guardada");
+      window.setTimeout(() => setSuccess(""), 3200);
+    } catch {
+      setError("Error al guardar configuración");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleResetDraft = () => {
+    if (!snapshot) return;
+    setDraft(Object.fromEntries(snapshot.settings.map((s) => [s.key, s.value])));
+  };
+
+  const handleDraftChange = (key: string, value: string) => {
+    setDraft((prev) => ({ ...prev, [key]: value }));
+  };
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="flex items-center justify-center gap-2 py-12 text-[var(--foreground-muted)]">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          Cargando configuración del sistema…
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!snapshot) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-red-500">{error || "Sin datos"}</CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <SlidersHorizontal className="h-5 w-5 text-[var(--primary)]" />
+            Configuración del sistema
+          </CardTitle>
+          <CardDescription>
+            Valores de plataforma persistidos en base de datos. Prioridad:{" "}
+            <strong>UI/BD → env → default</strong>. Versión {snapshot.version}.
+            Los ajustes de colas BullMQ requieren reiniciar el worker para aplicarse.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => void fetchSnapshot()} disabled={loading}>
+            <RefreshCw className="mr-1.5 h-4 w-4" />
+            Recargar
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleResetDraft}
+            disabled={changedKeys.length === 0}
+          >
+            <RotateCcw className="mr-1.5 h-4 w-4" />
+            Descartar cambios
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void handleSave()}
+            disabled={saving || changedKeys.length === 0}
+          >
+            {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
+            Guardar
+          </Button>
+          {success ? (
+            <span className="inline-flex items-center gap-1 text-sm text-emerald-600">
+              <Check className="h-4 w-4" />
+              {success}
+            </span>
+          ) : null}
+          {error ? <span className="text-sm text-red-500">{error}</span> : null}
+        </CardContent>
+      </Card>
+
+      {categoryTabs.length > 0 ? (
+        <UnderlineTabs
+          tabs={categoryTabs}
+          value={activeCategoryData?.id ?? categoryTabs[0]!.id}
+          onValueChange={setActiveCategory}
+          ariaLabel="Categorías de configuración del sistema"
+          idPrefix="system-config"
+        />
+      ) : null}
+
+      {activeCategoryData ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">{activeCategoryData.label}</CardTitle>
+            {activeCategoryData.description ? (
+              <CardDescription>{activeCategoryData.description}</CardDescription>
+            ) : null}
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {activeCategoryData.settings.map((setting) => (
+              <SystemConfigSettingField
+                key={setting.key}
+                setting={setting}
+                value={draft[setting.key] ?? ""}
+                changed={changedKeys.includes(setting.key)}
+                onChange={handleDraftChange}
+              />
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
+    </div>
+  );
+}

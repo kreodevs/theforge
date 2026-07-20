@@ -12,6 +12,7 @@ import { parseChatImageAttachments } from "../ai/utils/chat-image-attachments.ut
 import { formatDbgaStreamError } from "./utils/dbga-stream-error.util.js";
 import { ProjectGenerationGuardService } from "../projects/project-generation-guard.service.js";
 import { MddQueueService, type MddJobData, type MddJobMode } from "./mdd/mdd-queue.service.js";
+import { MddUpstreamSyncService } from "./mdd/mdd-upstream-sync.service.js";
 
 @Controller("ai-analysis")
 export class AiAnalysisController {
@@ -24,6 +25,7 @@ export class AiAnalysisController {
     private readonly prisma: PrismaService,
     private readonly generationGuard: ProjectGenerationGuardService,
     private readonly mddQueue: MddQueueService,
+    private readonly mddUpstreamSync: MddUpstreamSyncService,
   ) { }
 
   private registerMddStreamLock(projectId: string | undefined): void {
@@ -220,6 +222,20 @@ export class AiAnalysisController {
   }
 
   /**
+   * Analiza diff upstream (DBGA/BRD/Benchmark) vs baseline del MDD para sincronización incremental.
+   */
+  @Get("mdd/upstream-sync/analysis")
+  async getMddUpstreamSyncAnalysis(
+    @Query("projectId") projectId: string,
+    @Query("stageId") stageId?: string,
+  ) {
+    const id = typeof projectId === "string" ? projectId.trim() : "";
+    if (!id) throw new BadRequestException("projectId is required");
+    const sid = typeof stageId === "string" ? stageId.trim() || undefined : undefined;
+    return this.mddUpstreamSync.analyze(id, sid);
+  }
+
+  /**
    * Devuelve el threadId del flujo MDD para el proyecto, si existe.
    * El frontend lo usa para rehidratar managerThreadId al reabrir la app y seguir con resume.
    */
@@ -243,8 +259,8 @@ export class AiAnalysisController {
     const mode = body?.mode as MddJobMode | undefined;
     const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
     if (!projectId) throw new BadRequestException("projectId is required");
-    if (!mode || !["pipeline", "manager", "section"].includes(mode)) {
-      throw new BadRequestException("mode must be pipeline, manager, or section");
+    if (!mode || !["pipeline", "manager", "section", "upstream-sync"].includes(mode)) {
+      throw new BadRequestException("mode must be pipeline, manager, section, or upstream-sync");
     }
     const project = await this.prisma.project.findUnique({ where: { id: projectId } });
     if (project && (project as { projectType?: string }).projectType === "LEGACY") {
@@ -261,11 +277,28 @@ export class AiAnalysisController {
       gapReasons: Array.isArray(body?.gapReasons)
         ? body.gapReasons.filter((g): g is string => typeof g === "string" && g.trim().length > 0)
         : undefined,
+      upstreamSections: Array.isArray(body?.upstreamSections)
+        ? body.upstreamSections
+            .map((n) => Number(n))
+            .filter((n) => Number.isInteger(n) && n >= 1 && n <= 7)
+        : undefined,
+      upstreamChangeSummary:
+        typeof body?.upstreamChangeSummary === "string" ? body.upstreamChangeSummary.trim() : undefined,
+      forceFullPipeline: body?.forceFullPipeline === true,
     };
     if (mode === "section") {
       const section = data.section;
       if (!Number.isInteger(section) || section! < 1 || section! > 7) {
         throw new BadRequestException("section must be 1–7");
+      }
+    }
+    if (mode === "upstream-sync") {
+      const analysis = await this.mddUpstreamSync.analyze(projectId, data.stageId);
+      if (!analysis.canSync && !analysis.needsFullRegen) {
+        throw new BadRequestException("No hay cambios upstream pendientes de sincronizar en el MDD.");
+      }
+      if (analysis.needsFullRegen) {
+        throw new BadRequestException("Genera el MDD completo antes de sincronizar desde upstream.");
       }
     }
     const jobId = await this.mddQueue.enqueue(data);

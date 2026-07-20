@@ -1,4 +1,6 @@
-import { Controller, Get, Logger } from "@nestjs/common";
+import { Body, Controller, Get, Logger, Post } from "@nestjs/common";
+import { ProjectIntegrationService } from "../projects/integration/project-integration.service.js";
+import { ProjectAriadneLinkService } from "./project-ariadne-link.service.js";
 import { TheForgeService } from "./theforge.service.js";
 
 /**
@@ -9,7 +11,11 @@ import { TheForgeService } from "./theforge.service.js";
 export class TheForgeController {
   private readonly logger = new Logger(TheForgeController.name);
 
-  constructor(private readonly theforge: TheForgeService) {}
+  constructor(
+    private readonly theforge: TheForgeService,
+    private readonly ariadneLinks: ProjectAriadneLinkService,
+    private readonly integration: ProjectIntegrationService,
+  ) {}
 
   /**
    * Lista los proyectos indexados en TheForge (multi-root) y si el servicio está disponible.
@@ -38,5 +44,24 @@ export class TheForgeController {
       })),
       theforgeAvailable: true,
     };
+  }
+
+  /**
+   * Resuelve un proyecto Workshop desde identificadores Ariadne (MCP `resolve_forge_project_for_ariadne`).
+   * 404 si no hay match; 409 con `candidates[]` si hay ambigüedad.
+   */
+  @Post("resolve-forge-project-for-ariadne")
+  async resolveForgeProjectForAriadne(@Body() body: unknown) {
+    this.logger.log("[TheForge] POST /theforge/resolve-forge-project-for-ariadne");
+    return this.ariadneLinks.resolve(body);
+  }
+
+  /**
+   * Crea etapa LEGACY o importa pack en etapa existente (MCP `create_stage_from_ariadne_change_pack`).
+   */
+  @Post("create-stage-from-ariadne-change-pack")
+  async createStageFromAriadneChangePack(@Body() body: unknown) {
+    this.logger.log("[TheForge] POST /theforge/create-stage-from-ariadne-change-pack");
+    return this.integration.createStageFromAriadneChangePack(body);
   }
 }
