@@ -606,3 +606,16 @@ Fase 6 (legacy/MCP)
 | `section-structured.ts` | ✅ |
 | Barrel `mdd-sanitize.ts` &lt; 200 L | ✅ (~115 L) |
 | `internal.ts` &lt; 800 L | ✅ (~665 L) |
+
+**PR-2 (Fase 2 — en curso):** extracción modular de `createMddManagerNode`.
+
+| Paso | Estado |
+|------|--------|
+| `manager-constants.ts` | ✅ |
+| `manager-context.util.ts` | ✅ |
+| `manager-heuristics.ts` | ✅ |
+| `manager-plan.ts` (`buildMddPlan`, `expandSectionsToRun`, `generateMddPlanWithLLM`) | ✅ |
+| `manager-state-handlers.ts` | pendiente |
+| `manager-llm-turn.ts` | pendiente |
+| `manager-delegate.ts` | pendiente |
+| `mdd-manager.node.ts` &lt; 150 L (fachada) | pendiente (~1128 L) |

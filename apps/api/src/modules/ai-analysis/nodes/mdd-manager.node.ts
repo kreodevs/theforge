@@ -1,18 +1,16 @@
 import {
-  MDD_MAX_GOAL_OTHER_NODES_CHARS,
-  MDD_MAX_GOAL_SOFTWARE_ARCHITECT_CHARS,
   MDD_MAX_PLAN_DIRECTIVE_CHARS,
 } from "@theforge/shared-types";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { HumanMessage } from "@langchain/core/messages";
 import { Command, END, interrupt } from "@langchain/langgraph";
 import type { LivePrecisionCalculator } from "../estimation/estimation.types.js";
-import { MANAGER_MDD_PROMPT, MANAGER_PLAN_GENERATOR_PROMPT } from "../prompts/load-prompts.js";
+import { MANAGER_MDD_PROMPT } from "../prompts/load-prompts.js";
 import { mddStructuredToMarkdown } from "../render/mdd-structured-to-markdown.js";
 import type { MDDStateType } from "../state/index.js";
 import type { MddPlanStep } from "../state/mdd-state.schema.js";
 import { getLastSubstantiveUserMessage, getPlanDirective, getUserBrief } from "../utils/mdd-user-brief.js";
-import { extractFirstJsonObject, parseJsonOrThrow } from "../utils/parse-json.js";
+import { parseJsonOrThrow } from "../utils/parse-json.js";
 import { regenerateErDiagramFromSql } from "../utils/mdd-diagram-suggestions.js";
 import {
   ensureContratosSection,
@@ -35,6 +33,43 @@ import { runAgentToolsRound } from "../utils/mdd-agent-tools-invoke.js";
 import type { ProjectsService } from "../../projects/projects.service.js";
 import type { TheForgeService } from "../../theforge/theforge.service.js";
 import type { AiService } from "../../ai/ai.service.js";
+import {
+  AUDITOR_RETRY_THRESHOLD,
+  AUDIT_DOCUMENT_PATTERN,
+  ASK_WHAT_NEEDED_FOR_85_PATTERN,
+  FULL_MDD_REGENERATE_DIRECTIVE,
+  MAX_MDD_ITERATIONS,
+  PLAN_APPROVAL_CONFIRM_PATTERN,
+  QUALITY_THRESHOLD,
+  REFORMAT_DOCUMENT_PATTERN,
+  REGENERATE_ER_DIAGRAM_PATTERN,
+  USER_STOP_PATTERN,
+  WORK_WITH_WHAT_WE_HAVE_PATTERN,
+} from "./mdd-manager/manager-constants.js";
+import { hasRealBenchmark, LOG, mddHasContent } from "./mdd-manager/manager-context.util.js";
+import {
+  agentsForMddSection,
+  inferAgentsFromAuditorFeedback,
+  inferSectionsFromMessage,
+  looksLikeContextScopeOnlyRequest,
+  looksLikeExplicitMddModificationRequest,
+  looksLikeFullMddRegenerateRequest,
+  looksLikeInitialTopic,
+  looksLikeShortAgreement,
+  parseRegenerateSectionNumber,
+  replyClaimsDocumentWasModified,
+  wantsToContinueRefining,
+} from "./mdd-manager/manager-heuristics.js";
+import {
+  buildMddPlan,
+  expandSectionsToRun,
+  generateMddPlanWithLLM,
+  managerPlanStepWithTools,
+  NODE_TASK_DESCRIPTIONS,
+} from "./mdd-manager/manager-plan.js";
+
+export { expandSectionsToRun } from "./mdd-manager/manager-plan.js";
+export type { ExpandSectionsToRunOptions } from "./mdd-manager/manager-plan.js";
 
 /** Tools SDD + TheForge para `search_memory` (bindTools). */
 export type MddManagerToolDeps = {
@@ -76,456 +111,6 @@ const managerStructuredOutputSchema = z.object({
 });
 
 /** Orden de agentes en el pipeline (sin Clarifier). Tras software_architect viene format_after_architect (y crítico si aplica). */
-const PIPELINE_AGENTS = ["software_architect", "security", "integration"] as const;
-const PIPELINE_TAIL = ["format_after_redactor", "diagram_injector", "auditor"] as const;
-
-/** Infiere qué agentes toca la petición a partir del texto (modelo de datos, seguridad, integración). */
-function inferSectionsFromMessage(text: string): string[] {
-  const t = (text ?? "").toLowerCase();
-  const out: string[] = [];
-  const needsModelOrApi =
-    /\b(modelo\s+de\s+datos|modelo\s+datos|tablas?|entidades?|schema|sql|roles?|permisos?|aplicaciones?|§3|secci[oó]n\s*3)\b/i.test(t) ||
-    /\b(contratos?\s+api|endpoints?|§4|secci[oó]n\s*4)\b/i.test(t) ||
-    /\b(arquitectura|stack|frontend|kubernetes|kubernets|k8s|dokploy|coolify|despliegue|contenedores?|§2|secci[oó]n\s*2)\b/i.test(t) ||
-    /\b(denue|inegi|directorio\s+estad[ií]stico|app\/api\/denue|consulta\/buscar)\b/i.test(t) ||
-    /\b(base\s+de\s+datos|campo|columna|guardar(?:se)?\s+en|almacenar\s+en|jwt_token|refresh_token|token\s+en\s+bd)\b/i.test(t);
-  if (needsModelOrApi) out.push("software_architect");
-  if (
-    /\b(seguridad|mfa|2fa|autenticaci[oó]n|autorizaci[oó]n|rbac|§6|secci[oó]n\s*6|paso\s*6)\b/i.test(t) ||
-    /\b(?:regenera|actualiza|rehacer).*(?:paso|secci[oó]n)\s*6\b/i.test(t)
-  ) {
-    out.push("security");
-  }
-  if (
-    /\b(infraestructura|docker|kubernetes|kubernets|k8s|dokploy|coolify|despliegue|§7|secci[oó]n\s*7|§6\.3|6\.3)\b/i.test(t)
-  ) {
-    out.push("integration");
-  }
-  if (/\b(§6|secci[oó]n\s*6|6\.3)\b/i.test(t) && !out.includes("security")) {
-    out.push("security");
-  }
-  return [...new Set(out)];
-}
-
-/** Cambio concreto sobre stack/despliegue/infra (mensajes cortos que el LLM suele clasificar como reply). */
-function looksLikeExplicitMddModificationRequest(msg: string): boolean {
-  const t = (msg ?? "").trim();
-  if (t.length < 10) return false;
-  if (/^\s*¿/.test(t) && !/\b(cambiar|reemplaz|no\s+se\s+usar|usar[ií]a|sustitu|modific|actualiz)\b/i.test(t)) {
-    return false;
-  }
-  const staleDocComplaint =
-    /\b(no\s+veo\s+(los\s+)?cambios|sigue\s+(haciendo\s+)?menci|a[uú]n\s+(dice|menciona|tiene|aparece|contiene)|no\s+se\s+(reflej|aplic|guard)|documento\s+sigue|persiste|sigue\s+igual)\b/i.test(
-      t,
-    );
-  if (
-    staleDocComplaint &&
-    /\b(kubernetes|kubernets|k8s|dokploy|docker|despliegue|infra|§\s*[67]|secci[oó]n\s*[67]|6\.\d)\b/i.test(t)
-  ) {
-    return true;
-  }
-  const changeIntent =
-    /\b(no\s+se\s+usar[aá]?|usar[ií]a|usar[aá]?|cambiar|cambio|reemplaz|sustitu|modific|actualiz|eliminar|quitar|en\s+vez\s+de|en\s+lugar\s+de|pasar(?:emos)?\s+a|ajust)\b/i.test(
-      t,
-    );
-  const mddSurface =
-    /\b(kubernetes|kubernets|k8s|dokploy|coolify|docker|despliegue|deploy|infra|stack|§\s*[267]|secci[oó]n\s*[267]|6\.\d|7\.)\b/i.test(
-      t,
-    );
-  return changeIntent && mddSurface;
-}
-
-/** El Manager no debe afirmar cambios en el MDD con action reply (sin ejecutar agentes). */
-function replyClaimsDocumentWasModified(reply: string): boolean {
-  const r = (reply ?? "").trim();
-  if (r.length < 20) return false;
-  return /\b(ajust[eé]|ajustamos|elimin[eé]|eliminamos|actualic[eé]|modifiqu[eé]|reescrib[ií]|reescribimos|ya\s+no\s+(contiene|menciona|incluye)|sin\s+referencias|sin\s+menciones|qued[oó]\s+(ajustad|actualizad)|hemos\s+(ajustad|actualizad|eliminad|modificad)|no\s+(contiene|menciona|incluye)\s+(ya|más)|se\s+(ajust|actualiz|modific|elimin)[oa]|documento\s+(est[aá]|qued[oó]))\b/i.test(
-    r,
-  );
-}
-
-/** Descripción por nodo para el plan explícito (patrón Planner–Executor). */
-const NODE_TASK_DESCRIPTIONS: Record<string, string> = {
-  ask_initial_topic: "Preguntar tema o problema del MDD",
-  clarifier: "Clarificar contexto y alcance",
-  merge_section1_only: "Fusionar solo sección 1 (contexto y alcance)",
-  software_architect: "Definir schema SQL y contratos de API",
-  format_after_architect: "Formatear documento tras arquitecto",
-  security: "Definir arquitectura de seguridad",
-  integration: "Definir integraciones (API/Docker)",
-  format_after_redactor: "Formatear documento final",
-  diagram_injector: "Añadir diagramas Mermaid",
-  auditor: "Evaluar calidad del MDD",
-};
-
-/** 4.3 Least privilege: tools por nodo (solo nodos con tools en el grafo MDD). */
-const NODE_REQUIRED_TOOLS: Record<string, string[]> = {
-  software_architect: ["format_section3_endpoints"],
-  auditor: ["validate_mdd_structure", "validate_sql_syntax", "validate_json_payloads"],
-};
-
-function stepWithTools(node: string, stepId: string, taskDescription: string, goal?: string): MddPlanStep {
-  const required_tools = NODE_REQUIRED_TOOLS[node];
-  return {
-    step_id: stepId,
-    task_description: taskDescription,
-    node,
-    ...(goal ? { goal } : {}),
-    ...(required_tools?.length ? { required_tools } : {}),
-  };
-}
-
-/** Sufijo opcional para contextualizar solo el primer paso con la solicitud del usuario (máx. 50 chars). */
-function contextSuffix(userBrief: string | undefined): string {
-  if (!userBrief || userBrief.length < 10) return "";
-  const trimmed = userBrief.replace(/\s+/g, " ").trim().slice(0, 50);
-  return trimmed.length >= 10 ? ` (según: ${trimmed}${userBrief.length > 50 ? "…" : ""})` : "";
-}
-
-/** Indicios de requisito de modelo de datos (para goal explícito en paso software_architect). */
-const MODEL_REQUIREMENT_REGEX =
-  /\b(aplicaciones?|modelo\s+de\s+datos|roles?|permisos?|entidades?|tablas?|diagrama\s*(er|entidad|relaci[oó]n)?|relaci[oó]n(es)?|base\s+de\s+datos|campo|columna|guardar(?:se)?\s+en|jwt_token|refresh_token)\b/i;
-
-/** Indicios de petición que afectan §2 Arquitectura y Stack (stack tecnológico, frontend, backend, etc.). */
-const STACK_SECTION2_REGEX =
-  /\b(stack|arquitectura|frontend|backend|framework|tecnolog[ií]a|nestjs|react|vue|angular|node\.?js|postgresql|mysql|vite|webpack|docker|kubernetes|kubernets|k8s|dokploy|coolify|despliegue|contenedores?|secci[oó]n\s*2|§2)\b/i;
-
-function truncateForGoal(text: string, max: number): string {
-  const t = text.replace(/\s+/g, " ").trim();
-  return t.length > max ? t.slice(0, max) + "…" : t;
-}
-
-/**
- * Goal para un paso a partir del plan/directiva. El manager es la única fuente de instrucciones
- * explícitas para los agentes: aquí se construye el texto que recibe cada nodo (currentStepGoal).
- * Sin condicionales en los nodos: el Arquitecto solo obedece lo que viene en el goal/directive.
- */
-function goalForStep(node: string, directiveOrBrief: string | undefined): string | undefined {
-  if (!directiveOrBrief || directiveOrBrief.length < 10) return undefined;
-  const full = directiveOrBrief.replace(/\s+/g, " ").trim();
-  const shortGoal = truncateForGoal(full, MDD_MAX_GOAL_OTHER_NODES_CHARS);
-  const architectGoal = truncateForGoal(full, MDD_MAX_GOAL_SOFTWARE_ARCHITECT_CHARS);
-  if (architectGoal.length < 10) return undefined;
-  if (node === "clarifier") return `Aclarar contexto y alcance para: ${shortGoal}`;
-  if (node === "software_architect") {
-    const rolesPorApp =
-      /(?:roles?\s+por\s+aplicaci[oó]n|roles?\s+a\s+nivel\s+de\s+aplicaci[oó]n|permisos?\s+basados\s+en\s+roles?\s+definidos\s+por\s+cada\s+aplicaci[oó]n)/i.test(full);
-    if (rolesPorApp) {
-      return "Cambiar el modelo de datos para que incluya applications, application_roles por aplicación y user_application_roles. No copies §3 del borrador; genera §3 desde cero con esas tablas. Luego elabora §4 Contratos de API.";
-    }
-    if (directiveRequiresModelAndDiagramChange(full)) {
-      return `Requisito de seguridad/almacenamiento: ${architectGoal} Debes actualizar §3 Modelo de Datos (quitar de las tablas SQL cualquier campo que no deba persistirse, p. ej. jwt_token) y el diagrama entidad-relación para que coincida; y §4 Contratos de API (añadir o ajustar endpoints, p. ej. refresh_token). Revisa todo el SQL y el erDiagram y elimina columnas que el usuario indica que no deben guardarse en BD.`;
-    }
-    const affectsModel = MODEL_REQUIREMENT_REGEX.test(full);
-    const affectsSection2 = STACK_SECTION2_REGEX.test(full);
-    if (affectsModel && affectsSection2) {
-      return `Actualizar §2 Arquitectura y Stack y el modelo de datos según lo que pide el usuario. Elabora §2, §3 (SQL, diagrama ER), §4 y §5 según: ${architectGoal}`;
-    }
-    if (affectsSection2) {
-      return `Actualizar §2 Arquitectura y Stack según lo que pide el usuario. Elabora §2 (y §3, §4, §5 si aplica) según: ${architectGoal}`;
-    }
-    if (affectsModel) {
-      return `Cambiar el modelo de datos para que incluya lo que pide el usuario. Elabora §3 (SQL, diagrama ER) y §4 Contratos según: ${architectGoal}`;
-    }
-    return `Incorporar en §2, §3, §4 y §5 lo indicado: ${architectGoal}`;
-  }
-  if (node === "security") return `Aplicar en §6 Seguridad lo que corresponda de: ${shortGoal}`;
-  if (node === "integration") return `Aplicar en §7 Infraestructura lo que corresponda de: ${shortGoal}`;
-  return undefined;
-}
-
-/** Si la directiva pide no guardar algo en BD (ej. jwt_token) o eliminar un campo, el Arquitecto debe actualizar §3 y diagrama. */
-function directiveRequiresModelAndDiagramChange(directive: string): boolean {
-  const d = (directive ?? "").toLowerCase();
-  return (
-    /\bno\s+guardar(?:se)?\s+en\s+base\s+de\s+datos\b/i.test(d) ||
-    /\b(no\s+almacenar|eliminar\s+campo|quitar\s+campo|no\s+persistir|jwt_token|refresh_token)\b/i.test(d) ||
-    /\bcampo\s+\w+.*(?:no\s+debe|no\s+guardar|eliminar|quitar)\b/i.test(d)
-  );
-}
-
-/** Construye el plan estructurado (lista de pasos) al delegar; artefacto explícito para patrón Planner–Executor. */
-function buildMddPlan(
-  delegateTarget: "clarifier_only" | "full_pipeline" | "sections" | undefined,
-  sectionsToRun: string[] | undefined,
-  userBrief?: string,
-  planDirective?: string,
-): MddPlanStep[] {
-  // Preferir directiva acumulada (primera petición sustancial) sobre último mensaje corto ("no, ya haz la modificación").
-  const effectiveBrief =
-    planDirective?.trim() && planDirective.trim().length > 50 ? planDirective.trim() : (userBrief ?? "");
-  const suffix = contextSuffix(effectiveBrief);
-  const briefForGoal = effectiveBrief.replace(/\s+/g, " ").trim();
-  const step = (node: string, stepId: string, desc: string, isFirst: boolean): MddPlanStep =>
-    stepWithTools(node, stepId, isFirst ? desc + suffix : desc, goalForStep(node, briefForGoal));
-
-  if (delegateTarget === "clarifier_only") {
-    return [
-      step("clarifier", "1", NODE_TASK_DESCRIPTIONS.clarifier, true),
-      step("merge_section1_only", "2", NODE_TASK_DESCRIPTIONS.merge_section1_only, false),
-    ];
-  }
-  if (delegateTarget === "sections" && sectionsToRun?.length) {
-    return sectionsToRun.map((node, i) =>
-      step(node, String(i + 1), NODE_TASK_DESCRIPTIONS[node] ?? node, i === 0),
-    );
-  }
-  if (delegateTarget === "full_pipeline" || !delegateTarget) {
-    const fullSequence = ["clarifier", "software_architect", "format_after_architect", "security", "integration", "format_after_redactor", "diagram_injector", "auditor"];
-    return fullSequence.map((node, i) =>
-      step(node, String(i + 1), NODE_TASK_DESCRIPTIONS[node] ?? node, i === 0),
-    );
-  }
-  return [];
-}
-
-export type ExpandSectionsToRunOptions = {
-  /**
-   * full: format tras arquitecto + cola (format_after_redactor, diagram_injector, auditor).
-   * minimal: solo agentes de dominio (sin format ni cola) — planes acotados stack/infra.
-   */
-  tail?: "full" | "minimal";
-};
-
-/** Expande la lista de agentes solicitados a la secuencia real de nodos (incluye format entre escritores y tail). */
-export function expandSectionsToRun(
-  agentNames: string[],
-  options?: ExpandSectionsToRunOptions,
-): string[] {
-  const tailMode = options?.tail ?? "full";
-  const valid = new Set(agentNames.filter((a) => PIPELINE_AGENTS.includes(a as (typeof PIPELINE_AGENTS)[number])));
-  const out: string[] = [];
-  for (const node of PIPELINE_AGENTS) {
-    if (valid.has(node)) {
-      out.push(node);
-      if (tailMode === "full" && node === "software_architect") out.push("format_after_architect");
-    }
-  }
-  if (!out.length) return [];
-  if (tailMode === "minimal") return out;
-  return [...out, ...PIPELINE_TAIL];
-}
-
-const FULL_PIPELINE_NODES = ["clarifier", "software_architect", "format_after_architect", "security", "integration", "format_after_redactor", "diagram_injector", "auditor"] as const;
-const CLARIFIER_ONLY_NODES = ["clarifier", "merge_section1_only"] as const;
-
-const planGeneratorOutputSchema = z.object({
-  steps: z.array(
-    z.object({
-      step_id: z.string(),
-      node: z.string(),
-      task_description: z.string(),
-      goal: z.string().optional(),
-    }),
-  ),
-});
-
-/**
- * Genera el plan de ejecución (tareas explícitas por agente) interpretando la intención del usuario.
- * El Manager es quien interpreta y produce las instrucciones; los agentes solo ejecutan lo que viene en cada paso.
- * Si el LLM falla o devuelve un plan inválido, retorna [] para usar fallback buildMddPlan.
- */
-async function generateMddPlanWithLLM(
-  llm: BaseChatModel,
-  state: MDDStateType,
-  delegateTarget: "clarifier_only" | "full_pipeline" | "sections" | undefined,
-  sectionsToRun: string[] | undefined,
-): Promise<MddPlanStep[]> {
-  const allowedNodes =
-    delegateTarget === "clarifier_only"
-      ? new Set(CLARIFIER_ONLY_NODES)
-      : delegateTarget === "sections" && sectionsToRun?.length
-        ? new Set(sectionsToRun)
-        : new Set(FULL_PIPELINE_NODES);
-  const planDirective = getPlanDirective(state);
-  const userBrief = getUserBrief(state);
-  const context = [
-    "**Objetivo / petición del usuario:**",
-    planDirective?.trim() || userBrief?.trim() || state.lastUserMessage?.trim() || "(sin mensaje)",
-    state.clarifiedScope?.trim() ? `\n**Alcance clarificado:**\n${state.clarifiedScope.trim().slice(0, 2000)}` : "",
-    `\n**Tipo de delegación:** ${delegateTarget ?? "full_pipeline"}${sectionsToRun?.length ? `; agentes: ${sectionsToRun.join(", ")}` : ""}`,
-    "\n**Instrucción:** Genera un plan (lista de pasos) con `step_id`, `node`, `task_description` y `goal` para cada paso. Usa solo nodos de la lista permitida. El `goal` debe ser una instrucción concreta para ese agente (qué hacer en §3, §4, etc.). Responde solo con el JSON.",
-  ]
-    .filter(Boolean)
-    .join("\n");
-  const prompt = `${MANAGER_PLAN_GENERATOR_PROMPT}\n\n---\n${context}`;
-  try {
-    const response = await llm.invoke([new HumanMessage(prompt)]);
-    const text = typeof response.content === "string" ? response.content : "";
-    if (!text.trim()) return [];
-    const jsonStr = extractFirstJsonObject(text);
-    if (!jsonStr) return [];
-    const parsed = planGeneratorOutputSchema.safeParse(JSON.parse(jsonStr));
-    if (!parsed.success || !parsed.data.steps?.length) return [];
-    const steps: MddPlanStep[] = [];
-    let stepIndex = 0;
-    for (const s of parsed.data.steps) {
-      if (!allowedNodes.has(s.node)) continue;
-      stepIndex += 1;
-      const required_tools = NODE_REQUIRED_TOOLS[s.node];
-      steps.push({
-        step_id: String(stepIndex),
-        task_description: s.task_description.trim() || (NODE_TASK_DESCRIPTIONS[s.node] ?? s.node),
-        node: s.node,
-        ...(s.goal?.trim() ? { goal: s.goal.trim() } : {}),
-        ...(required_tools?.length ? { required_tools } : {}),
-      });
-    }
-    return steps;
-  } catch {
-    return [];
-  }
-}
-
-/** >= 85: done (cede intervención al usuario). < 85: Manager asigna gaps a agentes para corregir. */
-const QUALITY_THRESHOLD = 85;
-/** Nota < 9/10: por debajo de 90% el documento se devuelve al Clarifier con reporte de gaps para segunda iteración. */
-const AUDITOR_RETRY_THRESHOLD = 90;
-const MAX_MDD_ITERATIONS = 3;
-
-/** Usuario pide explícitamente detenerse: done solo si Auditor >= 85% o el usuario lo pide. */
-const USER_STOP_PATTERN = /^(parar|detener|stop|terminar|salir|no\s+continuar|basta|listo)$/i;
-
-/** Petición explícita de auditar el documento → disparar solo el Auditor (no todo el pipeline). */
-const AUDIT_DOCUMENT_PATTERN =
-  /audita\s+(el\s+)?(mdd|documento)|auditar\s+(el\s+)?(mdd|documento)/i;
-
-/** Usuario pide solo reformatear el documento (sin LLM). */
-const REFORMAT_DOCUMENT_PATTERN =
-  /reformatea\s+(el\s+)?(mdd|documento)|reformatear\s+(el\s+)?(mdd|documento)|reformateo\s+(del?\s+)?(mdd|documento)/i;
-
-/** Usuario pide regenerar el diagrama ER desde el SQL (solo sección 2, sin LLM). */
-const REGENERATE_ER_DIAGRAM_PATTERN =
-  /regenera(r)?\s+(el\s+)?(diagrama\s+)?(er|entidad-relación|entidad\s+relación)(\s+desde\s+el\s+sql)?|regenerar\s+(el\s+)?(diagrama\s+)?(er|entidad-relación)/i;
-
-/** Regeneración completa del MDD (constitución); plan aprobado + pipeline, no solo reply del Manager. */
-function looksLikeFullMddRegenerateRequest(msg: string): boolean {
-  const m = (msg ?? "").trim();
-  if (m.length < 10) return false;
-  if (REGENERATE_ER_DIAGRAM_PATTERN.test(m)) return false;
-  if (REFORMAT_DOCUMENT_PATTERN.test(m)) return false;
-  return (
-    /(?:re)?genera(?:rá|ra|r|mos|da)\s+(?:de\s+nuevo\s+)?(?:todo\s+)?(?:el\s+|la\s+)?(?:mdd|master\s+design\s+document(?:\s*\(mdd\))?|documento\s+(?:maestro|completo))\b/i.test(m) ||
-    /\b(?:vuelve|volver)\s+a\s+generar\s+(?:el\s+|la\s+)?(?:mdd|documento)\b/i.test(m) ||
-    /\brehacer\s+(?:el\s+|la\s+)?(?:mdd|documento)(?:\s+desde\s+cero)?\b/i.test(m) ||
-    /\bactualiza(?:r)?\s+(?:el\s+|la\s+)?(?:mdd|documento)\s+completo\b/i.test(m)
-  );
-}
-
-const FULL_MDD_REGENERATE_DIRECTIVE =
-  "ACCIÓN REQUERIDA — Regeneración completa del MDD (constitución vigente del repo):\n" +
-  "1) §2: solo stack que §1 sustente; bloque ```TechnicalMetadata``` **prohibido** en §2 (va en §3).\n" +
-  "2) §3: CREATE TABLE + erDiagram + ```TechnicalMetadata```; si hay GEOMETRY, extensiones `postgis` en el SQL; YAGNI.\n" +
-  "3) §4: **obligatorio §4.A** (API del producto: tabla + /health + endpoints alineados a §3). **§4.B** solo para integraciones externas (DENUE, etc.). No dejes §4 = solo terceros.\n" +
-  "4) §5: proporcional al alcance; sin checklist genérico interminable.\n" +
-  "5) Reescribe §2–§5 desde cero si el borrador contradice lo anterior; conserva §1 salvo que el usuario pida cambiar contexto.\n" +
-  "6) §6 y §7: placeholders breves para agentes posteriores si aún no aplican — sin fusionar `## 6. Seguridad` con `###`.";
-
-/**
- * Usuario pide explícitamente solo generar/regenerar contexto y alcance a partir del documento.
- * Si coincide, delegar solo al Clarifier y fusionar solo sección 1 (no ejecutar el resto del pipeline).
- */
-function looksLikeContextScopeOnlyRequest(msg: string): boolean {
-  const m = (msg ?? "").trim().toLowerCase();
-  if (m.length < 20) return false;
-  return (
-    /\b(no\s+)?generaste\s+(el\s+)?contexto\s+y\s+alcance\b/i.test(m) ||
-    /\b(genera|generar|generen)\s+(solo\s+)?(el\s+)?contexto\s+y\s+alcance\b/i.test(m) ||
-    /\bcontexto\s+y\s+alcance\b.*\b(a\s+partir\s+del\s+documento|del\s+documento|del\s+contenido)\b/i.test(m) ||
-    /\b(solo\s+)?contexto\s+y\s+alcance\b.*\b(genera|generar|debes\s+generarlo)\b/i.test(m)
-  );
-}
-
-/** Indica si el usuario pide seguir refinando (ej. "sigamos trabajando", "avanzar al 85%", "seguir con el MDD"). */
-const CONTINUE_REFINING_PATTERN =
-  /(?:sigamos?|seguir|continu(?:ar|amos|emos)|avancemos?|avanzar|trabaj(?:ar|emos)|(?:del?\s+)?\d+\s*%\s*(?:al\s+)?85|(?:al\s+)?85\s*%|mejor(?:ar|emos)|refin(?:ar|emos)|complet(?:ar|emos)|termin(?:ar|emos)\s+el\s+mdd)/i;
-
-/** Usuario pregunta qué falta o con qué continuar para llegar al 85% (debe responder con auditorFeedback). */
-const ASK_WHAT_NEEDED_FOR_85_PATTERN =
-  /(?:con\s+qué|qué\s+falta|qué\s+necesitamos?|qué\s+hay\s+que\s+hacer|qué\s+pendiente|cómo\s+llegamos?)\s+(?:para\s+)?(?:llegar\s+al\s+)?\d+\s*%?|\d+\s*%?\s*(?:con\s+qué|qué\s+falta|qué\s+continuamos)/i;
-
-/** Respuesta breve de acuerdo a una propuesta (ACID, MFA, etc.): delegar para que se incorpore al MDD, no responder "reply". */
-const SHORT_AGREEMENT_PATTERN =
-  /^(?:s[ií]|s[ií]\s*,\s*de\s*acuerdo|de\s*acuerdo|ok|vale|correcto|estoy\s+de\s+acuerdo|perfecto|acepto|aprobado|procedamos?|adelante|hazlo|incorpóralo|agreg(?:ar|uen)(?:lo)?|inclu(?:ir|yan)(?:lo)?)[\s.]*$/i;
-
-/** Confirmación de aprobación del plan (HITL 4.4): ejecutar el plan pendiente. */
-const PLAN_APPROVAL_CONFIRM_PATTERN =
-  /^(?:s[ií]|s[ií]\s*,\s*ejecuta|ejecuta(r)?\s*(el\s+)?plan|adelante|aprobado|ok|vale|procedamos?|adelante\s+con\s+el\s+plan|ejecutar)[\s.]*$/i;
-
-/** Petición explícita de regenerar una sección del MDD (p. ej. «regenera el paso 6»). */
-const REGENERATE_SECTION_N_PATTERN =
-  /\b(?:regenera(?:r)?|rehacer|actualiza(?:r)?|genera(?:r)?\s+de\s+nuevo)\s+(?:solo\s+)?(?:la\s+)?(?:secci[oó]n|paso)\s*([1-7])\b/i;
-
-function parseRegenerateSectionNumber(msg: string): number | null {
-  const m = (msg ?? "").trim().match(REGENERATE_SECTION_N_PATTERN);
-  if (!m) return null;
-  const n = parseInt(m[1]!, 10);
-  return n >= 1 && n <= 7 ? n : null;
-}
-
-/** Mapea número de sección MDD → agente del pipeline (§6 → security). */
-function agentsForMddSection(section: number): string[] {
-  if (section === 1) return ["clarifier"];
-  if (section >= 2 && section <= 5) return ["software_architect"];
-  if (section === 6) return ["security"];
-  if (section === 7) return ["integration"];
-  return [];
-}
-
-/** Usuario indica que ya no tiene más información o que trabaje con lo que hay → armar plan actual y mostrar para aprobar. */
-const WORK_WITH_WHAT_WE_HAVE_PATTERN =
-  /^(?:(?:no,?\s*)?ya\s*(?:trabaj(e|a)|haz\s*(?:la\s*)?modificaci[oó]n)|no\s*tengo\s*m[aá]s\s*(informaci[oó]n|info)?|ejecut(a|ar)|avanza|contin[uú]a|con\s+eso\s+est[aá]|listo\s*para\s*ejecut|haz\s*(la\s*)?modificaci[oó]n)[\s.]*$/i;
-
-function wantsToContinueRefining(msg: string): boolean {
-  return (msg ?? "").trim().length >= 10 && CONTINUE_REFINING_PATTERN.test(msg.trim());
-}
-
-function looksLikeShortAgreement(msg: string): boolean {
-  const t = (msg ?? "").trim();
-  return t.length <= 80 && SHORT_AGREEMENT_PATTERN.test(t);
-}
-
-/** Infiere qué agentes deben aplicar la propuesta a partir del feedback del auditor. */
-function inferAgentsFromAuditorFeedback(feedback: string): string[] {
-  const agents: string[] = [];
-  if (
-    /\b(modelo\s+de\s+datos|sql|tablas?|fk|clave\s+externa|integridad\s+referencial|references|create\s+table|entidades?)\b/i.test(feedback)
-  ) {
-    agents.push("software_architect");
-  }
-  if (STACK_SECTION2_REGEX.test(feedback)) {
-    if (!agents.includes("software_architect")) agents.push("software_architect");
-  }
-  if (/\b(seguridad|auth|mfa|contraseñas?|tokens?|rbac)\b/i.test(feedback)) {
-    agents.push("security");
-  }
-  if (/\b(infra|docker|kubernetes|despliegue|manifest|orquestación)\b/i.test(feedback)) {
-    agents.push("integration");
-  }
-  if (agents.length === 0) agents.push("software_architect");
-  return agents;
-}
-
-/** Indica si el mensaje ya describe tema/alcance del MDD (evitar preguntar "¿Sobre qué tema?"). */
-const INITIAL_TOPIC_PATTERN =
-  /(?:necesito|quiero|requiero|busco|dame|genera?|elabora?|crea?)\s+(?:el\s+)?mdd|mdd\s+de\s+un\s+sistema|sistema\s+(?:de\s+)?(?:auth|sso|login|mfa|totp|jwks|api)|autenticación|single\s*sign|mfa|totp|jwks|well-known|oauth|jwt/i;
-
-function looksLikeInitialTopic(msg: string): boolean {
-  const t = (msg ?? "").trim();
-  return t.length >= 25 && (INITIAL_TOPIC_PATTERN.test(t) || /\b(sistema|plataforma|aplicación|api|backend|servicio)\b.*\b(con|que|para|maneje)\b/i.test(t));
-}
-
-const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:Manager] ${msg}`, ...args);
-
-function hasRealBenchmark(state: MDDStateType): boolean {
-  const c = (state.dbgaContent ?? "").trim();
-  return c.length > 0 && !/^\(sin\s+benchmark|sin\s+contexto/i.test(c);
-}
-
-function mddHasContent(state: MDDStateType): boolean {
-  return (state.mddDraft?.trim()?.length ?? 0) > 100;
-}
-
 /**
  * Manager como Entrevistador de Estados (no pasapapeles).
  * Caso 1: Sin Bench ni MDD → no delegar; pregunta "¿Sobre qué tema o problema necesitas el MDD?"; al responder delega a agentes para v1; luego bucle refinamiento (preguntas del Clarifier).
@@ -1000,10 +585,10 @@ export function createMddManagerNode(
       }
       const fallbackPlan: MddPlanStep[] = useSections
         ? sectionsToRun!.map((node, i) =>
-            stepWithTools(node, String(i + 1), NODE_TASK_DESCRIPTIONS[node as keyof typeof NODE_TASK_DESCRIPTIONS] ?? node),
+            managerPlanStepWithTools(node, String(i + 1), NODE_TASK_DESCRIPTIONS[node as keyof typeof NODE_TASK_DESCRIPTIONS] ?? node),
           )
         : [
-            stepWithTools("clarifier", "1", NODE_TASK_DESCRIPTIONS.clarifier),
+            managerPlanStepWithTools("clarifier", "1", NODE_TASK_DESCRIPTIONS.clarifier),
             { step_id: "2", node: "merge_section1_only", task_description: NODE_TASK_DESCRIPTIONS.merge_section1_only },
           ];
       LOG("Refinamiento fallback → plan_approval delegate=%s", delegateTarget);
@@ -1062,7 +647,7 @@ export function createMddManagerNode(
     const trimmedMsg = userMessage?.trim() ?? "";
     if (hasDraft && trimmedMsg && AUDIT_DOCUMENT_PATTERN.test(trimmedMsg) && trimmedMsg.length <= 120) {
       const mddPlan: MddPlanStep[] = [
-        stepWithTools("auditor", "1", NODE_TASK_DESCRIPTIONS.auditor),
+        managerPlanStepWithTools("auditor", "1", NODE_TASK_DESCRIPTIONS.auditor),
       ];
       LOG("usuario pidió auditar → plan_approval (1 paso: auditor)");
       const impactSummary = await generateImpactAnalysis(llm, state, userMessage);
