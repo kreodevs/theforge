@@ -677,3 +677,10 @@ Fase 6 (legacy/MCP)
 | `views/workshop/WorkshopAuditModal.tsx` | ✅ |
 | `views/workshop/WorkshopModals.tsx` + `workshopModals.types.ts` | ✅ |
 | `WorkshopView.tsx` — modales extraídos (~4 885 L, −~250 vs incremento 3) | ✅ |
+
+### Fase 5 — Workshop frontend (incremento 5a)
+
+| Ítem | Estado |
+|------|--------|
+| `views/workshop/WorkshopStandardDocPanels.tsx` + types | ✅ |
+| Ocho entregables `StandardDocPanel` fuera de `WorkshopView` | ✅ |

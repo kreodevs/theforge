@@ -5,19 +5,13 @@ import {
   Download,
   FileText,
   Package,
-  LayoutTemplate,
   Loader2,
   MonitorSmartphone,
   RefreshCw,
-  FileCode,
-  GitBranch,
-  Server,
-  Target,
   Trash2,
   X,
   Play,
   ListOrdered,
-  ListTodo,
   Bot,
   ListChecks,
   ArrowDown,
@@ -93,6 +87,7 @@ import {
 import { WorkshopHeaderBar } from "./workshop/WorkshopHeaderBar";
 import { WorkshopDocPanel } from "./workshop/WorkshopDocPanel";
 import { WorkshopModals } from "./workshop/WorkshopModals";
+import { WorkshopStandardDocPanels } from "./workshop/WorkshopStandardDocPanels";
 import type { WorkshopDocToolbarProps } from "./workshop/workshopDocToolbar.types";
 import LegacyMcpDebugPanel from "../components/LegacyMcpDebugPanel/LegacyMcpDebugPanel";
 import { BrdStagePanel } from "../components/BrdStagePanel";
@@ -2850,6 +2845,192 @@ export default function WorkshopView({
     ],
   );
 
+  const workshopStandardDocPanelsProps = useMemo(
+    (): import("./workshop/workshopStandardDocPanels.types").WorkshopStandardDocPanelsProps => ({
+      centralPanel,
+      effectiveMddTrimmed,
+      loading,
+      loadingReason,
+      mddReviewing,
+      canGenerateFromCodebase,
+      activeStageId,
+      deliverablesReadOnly,
+      tasksPrerequisites,
+      apiBlueprintDmBlocked,
+      apiBlueprintBlockedHint,
+      docTs,
+      buildDocClarification,
+      onLegacyGenerate: (deliverable) => {
+        void legacyGenerateFromCodebaseDoc(
+          projectId,
+          deliverable,
+          activeStageId ?? undefined,
+        );
+      },
+      architecture: {
+        content: architectureContent,
+        onContentChange: setArchitectureContent,
+        onSave: () => void persistArchitectureContent(architectureContent ?? ""),
+        isDirty: architectureDirty,
+        viewMode: architectureViewMode,
+        onGenerate: () => generateArchitecture(projectId),
+        onBlur: handleArchitectureBlur,
+        timestampField: "architectureContent",
+        clarifyField: "architectureContent",
+      },
+      useCases: {
+        content: useCasesContent,
+        onContentChange: setUseCasesContent,
+        onSave: () => void persistUseCasesContent(useCasesContent ?? ""),
+        isDirty: useCasesDirty,
+        viewMode: useCasesViewMode,
+        onGenerate: () => generateUseCases(projectId),
+        onBlur: handleUseCasesBlur,
+        timestampField: "useCasesContent",
+        clarifyField: "useCasesContent",
+      },
+      userStories: {
+        content: userStoriesContent,
+        onContentChange: setUserStoriesContent,
+        onSave: () => void persistUserStoriesContent(userStoriesContent ?? ""),
+        isDirty: userStoriesDirty,
+        viewMode: userStoriesViewMode,
+        onGenerate: () => generateUserStories(projectId),
+        onBlur: handleUserStoriesBlur,
+        timestampField: "userStoriesContent",
+        clarifyField: "userStoriesContent",
+      },
+      blueprint: {
+        content: blueprintContent,
+        onContentChange: setBlueprintContent,
+        onSave: () => void persistBlueprintContent(blueprintContent ?? ""),
+        isDirty: blueprintDirty,
+        viewMode: blueprintViewMode,
+        onGenerate: () => generateBlueprint(projectId),
+        onBlur: handleBlueprintBlur,
+        timestampField: "blueprintContent",
+        clarifyField: "blueprintContent",
+      },
+      tasks: {
+        content: tasksContent,
+        onContentChange: setTasksContent,
+        onSave: () => void persistTasksContent(tasksContent ?? ""),
+        isDirty: tasksDirty,
+        viewMode: tasksViewMode,
+        onGenerate: () => generateTasks(projectId),
+        onBlur: handleTasksBlur,
+        timestampField: "tasksContent",
+        clarifyField: "tasksContent",
+      },
+      apiContracts: {
+        content: apiContractsContent,
+        onContentChange: setApiContractsContent,
+        onSave: () => void persistApiContractsContent(apiContractsContent ?? ""),
+        isDirty: apiContractsDirty,
+        viewMode: apiContractsViewMode,
+        onGenerate: () => generateApiContracts(projectId),
+        onBlur: handleApiContractsBlur,
+        timestampField: "apiContractsContent",
+        clarifyField: "apiContractsContent",
+      },
+      logicFlows: {
+        content: logicFlowsContent,
+        onContentChange: setLogicFlowsContent,
+        onSave: () => void persistLogicFlowsContent(logicFlowsContent ?? ""),
+        isDirty: logicFlowsDirty,
+        viewMode: logicFlowsViewMode,
+        onGenerate: () => generateLogicFlows(projectId),
+        onBlur: handleLogicFlowsBlur,
+        timestampField: "logicFlowsContent",
+        clarifyField: "logicFlowsContent",
+      },
+      infra: {
+        content: infraContent,
+        onContentChange: setInfraContent,
+        onSave: () => void persistInfraContent(infraContent ?? ""),
+        isDirty: infraDirty,
+        viewMode: infraViewMode,
+        onGenerate: () => generateInfra(projectId),
+        onBlur: handleInfraBlur,
+        timestampField: "infraContent",
+        clarifyField: "infraContent",
+      },
+    }),
+    [
+      centralPanel,
+      effectiveMddTrimmed,
+      loading,
+      loadingReason,
+      mddReviewing,
+      canGenerateFromCodebase,
+      activeStageId,
+      deliverablesReadOnly,
+      tasksPrerequisites,
+      apiBlueprintDmBlocked,
+      apiBlueprintBlockedHint,
+      docTs,
+      buildDocClarification,
+      legacyGenerateFromCodebaseDoc,
+      projectId,
+      architectureContent,
+      setArchitectureContent,
+      persistArchitectureContent,
+      architectureDirty,
+      architectureViewMode,
+      generateArchitecture,
+      handleArchitectureBlur,
+      useCasesContent,
+      setUseCasesContent,
+      persistUseCasesContent,
+      useCasesDirty,
+      useCasesViewMode,
+      generateUseCases,
+      handleUseCasesBlur,
+      userStoriesContent,
+      setUserStoriesContent,
+      persistUserStoriesContent,
+      userStoriesDirty,
+      userStoriesViewMode,
+      generateUserStories,
+      handleUserStoriesBlur,
+      blueprintContent,
+      setBlueprintContent,
+      persistBlueprintContent,
+      blueprintDirty,
+      blueprintViewMode,
+      generateBlueprint,
+      handleBlueprintBlur,
+      tasksContent,
+      setTasksContent,
+      persistTasksContent,
+      tasksDirty,
+      tasksViewMode,
+      generateTasks,
+      handleTasksBlur,
+      apiContractsContent,
+      setApiContractsContent,
+      persistApiContractsContent,
+      apiContractsDirty,
+      apiContractsViewMode,
+      generateApiContracts,
+      handleApiContractsBlur,
+      logicFlowsContent,
+      setLogicFlowsContent,
+      persistLogicFlowsContent,
+      logicFlowsDirty,
+      logicFlowsViewMode,
+      generateLogicFlows,
+      handleLogicFlowsBlur,
+      infraContent,
+      setInfraContent,
+      persistInfraContent,
+      infraDirty,
+      infraViewMode,
+      generateInfra,
+      handleInfraBlur,
+    ],
+  );
+
   const uxUiGuideDirty = (uxUiGuideContent ?? "") !== (project?.uxUiGuideContent ?? "");
 
   if (error && !project) {
@@ -4086,69 +4267,7 @@ export default function WorkshopView({
                 )}
               </>
             )}
-            {centralPanel === "architecture" && (
-              <StandardDocPanel
-                icon={Layers}
-                title="Arquitectura"
-                description="Módulos, datos, APIs y flujos del producto, alineados con el MDD y el codebase."
-                content={architectureContent}
-                onContentChange={(v) => setArchitectureContent(v)}
-                onSave={() => void persistArchitectureContent(architectureContent ?? "")}
-                isDirty={architectureDirty}
-                viewMode={architectureViewMode}
-                onGenerate={() => generateArchitecture(projectId)}
-                canGenerate={!!effectiveMddTrimmed}
-                isLoading={loading}
-                placeholder="# Arquitectura del sistema\n\nMódulos, datos, APIs y flujos del producto (según MDD y codebase)..."
-                onBlur={handleArchitectureBlur}
-                documentTimestamps={docTs("architectureContent")}
-                clarification={buildDocClarification("architectureContent", (c) =>
-                  setArchitectureContent(c),
-                )}
-              />
-            )}
-            {centralPanel === "use-cases" && (
-              <StandardDocPanel
-                icon={Target}
-                title="Casos de uso"
-                description="Escenarios de interacción y flujos transaccionales derivados del MDD."
-                content={useCasesContent}
-                onContentChange={(v) => setUseCasesContent(v)}
-                onSave={() => void persistUseCasesContent(useCasesContent ?? "")}
-                isDirty={useCasesDirty}
-                viewMode={useCasesViewMode}
-                onGenerate={() => generateUseCases(projectId)}
-                canGenerate={!!effectiveMddTrimmed}
-                isLoading={loading}
-                placeholder="# Casos de Uso\n\nDescribe los escenarios de interacción y flujos transaccionales..."
-                onBlur={handleUseCasesBlur}
-                documentTimestamps={docTs("useCasesContent")}
-                clarification={buildDocClarification("useCasesContent", (c) =>
-                  setUseCasesContent(c),
-                )}
-              />
-            )}
-            {centralPanel === "user-stories" && (
-              <StandardDocPanel
-                icon={MessageSquare}
-                title="Historias de usuario"
-                description="Requisitos en formato ágil (Como / Quiero / Para) a partir del MDD."
-                content={userStoriesContent}
-                onContentChange={(v) => setUserStoriesContent(v)}
-                onSave={() => void persistUserStoriesContent(userStoriesContent ?? "")}
-                isDirty={userStoriesDirty}
-                viewMode={userStoriesViewMode}
-                onGenerate={() => generateUserStories(projectId)}
-                canGenerate={!!effectiveMddTrimmed}
-                isLoading={loading}
-                placeholder="# Historias de Usuario\n\nDefine los requisitos en formato Agile (Como... quiero... para...)..."
-                onBlur={handleUserStoriesBlur}
-                documentTimestamps={docTs("userStoriesContent")}
-                clarification={buildDocClarification("userStoriesContent", (c) =>
-                  setUserStoriesContent(c),
-                )}
-              />
-            )}
+            <WorkshopStandardDocPanels {...workshopStandardDocPanelsProps} />
             {centralPanel === "ux-ui-guide" && (
               <ErrorBoundary>
               <UxUiGuidePanel
@@ -4348,54 +4467,6 @@ export default function WorkshopView({
               </div>
             )}
             {/* to-be tab removed — secciones To-Be y As-Is eliminadas del sistema */}
-            {centralPanel === "blueprint" && (
-              <StandardDocPanel
-                icon={LayoutTemplate}
-                title="Blueprint"
-                description="Plan técnico derivado del MDD. Puedes regenerarlo con IA o editar el markdown en modo fuente."
-                content={blueprintContent}
-                onContentChange={(v) => setBlueprintContent(v)}
-                onSave={() => void persistBlueprintContent(blueprintContent ?? "")}
-                isDirty={blueprintDirty}
-                viewMode={blueprintViewMode}
-                onGenerate={() => generateBlueprint(projectId)}
-                canGenerate={!!effectiveMddTrimmed}
-                isLoading={loading || mddReviewing}
-                placeholder="# Blueprint\n\nEl contenido del blueprint se genera desde el MDD o puedes escribirlo manualmente..."
-                onBlur={handleBlueprintBlur}
-                legacyGenerateLabel={canGenerateFromCodebase ? "Generar Blueprint desde MDD Inicial" : undefined}
-                onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "blueprint", activeStageId ?? undefined) : undefined}
-                legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
-                readOnly={deliverablesReadOnly}
-                documentTimestamps={docTs("blueprintContent")}
-                clarification={buildDocClarification("blueprintContent", (c) =>
-                  setBlueprintContent(c),
-                )}
-              />
-            )}
-            {centralPanel === "tasks" && (
-              <StandardDocPanel
-                icon={ListTodo}
-                title="Task Breakdown"
-                description={tasksPrerequisites.hint}
-                content={tasksContent}
-                onContentChange={(v) => setTasksContent(v)}
-                onSave={() => void persistTasksContent(tasksContent ?? "")}
-                isDirty={tasksDirty}
-                viewMode={tasksViewMode}
-                onGenerate={() => generateTasks(projectId)}
-                canGenerate={tasksPrerequisites.ready}
-                isLoading={loading}
-                generateLabel="Generar Tasks (MDD + Spec + Blueprint + API + pantallas)"
-                placeholder="# Task Breakdown\n\nUser Story: US-001 …\n\n- [ ] Tarea…"
-                onBlur={handleTasksBlur}
-                legacyGenerateLabel={canGenerateFromCodebase ? "Generar Tasks desde MDD Inicial" : undefined}
-                onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "tasks", activeStageId ?? undefined) : undefined}
-                legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
-                documentTimestamps={docTs("tasksContent")}
-                clarification={buildDocClarification("tasksContent", (c) => setTasksContent(c))}
-              />
-            )}
             {centralPanel === "agent-governance" && (
               agentGovernanceGenerating ? (
                 <div className="flex min-h-[min(420px,60vh)] flex-1 flex-col items-center justify-center px-4 py-10 sm:px-8">
@@ -4429,78 +4500,6 @@ export default function WorkshopView({
                   generateButtonLabel="Generar gobernanza de agentes desde MDD"
                 />
               )
-            )}
-            {centralPanel === "api-contracts" && (
-              <StandardDocPanel
-                icon={FileCode}
-                title="Contratos de API"
-                description="OpenAPI/Swagger desde el MDD (vista previa antes de guardar)."
-                content={apiContractsContent}
-                onContentChange={(v) => setApiContractsContent(v)}
-                onSave={() => void persistApiContractsContent(apiContractsContent ?? "")}
-                isDirty={apiContractsDirty}
-                viewMode={apiContractsViewMode}
-                onGenerate={() => generateApiContracts(projectId)}
-                canGenerate={!!effectiveMddTrimmed}
-                isLoading={loading || mddReviewing}
-                placeholder="# Contratos de API (OpenAPI/Swagger)\n\n..."
-                onBlur={handleApiContractsBlur}
-                generateBlocked={apiBlueprintDmBlocked}
-                generateBlockedReason={apiBlueprintBlockedHint}
-                legacyGenerateLabel={canGenerateFromCodebase ? "Generar API Contracts desde MDD Inicial" : undefined}
-                onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "api-contracts", activeStageId ?? undefined) : undefined}
-                legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
-                readOnly={deliverablesReadOnly}
-                documentTimestamps={docTs("apiContractsContent")}
-                clarification={buildDocClarification("apiContractsContent", (c) =>
-                  setApiContractsContent(c),
-                )}
-              />
-            )}
-            {centralPanel === "logic-flows" && (
-              <StandardDocPanel
-                icon={GitBranch}
-                title="Casos de Uso y Flujos"
-                description="Diagramas de secuencia, MFA y reglas de validación desde el MDD."
-                content={logicFlowsContent}
-                onContentChange={(v) => setLogicFlowsContent(v)}
-                onSave={() => void persistLogicFlowsContent(logicFlowsContent ?? "")}
-                isDirty={logicFlowsDirty}
-                viewMode={logicFlowsViewMode}
-                onGenerate={() => generateLogicFlows(projectId)}
-                canGenerate={!!effectiveMddTrimmed}
-                isLoading={loading || mddReviewing}
-                placeholder="# Casos de Uso y Flujos de Lógica\n\n..."
-                onBlur={handleLogicFlowsBlur}
-                readOnly={deliverablesReadOnly}
-                documentTimestamps={docTs("logicFlowsContent")}
-                clarification={buildDocClarification("logicFlowsContent", (c) =>
-                  setLogicFlowsContent(c),
-                )}
-              />
-            )}
-            {centralPanel === "infra" && (
-              <StandardDocPanel
-                icon={Server}
-                title="Infraestructura y Despliegue"
-                description="Dockerfile, docker-compose desde el MDD (vista previa antes de guardar)."
-                content={infraContent}
-                onContentChange={(v) => setInfraContent(v)}
-                onSave={() => void persistInfraContent(infraContent ?? "")}
-                isDirty={infraDirty}
-                viewMode={infraViewMode}
-                onGenerate={() => generateInfra(projectId)}
-                canGenerate={!!effectiveMddTrimmed}
-                isLoading={loading || mddReviewing}
-                placeholder="# Infraestructura\n\n..."
-                onBlur={handleInfraBlur}
-                legacyGenerateLabel={canGenerateFromCodebase ? "Generar Infra desde MDD Inicial" : undefined}
-                onLegacyGenerate={canGenerateFromCodebase ? () => legacyGenerateFromCodebaseDoc(projectId, "infra", activeStageId ?? undefined) : undefined}
-                legacyGenerateLoading={loading && loadingReason === "legacy-brd-suggest"}
-                readOnly={deliverablesReadOnly}
-                documentTimestamps={docTs("infraContent")}
-                clarification={buildDocClarification("infraContent", (c) => setInfraContent(c))}
-              />
             )}
             {centralPanel === "adrs" && (
               <AdrsPanel
