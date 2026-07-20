@@ -1,16 +1,12 @@
-import { useCallback, useEffect, useRef, useState, useMemo, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import {
   Printer,
   Download,
-  FileText,
-  Package,
   Loader2,
   RefreshCw,
   X,
   ListOrdered,
   ListChecks,
-  ArrowDown,
-  ArrowUp,
   HelpCircle,
   Wand2,
   Sparkles,
@@ -60,9 +56,7 @@ import {
 } from "../hooks/useStageDeliverableView";
 import { replaceYamlFrontMatter } from "../components/DesignMdPreview";
 import {
-  getWorkshopDocToolbarActiveViewMode,
   resolveWorkshopDocEditToolbarToggle,
-  workshopDocSourceTogglePresentation,
   type WorkshopComplexityTier,
 } from "../utils/workshopDocToolbar";
 import { WorkshopHeaderBar } from "./workshop/WorkshopHeaderBar";
@@ -71,6 +65,13 @@ import { WorkshopModals } from "./workshop/WorkshopModals";
 import { WorkshopDocPanelContent } from "./workshop/WorkshopDocPanelContent";
 import { useWorkshopDocPanelProps } from "./workshop/useWorkshopDocPanelProps";
 import { WorkshopMetricsColumn } from "./workshop/WorkshopMetricsColumn";
+import { WorkshopLayoutShell } from "./workshop/WorkshopLayoutShell";
+import { WorkshopChatColumn } from "./workshop/WorkshopChatColumn";
+import { WorkshopMobileNav } from "./workshop/WorkshopMobileNav";
+import { WorkshopMobileFabs } from "./workshop/WorkshopMobileFabs";
+import { useLgChatPanel } from "./workshop/useLgChatPanel";
+import { useWorkshopMobileScrollFab } from "./workshop/useWorkshopMobileScrollFab";
+import type { WorkshopMobileColumn } from "./workshop/workshopMetricsColumn.types";
 import { HANDOFF_GATE_STORAGE_KEY } from "./workshop/workshopLegacyPanels.types";
 import type { WorkshopDocToolbarProps } from "./workshop/workshopDocToolbar.types";
 import { type DocumentsForZip } from "../utils/downloadDocumentsZip";
@@ -103,29 +104,10 @@ import {
 } from "../utils/mddSectionRegen";
 import { useAutoSaveContent } from "../hooks/useAutoSaveContent";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "../components/ui";
-import {
   LEGACY_CODEBASE_DOC_STEPS,
   LEGACY_DELIVERABLES_STEPS,
   LEGACY_MDD_STEPS,
 } from "../constants/legacy-workshop-loading-steps";
-
-/** Desktop workshop: chat column width (px). Al soltar el resize por debajo del mínimo, el panel se colapsa al rail. */
-const LG_CHAT_PANEL_WIDTH_MIN_PX = 260;
-const LG_CHAT_PANEL_WIDTH_MAX_PX = 420;
-const LG_CHAT_PANEL_DEFAULT_PX = 320;
-
-function clampLgChatPanelWidthPx(value: number): number {
-  if (!Number.isFinite(value)) return LG_CHAT_PANEL_DEFAULT_PX;
-  return Math.min(
-    LG_CHAT_PANEL_WIDTH_MAX_PX,
-    Math.max(LG_CHAT_PANEL_WIDTH_MIN_PX, Math.round(value)),
-  );
-}
 
 interface WorkshopViewProps {
   projectId: string;
@@ -142,23 +124,6 @@ interface WorkshopViewProps {
     total?: number;
     message?: string;
   } | null;
-}
-
-/** First vertically scrollable region under `root` (BFS) for mobile scroll FAB targeting. */
-function findVerticalScrollHost(root: HTMLElement | null): HTMLElement | null {
-  if (!root) return null;
-  const queue: HTMLElement[] = [root];
-  while (queue.length > 0) {
-    const el = queue.shift()!;
-    const st = getComputedStyle(el);
-    const canY = st.overflowY === "auto" || st.overflowY === "scroll";
-    if (canY && el.scrollHeight > el.clientHeight + 1) return el;
-    for (let i = 0; i < el.children.length; i++) {
-      const ch = el.children[i];
-      if (ch instanceof HTMLElement) queue.push(ch);
-    }
-  }
-  return null;
 }
 
 export default function WorkshopView({
@@ -1214,7 +1179,6 @@ export default function WorkshopView({
     setCentralPanel,
   ]);
   /** Por debajo de `lg`: una columna con control de Chat / Documentos / Semáforo. */
-  type WorkshopMobileColumn = "chat" | "workspace" | "metrics";
   const [mobileWorkshopColumn, setMobileWorkshopColumn] = useState<WorkshopMobileColumn>("workspace");
 
   /** Tras vaciar el MDD: vista por defecto (previsualización con «Sin contenido aún.»), no el editor. */
@@ -1240,104 +1204,16 @@ export default function WorkshopView({
   const workspaceScrollRef = useRef<HTMLDivElement>(null);
   const chatSectionRef = useRef<HTMLElement>(null);
   const metricsSectionRef = useRef<HTMLElement>(null);
-  const [scrollFabDirection, setScrollFabDirection] = useState<"down" | "up">("down");
-  /** Mobile-only: show scroll FAB only when the active column has overflow (chat / docs / estado). */
-  const [mobileScrollFabScrollable, setMobileScrollFabScrollable] = useState(false);
 
-  const getActiveScrollContainer = useCallback((): HTMLElement | null => {
-    if (mobileWorkshopColumn === "workspace") return findVerticalScrollHost(workspaceScrollRef.current);
-    if (mobileWorkshopColumn === "chat") return findVerticalScrollHost(chatSectionRef.current);
-    if (mobileWorkshopColumn === "metrics") return findVerticalScrollHost(metricsSectionRef.current);
-    return null;
-  }, [mobileWorkshopColumn]);
-
-  useEffect(() => {
-    if (isLgLayout) {
-      setMobileScrollFabScrollable(false);
-      setScrollFabDirection("down");
-      return;
-    }
-
-    let detached = false;
-    let rafId = 0;
-    let retryTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
-    let container: HTMLElement | null = null;
-    let ro: ResizeObserver | null = null;
-    let mo: MutationObserver | null = null;
-
-    const update = () => {
-      if (detached) return;
-      const c = getActiveScrollContainer();
-      if (!c) {
-        setMobileScrollFabScrollable(false);
-        setScrollFabDirection("down");
-        return;
-      }
-      const scrollable = c.scrollHeight > c.clientHeight + 1;
-      setMobileScrollFabScrollable(scrollable);
-      if (scrollable) {
-        const atBottom = c.scrollTop + c.clientHeight >= c.scrollHeight - 20;
-        setScrollFabDirection(atBottom ? "up" : "down");
-      } else {
-        setScrollFabDirection("down");
-      }
-    };
-
-    const scheduleUpdate = () => {
-      cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(update);
-    };
-
-    function cleanupContainer() {
-      window.removeEventListener("resize", scheduleUpdate);
-      if (!container) return;
-      container.removeEventListener("scroll", scheduleUpdate);
-      ro?.disconnect();
-      ro = null;
-      mo?.disconnect();
-      mo = null;
-      container = null;
-    }
-
-    function bindToCurrent(): boolean {
-      cleanupContainer();
-      const c = getActiveScrollContainer();
-      if (!c) {
-        setMobileScrollFabScrollable(false);
-        setScrollFabDirection("down");
-        return false;
-      }
-      container = c;
-      scheduleUpdate();
-      c.addEventListener("scroll", scheduleUpdate, { passive: true });
-      window.addEventListener("resize", scheduleUpdate, { passive: true });
-      ro = new ResizeObserver(scheduleUpdate);
-      ro.observe(c);
-      for (const ch of Array.from(c.children)) {
-        if (ch instanceof HTMLElement) ro.observe(ch);
-      }
-      mo = new MutationObserver(scheduleUpdate);
-      mo.observe(c, { childList: true, subtree: true, characterData: true });
-      return true;
-    }
-
-    function tryBind(attempt: number) {
-      if (detached) return;
-      if (bindToCurrent()) return;
-      if (attempt > 30) return;
-      if (retryTimer !== null) globalThis.clearTimeout(retryTimer);
-      retryTimer = globalThis.setTimeout(() => tryBind(attempt + 1), 50);
-    }
-
-    tryBind(0);
-
-    return () => {
-      detached = true;
-      cancelAnimationFrame(rafId);
-      if (retryTimer !== null) globalThis.clearTimeout(retryTimer);
-      cleanupContainer();
-    };
-  }, [isLgLayout, mobileWorkshopColumn, getActiveScrollContainer, centralPanel]);
+  const { mobileScrollFabScrollable, scrollFabDirection, getActiveScrollContainer } =
+    useWorkshopMobileScrollFab({
+      isLgLayout,
+      mobileWorkshopColumn,
+      centralPanel,
+      workspaceScrollRef,
+      chatSectionRef,
+      metricsSectionRef,
+    });
 
   useEffect(() => {
     if (typeof globalThis.matchMedia !== "function") return;
@@ -1495,160 +1371,16 @@ export default function WorkshopView({
     [projectId, generateAem],
   );
 
-  /** Desktop: chat column collapsed + width (resize). */
-  const lgChatCollapsedStorageKey = projectId
-    ? `theforge:workshop:lg-chat-collapsed:${projectId}`
-    : null;
-  const lgChatWidthStorageKey = projectId
-    ? `theforge:workshop:lg-chat-width-px:${projectId}`
-    : null;
-  const [lgWorkshopChatCollapsed, setLgWorkshopChatCollapsedState] = useState(false);
-  const [lgChatPanelWidthPx, setLgChatPanelWidthPx] = useState(LG_CHAT_PANEL_DEFAULT_PX);
-  const [lgChatPanelResizing, setLgChatPanelResizing] = useState(false);
-  const lgChatResizeDragRef = useRef<{
-    pointerId: number;
-    startX: number;
-    startWidth: number;
-  } | null>(null);
-  const lgChatResizeLastPreviewRef = useRef<number>(LG_CHAT_PANEL_DEFAULT_PX);
-
-  useEffect(() => {
-    if (!projectId) return;
-    try {
-      const collapsed =
-        lgChatCollapsedStorageKey != null &&
-        globalThis.localStorage?.getItem(lgChatCollapsedStorageKey) === "1";
-      let width = LG_CHAT_PANEL_DEFAULT_PX;
-      const raw =
-        lgChatWidthStorageKey != null ? globalThis.localStorage?.getItem(lgChatWidthStorageKey) : null;
-      if (raw != null && raw !== "") {
-        const parsed = Number.parseInt(raw, 10);
-        if (!Number.isNaN(parsed)) width = clampLgChatPanelWidthPx(parsed);
-      }
-      setLgWorkshopChatCollapsedState(collapsed);
-      setLgChatPanelWidthPx(width);
-    } catch {
-      setLgWorkshopChatCollapsedState(false);
-      setLgChatPanelWidthPx(LG_CHAT_PANEL_DEFAULT_PX);
-    }
-  }, [projectId, lgChatCollapsedStorageKey, lgChatWidthStorageKey]);
-
-  const handleSetLgWorkshopChatCollapsed = useCallback(
-    (collapsed: boolean, opts?: { persistOpenWidthPx?: number }) => {
-      if (collapsed) {
-        const toSave =
-          opts?.persistOpenWidthPx != null
-            ? clampLgChatPanelWidthPx(opts.persistOpenWidthPx)
-            : clampLgChatPanelWidthPx(lgChatPanelWidthPx);
-        try {
-          if (lgChatWidthStorageKey) globalThis.localStorage?.setItem(lgChatWidthStorageKey, String(toSave));
-        } catch {
-          /* localStorage unavailable */
-        }
-      } else {
-        let restore = LG_CHAT_PANEL_DEFAULT_PX;
-        try {
-          const raw =
-            lgChatWidthStorageKey != null ? globalThis.localStorage?.getItem(lgChatWidthStorageKey) : null;
-          if (raw != null && raw !== "") {
-            const parsed = Number.parseInt(raw, 10);
-            if (!Number.isNaN(parsed)) restore = clampLgChatPanelWidthPx(parsed);
-          }
-        } catch {
-          /* */
-        }
-        setLgChatPanelWidthPx(restore);
-      }
-
-      setLgWorkshopChatCollapsedState(collapsed);
-
-      if (!lgChatCollapsedStorageKey) return;
-      try {
-        if (collapsed) globalThis.localStorage?.setItem(lgChatCollapsedStorageKey, "1");
-        else globalThis.localStorage?.removeItem(lgChatCollapsedStorageKey);
-      } catch {
-        /* localStorage unavailable */
-      }
-    },
-    [lgChatCollapsedStorageKey, lgChatWidthStorageKey, lgChatPanelWidthPx],
-  );
-
-  const handleLgChatResizePointerDown = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (!isLgLayout || lgWorkshopChatCollapsed) return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      lgChatResizeDragRef.current = {
-        pointerId: event.pointerId,
-        startX: event.clientX,
-        startWidth: lgChatPanelWidthPx,
-      };
-      lgChatResizeLastPreviewRef.current = lgChatPanelWidthPx;
-      setLgChatPanelResizing(true);
-    },
-    [isLgLayout, lgWorkshopChatCollapsed, lgChatPanelWidthPx],
-  );
-
-  const handleLgChatResizePointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = lgChatResizeDragRef.current;
-    if (!drag || event.pointerId !== drag.pointerId) return;
-    const next = Math.round(drag.startWidth + (event.clientX - drag.startX));
-    const preview = Math.min(LG_CHAT_PANEL_WIDTH_MAX_PX, Math.max(72, next));
-    lgChatResizeLastPreviewRef.current = preview;
-    setLgChatPanelWidthPx(preview);
-  }, []);
-
-  const finishLgChatResizePointer = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      const drag = lgChatResizeDragRef.current;
-      if (!drag || event.pointerId !== drag.pointerId) return;
-      try {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      } catch {
-        /* not captured */
-      }
-      lgChatResizeDragRef.current = null;
-      setLgChatPanelResizing(false);
-
-      const raw = Math.round(drag.startWidth + (event.clientX - drag.startX));
-      const preview = Math.min(LG_CHAT_PANEL_WIDTH_MAX_PX, Math.max(72, raw));
-
-      if (preview < LG_CHAT_PANEL_WIDTH_MIN_PX) {
-        handleSetLgWorkshopChatCollapsed(true, { persistOpenWidthPx: drag.startWidth });
-        return;
-      }
-
-      const clamped = clampLgChatPanelWidthPx(preview);
-      setLgChatPanelWidthPx(clamped);
-      try {
-        if (lgChatWidthStorageKey) globalThis.localStorage?.setItem(lgChatWidthStorageKey, String(clamped));
-      } catch {
-        /* localStorage unavailable */
-      }
-    },
-    [handleSetLgWorkshopChatCollapsed, lgChatWidthStorageKey],
-  );
-
-  const handleLgChatResizeLostPointerCapture = useCallback(() => {
-    const drag = lgChatResizeDragRef.current;
-    if (!drag) return;
-    const startWidthBeforeDrag = drag.startWidth;
-    lgChatResizeDragRef.current = null;
-    setLgChatPanelResizing(false);
-    const preview = lgChatResizeLastPreviewRef.current;
-    if (preview < LG_CHAT_PANEL_WIDTH_MIN_PX) {
-      handleSetLgWorkshopChatCollapsed(true, { persistOpenWidthPx: startWidthBeforeDrag });
-      return;
-    }
-    const clamped = clampLgChatPanelWidthPx(preview);
-    setLgChatPanelWidthPx(clamped);
-    try {
-      if (lgChatWidthStorageKey) globalThis.localStorage?.setItem(lgChatWidthStorageKey, String(clamped));
-    } catch {
-      /* localStorage unavailable */
-    }
-  }, [handleSetLgWorkshopChatCollapsed, lgChatWidthStorageKey]);
+  const {
+    lgWorkshopChatCollapsed,
+    lgChatPanelWidthPx,
+    lgChatPanelResizing,
+    handleSetLgWorkshopChatCollapsed,
+    handleLgChatResizePointerDown,
+    handleLgChatResizePointerMove,
+    finishLgChatResizePointer,
+    handleLgChatResizeLostPointerCapture,
+  } = useLgChatPanel(projectId, isLgLayout);
 
   const handleGenerateDeliverables = useCallback(async () => {
     if (!projectId || !canGenerate || cascadeRunning) return;
@@ -3157,38 +2889,21 @@ export default function WorkshopView({
         ) : null}
       </div>
 
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:flex lg:flex-row lg:items-stretch lg:min-h-0">
-        {/* Columna A: Chat + rail “mostrar” (solo lg; ancho animado) */}
-        <div
-          className={cn(
-            "flex min-h-0 shrink-0 flex-col lg:flex-row lg:items-stretch lg:min-h-0 lg:overflow-visible",
-            mobileWorkshopColumn === "chat" ? "flex min-h-0 flex-1" : "hidden lg:flex lg:min-h-0 lg:self-stretch",
-          )}
-        >
-          <div
-            className={cn(
-              "workshop-chat-column relative flex min-h-0 min-w-0 flex-col self-stretch overflow-hidden border-r border-[var(--border)] lg:shrink-0",
-              mobileWorkshopColumn === "chat" ? "flex-1" : "lg:min-h-0",
-              !lgChatPanelResizing &&
-                "lg:transition-[width] lg:duration-300 lg:ease-out motion-reduce:lg:transition-none",
-              isLgLayout && lgWorkshopChatCollapsed
-                ? "lg:w-0 lg:min-w-0 lg:border-transparent lg:pointer-events-none"
-                : "lg:max-w-[420px]",
-            )}
-            style={
-              isLgLayout && !lgWorkshopChatCollapsed
-                ? { width: lgChatPanelWidthPx, minWidth: 0 }
-                : undefined
-            }
+      <WorkshopLayoutShell
+        chatColumn={
+          <WorkshopChatColumn
+            mobileWorkshopColumn={mobileWorkshopColumn}
+            isLgLayout={isLgLayout}
+            lgWorkshopChatCollapsed={lgWorkshopChatCollapsed}
+            lgChatPanelWidthPx={lgChatPanelWidthPx}
+            lgChatPanelResizing={lgChatPanelResizing}
+            chatSectionRef={chatSectionRef}
+            onExpandChat={() => handleSetLgWorkshopChatCollapsed(false)}
+            onResizePointerDown={handleLgChatResizePointerDown}
+            onResizePointerMove={handleLgChatResizePointerMove}
+            onResizePointerUp={finishLgChatResizePointer}
+            onResizeLostPointerCapture={handleLgChatResizeLostPointerCapture}
           >
-            <section
-              ref={chatSectionRef}
-              className={cn(
-                "flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden",
-                mobileWorkshopColumn === "chat" ? "min-h-0 flex-1" : "lg:min-h-0 lg:flex-col",
-              )}
-              aria-hidden={isLgLayout && lgWorkshopChatCollapsed ? true : undefined}
-            >
               <ChatContainer
                 projectId={projectId}
                 activeTab={chatActiveTab}
@@ -3208,236 +2923,35 @@ export default function WorkshopView({
                     : undefined
                 }
               />
-            </section>
-            {!lgWorkshopChatCollapsed ? (
-              <div
-                className={cn(
-                  "pointer-events-auto absolute inset-y-0 z-30 hidden w-2 -right-1 cursor-col-resize touch-none select-none lg:block",
-                  "hover:bg-[color-mix(in_oklch,var(--primary)_16%,transparent)] active:bg-[color-mix(in_oklch,var(--primary)_22%,transparent)]",
-                )}
-                style={{ cursor: "col-resize" }}
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="Redimensionar el chat. Si sueltas con el panel más estrecho que el mínimo, se colapsa; usa el botón Chat o el icono en la barra del documento para volver a mostrarlo."
-                onPointerDown={handleLgChatResizePointerDown}
-                onPointerMove={handleLgChatResizePointerMove}
-                onPointerUp={finishLgChatResizePointer}
-                onPointerCancel={finishLgChatResizePointer}
-                onLostPointerCapture={handleLgChatResizeLostPointerCapture}
-              />
-            ) : null}
-          </div>
-          <div
-            className={cn(
-              "hidden min-h-0 flex-col border-r border-[var(--border)] bg-transparent transition-[width,opacity,min-width,padding] duration-300 ease-out motion-reduce:transition-none lg:flex",
-              lgWorkshopChatCollapsed
-                ? "w-[2rem] min-w-[2rem] shrink-0 self-stretch items-center justify-center py-2"
-                : "w-0 min-w-0 overflow-hidden border-transparent p-0 opacity-0 pointer-events-none",
-            )}
-            aria-hidden={!lgWorkshopChatCollapsed}
+          </WorkshopChatColumn>
+        }
+        docPanel={
+          <WorkshopDocPanel
+            mobileWorkshopColumn={mobileWorkshopColumn}
+            workspaceScrollRef={workspaceScrollRef}
+            toolbarProps={workshopDocToolbarProps}
+            isLgLayout={isLgLayout}
+            docBubbleMenuItems={docBubbleMenuItems}
           >
-            <TooltipProvider delayDuration={280}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={() => handleSetLgWorkshopChatCollapsed(false)}
-                    className={cn(
-                      "group/pull-tab-chat relative z-[2] flex w-full cursor-pointer flex-col items-center justify-center gap-1.5 rounded-md border-0 bg-transparent px-0.5 py-3 shadow-none ring-0",
-                      "text-[8px] font-semibold uppercase tracking-[0.14em] text-[color-mix(in_oklch,var(--foreground)_82%,var(--muted-foreground))]",
-                      "transition-[color,background-color] duration-200 ease-out",
-                      "hover:bg-[color-mix(in_oklch,var(--muted)_35%,transparent)] hover:text-[var(--primary)]",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)]",
-                    )}
-                    title="Mostrar conversación"
-                    aria-label="Mostrar conversación"
-                  >
-                    <MessageSquare
-                      className="h-3 w-3 shrink-0 text-[color-mix(in_oklch,var(--foreground)_88%,var(--muted-foreground))] transition-colors duration-200 group-hover/pull-tab-chat:text-[var(--primary)]"
-                      strokeWidth={2}
-                      aria-hidden
-                    />
-                    <span className="select-none uppercase leading-tight [writing-mode:vertical-rl] rotate-180">
-                      Chat
-                    </span>
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right" className="max-w-[14rem]">
-                  Mostrar conversación
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-        </div>
-
-        <WorkshopDocPanel
-          mobileWorkshopColumn={mobileWorkshopColumn}
-          workspaceScrollRef={workspaceScrollRef}
-          toolbarProps={workshopDocToolbarProps}
-          isLgLayout={isLgLayout}
-          docBubbleMenuItems={docBubbleMenuItems}
-        >
-          <WorkshopDocPanelContent {...workshopDocPanelContentProps} />
-        </WorkshopDocPanel>
-
-        <WorkshopMetricsColumn
-          projectId={projectId}
-          mobileWorkshopColumn={mobileWorkshopColumn}
-          isLgLayout={isLgLayout}
-          metricsSectionRef={metricsSectionRef}
-          onOpenAuditModal={() => setShowAuditModal(true)}
-        />
-
-        {/* ── Mobile-only floating FABs ── */}
-        {(() => {
-          /** Shared shape; position via wrapper or `fixed` + `bottom` for scroll-only control. */
-          const fabVisual =
-            "flex h-11 w-11 min-h-0 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--primary)_70%,transparent)] text-[var(--primary-foreground)] shadow-lg shadow-black/25 transition-transform active:scale-90 hover:scale-105 touch-manipulation";
-          const activeDocViewMode = getWorkshopDocToolbarActiveViewMode(centralPanel, {
-            mddViewMode,
-            mddInicialViewMode,
-            specViewMode,
-            architectureViewMode,
-            useCasesViewMode,
-            userStoriesViewMode,
-            uxUiGuideViewMode,
-            aemViewMode,
-            blueprintViewMode,
-            apiContractsViewMode,
-            logicFlowsViewMode,
-            brdDocViewMode,
-            infraViewMode,
-            agentGovernanceViewMode,
-            tasksViewMode,
-          });
-          const { Icon: DocToggleIcon, tooltip: docToggleTooltip } = workshopDocSourceTogglePresentation(
-            centralPanel,
-            activeDocViewMode,
-          );
-          const showBenchmarkToggle = centralPanel === "benchmark";
-          const benchmarkToolbarViewMode =
-            benchmarkPhaseTab === "fase0" ? benchmarkViewMode : phase0SummaryViewMode;
-          const benchmarkTogglePresentation =
-            benchmarkPhaseTab === "fase0" && phase0EntryModeToolbarToggle
-              ? phase0EntryModeToolbarToggle
-              : workshopDocSourceTogglePresentation("mdd", benchmarkToolbarViewMode);
-          const BenchmarkFabToggleIcon = benchmarkTogglePresentation.Icon;
-          const showDocToggle =
-            centralPanel !== "benchmark" &&
-            (["spec", "mdd", "ux-ui-guide", "aem", "blueprint", "tasks", "api-contracts", "logic-flows", "architecture", "use-cases", "user-stories", "infra", "brd", "mdd-inicial"] as const).includes(centralPanel as any) &&
-            (centralPanel === "spec" ||
-              centralPanel === "mdd" ||
-              centralPanel === "ux-ui-guide" ||
-              centralPanel === "aem" ||
-              (centralPanel === "blueprint" && blueprintContent) ||
-              (centralPanel === "tasks" && tasksContent) ||
-              (centralPanel === "api-contracts" && apiContractsContent) ||
-              (centralPanel === "architecture" && architectureContent) ||
-              (centralPanel === "use-cases" && useCasesContent) ||
-              (centralPanel === "user-stories" && userStoriesContent) ||
-              (centralPanel === "logic-flows" && logicFlowsContent) ||
-              (centralPanel === "infra" && infraContent) ||
-              (centralPanel === "mdd-inicial" && (activeLegacyState?.codebaseDoc || mddInicialLocalContent)) ||
-              (centralPanel === "brd" && !!activeStageId));
-          const showFlowOrder = effectiveComplexityForTabs === "HIGH";
-
-          /** Chat tab: scroll FAB just above the border above the composer (nav + composer shell + tight gap). */
-          const mobileScrollFabBottom =
-            mobileWorkshopColumn === "chat"
-              ? "calc(3.25rem + 6rem + env(safe-area-inset-bottom, 0px))"
-              : "calc(3.25rem + 0.5rem + env(safe-area-inset-bottom, 0px))";
-
-          /** Mobile: doc toggle + flow order only on Docs tab; hidden on Chat and Estado. */
-          const showDocOrFlowFabStack =
-            mobileWorkshopColumn === "workspace" && (showDocToggle || showFlowOrder || showBenchmarkToggle);
-
-          return (
-            <>
-              {mobileScrollFabScrollable ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const container = getActiveScrollContainer();
-                    if (!container) return;
-                    if (scrollFabDirection === "down") {
-                      container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
-                    } else {
-                      container.scrollTo({ top: 0, behavior: "smooth" });
-                    }
-                  }}
-                  className={cn(fabVisual, "lg:hidden fixed right-4 z-20")}
-                  style={{ bottom: mobileScrollFabBottom }}
-                  title={scrollFabDirection === "down" ? "Ir al final" : "Ir al inicio"}
-                  aria-label={scrollFabDirection === "down" ? "Ir al final del documento" : "Ir al inicio del documento"}
-                >
-                  {scrollFabDirection === "down" ? (
-                    <ArrowDown className="h-5 w-5" strokeWidth={2.5} aria-hidden />
-                  ) : (
-                    <ArrowUp className="h-5 w-5" strokeWidth={2.5} aria-hidden />
-                  )}
-                </button>
-              ) : null}
-
-              {showDocOrFlowFabStack ? (
-                <div className="lg:hidden pointer-events-none fixed right-4 top-1/2 z-20 flex -translate-y-1/2 flex-col items-end gap-3">
-                  {showFlowOrder ? (
-                    <button
-                      type="button"
-                      className={cn(fabVisual, "pointer-events-auto")}
-                      title="Ver orden completo de flujo"
-                      aria-label="Ver orden completo de flujo"
-                      onClick={() => setFlowOrderModalOpen(true)}
-                    >
-                      <ListOrdered className="h-5 w-5" strokeWidth={2.5} aria-hidden />
-                    </button>
-                  ) : null}
-
-                  {showDocToggle ? (
-                    <button
-                      type="button"
-                      className={cn(fabVisual, "pointer-events-auto")}
-                      title={docToggleTooltip}
-                      aria-label={docToggleTooltip}
-                      onClick={() => toggleDocViewMode(centralPanel)}
-                    >
-                      <DocToggleIcon className="h-5 w-5" strokeWidth={2.5} aria-hidden />
-                    </button>
-                  ) : null}
-
-                  {showBenchmarkToggle ? (
-                    <button
-                      type="button"
-                      className={cn(fabVisual, "pointer-events-auto")}
-                      title={benchmarkTogglePresentation.tooltip}
-                      aria-label={benchmarkTogglePresentation.tooltip}
-                      onClick={() => {
-                        if (benchmarkPhaseTab === "fase0" && phase0EntryModeToolbarToggle) {
-                          phase0EntryModeToolbarToggle.onClick();
-                          return;
-                        }
-                        if (benchmarkPhaseTab === "fase0") {
-                          setBenchmarkViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        } else {
-                          setPhase0SummaryViewMode((m) => (m === "preview" ? "source" : "preview"));
-                        }
-                      }}
-                    >
-                      <BenchmarkFabToggleIcon className="h-5 w-5" strokeWidth={2.5} aria-hidden />
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-            </>
-          );
-        })()}
-
-        <WorkshopDocumentIslandToc
-          scrollContainerRef={workspaceScrollRef}
-          enabled={
-            isLgLayout &&
-            isWorkshopMarkdownPreviewActive(
-              centralPanel,
-              {
+            <WorkshopDocPanelContent {...workshopDocPanelContentProps} />
+          </WorkshopDocPanel>
+        }
+        metricsColumn={
+          <WorkshopMetricsColumn
+            projectId={projectId}
+            mobileWorkshopColumn={mobileWorkshopColumn}
+            isLgLayout={isLgLayout}
+            metricsSectionRef={metricsSectionRef}
+            onOpenAuditModal={() => setShowAuditModal(true)}
+          />
+        }
+        mobileOverlays={
+          <>
+            <WorkshopMobileFabs
+              mobileWorkshopColumn={mobileWorkshopColumn}
+              centralPanel={centralPanel}
+              effectiveComplexityForTabs={effectiveComplexityForTabs as WorkshopComplexityTier}
+              viewModes={{
                 mddViewMode,
                 mddInicialViewMode,
                 specViewMode,
@@ -3453,65 +2967,81 @@ export default function WorkshopView({
                 infraViewMode,
                 agentGovernanceViewMode,
                 tasksViewMode,
-              },
-              benchmarkPhaseTab,
-              benchmarkViewMode,
-              phase0SummaryViewMode,
-            )
-          }
-          centralPanel={centralPanel}
-          contentKey={centralPanel}
-        />
-
-        <nav
-          className="lg:hidden shrink-0 sticky bottom-0 z-10 grid grid-cols-3 border-t border-[var(--border)] bg-[color-mix(in_oklch,var(--background)_92%,black)] pb-[max(4px,env(safe-area-inset-bottom))]"
-          aria-label="Cambiar panel del workshop"
-        >
-          <button
-            type="button"
-            onClick={() => setMobileWorkshopColumn("chat")}
-            aria-current={mobileWorkshopColumn === "chat" ? "page" : undefined}
-            className={cn(
-              "flex min-h-[52px] flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium touch-manipulation",
-              mobileWorkshopColumn === "chat"
-                ? "text-[var(--primary)] bg-[color-mix(in_oklch,var(--card)_92%,var(--background))] border-t-2 border-t-[var(--primary)] -mt-px"
-                : "text-[var(--foreground-subtle)] border-t-2 border-t-transparent active:bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))]",
-            )}
-          >
-            <MessageSquare className="h-5 w-5 shrink-0 opacity-90" aria-hidden />
-            Chat
-          </button>
-          <button
-            type="button"
-            onClick={() => setMobileWorkshopColumn("workspace")}
-            aria-current={mobileWorkshopColumn === "workspace" ? "page" : undefined}
-            className={cn(
-              "flex min-h-[52px] flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium touch-manipulation",
-              mobileWorkshopColumn === "workspace"
-                ? "text-[var(--primary)] bg-[color-mix(in_oklch,var(--card)_92%,var(--background))] border-t-2 border-t-[var(--primary)] -mt-px"
-                : "text-[var(--foreground-subtle)] border-t-2 border-t-transparent active:bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))]",
-            )}
-          >
-            <FileText className="h-5 w-5 shrink-0 opacity-90" aria-hidden />
-            Docs
-          </button>
-          <button
-            type="button"
-            onClick={() => setMobileWorkshopColumn("metrics")}
-            aria-current={mobileWorkshopColumn === "metrics" ? "page" : undefined}
-            className={cn(
-              "flex min-h-[52px] flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium touch-manipulation",
-              mobileWorkshopColumn === "metrics"
-                ? "text-[var(--primary)] bg-[color-mix(in_oklch,var(--card)_92%,var(--background))] border-t-2 border-t-[var(--primary)] -mt-px"
-                : "text-[var(--foreground-subtle)] border-t-2 border-t-transparent active:bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))]",
-            )}
-          >
-            <Package className="w-5 h-5 shrink-0 opacity-90" aria-hidden />
-            Estado
-          </button>
-        </nav>
-      <WorkshopModals {...workshopModalsProps} />
-      </div >
+              }}
+              blueprintContent={blueprintContent}
+              tasksContent={tasksContent}
+              apiContractsContent={apiContractsContent}
+              architectureContent={architectureContent}
+              useCasesContent={useCasesContent}
+              userStoriesContent={userStoriesContent}
+              logicFlowsContent={logicFlowsContent}
+              infraContent={infraContent}
+              activeLegacyState={activeLegacyState}
+              mddInicialLocalContent={mddInicialLocalContent}
+              activeStageId={activeStageId}
+              benchmarkPhaseTab={benchmarkPhaseTab}
+              benchmarkViewMode={benchmarkViewMode}
+              phase0SummaryViewMode={phase0SummaryViewMode}
+              phase0EntryModeToolbarToggle={phase0EntryModeToolbarToggle}
+              mobileScrollFabScrollable={mobileScrollFabScrollable}
+              scrollFabDirection={scrollFabDirection}
+              onScrollFabClick={() => {
+                const container = getActiveScrollContainer();
+                if (!container) return;
+                if (scrollFabDirection === "down") {
+                  container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+                } else {
+                  container.scrollTo({ top: 0, behavior: "smooth" });
+                }
+              }}
+              onToggleDocViewMode={toggleDocViewMode}
+              onOpenFlowOrderModal={() => setFlowOrderModalOpen(true)}
+              onBenchmarkViewModeChange={(mode) => setBenchmarkViewMode(mode)}
+              onPhase0SummaryViewModeChange={(mode) => setPhase0SummaryViewMode(mode)}
+            />
+            <WorkshopDocumentIslandToc
+              scrollContainerRef={workspaceScrollRef}
+              enabled={
+                isLgLayout &&
+                isWorkshopMarkdownPreviewActive(
+                  centralPanel,
+                  {
+                    mddViewMode,
+                    mddInicialViewMode,
+                    specViewMode,
+                    architectureViewMode,
+                    useCasesViewMode,
+                    userStoriesViewMode,
+                    uxUiGuideViewMode,
+                    aemViewMode,
+                    blueprintViewMode,
+                    apiContractsViewMode,
+                    logicFlowsViewMode,
+                    brdDocViewMode,
+                    infraViewMode,
+                    agentGovernanceViewMode,
+                    tasksViewMode,
+                  },
+                  benchmarkPhaseTab,
+                  benchmarkViewMode,
+                  phase0SummaryViewMode,
+                )
+              }
+              centralPanel={centralPanel}
+              contentKey={centralPanel}
+            />
+          </>
+        }
+        mobileNav={
+          <WorkshopMobileNav
+            mobileWorkshopColumn={mobileWorkshopColumn}
+            onMobileWorkshopColumnChange={setMobileWorkshopColumn}
+          />
+        }
+        modals={
+          <WorkshopModals {...workshopModalsProps} />
+        }
+      />
     </div >
   );
 }

@@ -732,3 +732,11 @@ Fase 6 (legacy/MCP)
 |------|--------|
 | `WorkshopMetricsColumn.tsx` + types (móvil + flyout lg) | ✅ |
 | `WorkshopView.tsx` — ~3 517 L | ✅ |
+
+### Fase 5 — Workshop frontend (incremento 5i)
+
+| Ítem | Estado |
+|------|--------|
+| `WorkshopLayoutShell`, `WorkshopChatColumn`, `WorkshopMobileNav`, `WorkshopMobileFabs` | ✅ |
+| `useLgChatPanel`, `useWorkshopMobileScrollFab`, utilidades scroll/chat | ✅ |
+| `WorkshopView.tsx` — ~3 047 L | ✅ |

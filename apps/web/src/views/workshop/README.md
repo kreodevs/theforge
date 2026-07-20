@@ -21,7 +21,14 @@ Subcomponentes extraídos de `WorkshopView.tsx` (Fase 5b del [GOD-REFACTOR](../.
 | **WorkshopDocPanelContent.tsx** | Compositor del área scroll: encadena todos los subpaneles anteriores. Tipos en `workshopDocPanelContent.types.ts`. |
 | **useWorkshopDocPanelProps.ts** | Hook que consolida los `useMemo` de props de todos los subpaneles del documento. Tipos de entrada en `useWorkshopDocPanelProps.types.ts`. |
 | **WorkshopMetricsColumn.tsx** | Columna métricas: panel móvil + flyout desktop (semáforo). Tipos en `workshopMetricsColumn.types.ts`. Usa `WorkshopMetricsColumnInner`. |
+| **WorkshopLayoutShell.tsx** | Grid principal lg (chat + docs + métricas) con slots para overlays móviles y modales. |
+| **WorkshopChatColumn.tsx** | Columna A: chat redimensionable + rail de expansión en desktop. |
+| **WorkshopMobileNav.tsx** | Barra inferior móvil Chat / Docs / Estado. |
+| **WorkshopMobileFabs.tsx** | FABs flotantes móviles (scroll, preview/source, orden de flujo). Tipos en `workshopMobileFabs.types.ts`. |
+| **useLgChatPanel.ts** | Hook: colapso y resize del chat en desktop (localStorage por proyecto). |
+| **useWorkshopMobileScrollFab.ts** | Hook: visibilidad y dirección del FAB de scroll móvil. |
+| **workshopScroll.util.ts** / **workshopChatPanel.util.ts** | Utilidades puras de scroll y ancho del panel chat. |
 
-Utilidades puras compartidas con otros módulos viven en `utils/workshopDocToolbar.ts`.
+Utilidades compartidas con otros módulos también viven en `utils/workshopDocToolbar.ts`.
 
-Próximas extracciones planificadas: layout shell 3 columnas, nav móvil y FABs.
+Próximas extracciones planificadas: `workshopDocToolbarProps` hook, slices de `workshopStore`.
