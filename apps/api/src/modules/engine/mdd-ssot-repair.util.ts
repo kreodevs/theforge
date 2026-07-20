@@ -1,5 +1,5 @@
 /**
- * Reparación determinista MDD SSOT pre-gate: UAT BRD, §4 journeys, tablas plataforma.
+ * Reparación determinista MDD SSOT pre-gate: §3 DBGA core, UAT, §4 journeys, tablas plataforma.
  */
 
 import type { DomainInventory } from "@theforge/shared-types";
@@ -13,9 +13,15 @@ import {
 } from "./mdd-journey-section4.util.js";
 import { annotateJustifiedPlatformTablesInMdd } from "./platform-table-justify.util.js";
 import { rebuildDomainInventoryPreferringBrd } from "./domain-inventory-persist.util.js";
+import {
+  mergeDbgaCoreGapsIntoMdd,
+  mergeDomainTablesIntoMdd,
+} from "./compose-section3-from-inventory.util.js";
+import { collectDomainInventoryConformanceGaps } from "./domain-inventory-conformance.util.js";
 
 export type MddSsotRepairResult = {
   markdown: string;
+  section3Injected: string[];
   uatInjected: string[];
   section4Injected: string[];
   platformAnnotated: string[];
@@ -42,6 +48,20 @@ export function reconcileMddSsotBeforeDeliveryGate(
       : null);
 
   let markdown = mddMarkdown ?? "";
+  const section3Injected: string[] = [];
+
+  const dbgaCore = mergeDbgaCoreGapsIntoMdd(markdown, {
+    dbgaMarkdown: params.dbgaMarkdown,
+    brdMarkdown: params.brdMarkdown,
+  });
+  markdown = dbgaCore.markdown;
+  section3Injected.push(...dbgaCore.injected);
+
+  if (inventory) {
+    const domain = mergeDomainTablesIntoMdd(markdown, inventory);
+    markdown = domain.markdown;
+    section3Injected.push(...domain.injected);
+  }
 
   const platform = annotateJustifiedPlatformTablesInMdd(markdown, {
     brdMarkdown: params.brdMarkdown,
@@ -68,6 +88,13 @@ export function reconcileMddSsotBeforeDeliveryGate(
   );
   markdown = section4Repair.markdown;
 
+  const invAfter = collectDomainInventoryConformanceGaps({
+    brdMarkdown: params.brdMarkdown,
+    dbgaMarkdown: params.dbgaMarkdown,
+    mddMarkdown: markdown,
+    specMarkdown: params.specMarkdown,
+    inventory: inventory ?? undefined,
+  });
   const uatAfter = checkBrdMddUatConformance({
     brdMarkdown: params.brdMarkdown,
     mddMarkdown: markdown,
@@ -79,10 +106,11 @@ export function reconcileMddSsotBeforeDeliveryGate(
 
   return {
     markdown,
+    section3Injected,
     uatInjected: uatRepair.injected,
     section4Injected: section4Repair.injected,
     platformAnnotated: platform.annotated,
-    remainingGaps: [...uatAfter.gaps, ...section4After.gaps],
+    remainingGaps: [...invAfter.gaps, ...uatAfter.gaps, ...section4After.gaps],
   };
 }
 

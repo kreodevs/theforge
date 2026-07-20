@@ -15,25 +15,78 @@ import {
   listUnjustifiedPlatformTables,
 } from "./platform-table-justify.util.js";
 
+/** Tablas §3 que satisfacen una entidad núcleo DBGA (sinónimos frecuentes). */
+export const DBGA_CORE_TABLE_ALIASES: Record<string, readonly string[]> = {
+  credentials: [
+    "credentials",
+    "broker_credentials",
+    "api_credentials",
+    "user_credentials",
+    "tenant_credentials",
+  ],
+  dashboard_configs: ["dashboard_configs", "dashboards", "user_dashboards"],
+  otp_sessions: ["otp_sessions", "otp_codes", "mfa_sessions"],
+  operations: ["operations", "trades", "orders"],
+  watchlists: ["watchlists", "watchlist_items"],
+  strategies: ["strategies", "trading_strategies"],
+};
+
+export function mddSection3HasDbgaCoreEntity(
+  mddEntities: Set<string>,
+  coreEntity: string,
+): boolean {
+  if (mddEntities.has(coreEntity)) return true;
+  const aliases = DBGA_CORE_TABLE_ALIASES[coreEntity];
+  if (aliases?.some((a) => mddEntities.has(a))) return true;
+  if (coreEntity.includes("credential")) {
+    return [...mddEntities].some((e) => e.includes("credential"));
+  }
+  return false;
+}
+
+/** Entidades núcleo DBGA que deben existir en §3 para este proyecto. */
+export function resolveRequiredDbgaCoreEntities(params: {
+  dbgaMarkdown?: string | null;
+  brdMarkdown?: string | null;
+}): string[] {
+  const dbgaCanonical = extractDbgaCanonicalEntities(params.dbgaMarkdown ?? "");
+  const corpus = `${params.dbgaMarkdown ?? ""}\n${params.brdMarkdown ?? ""}`;
+  const required = new Set<string>();
+
+  for (const entity of dbgaCanonical) {
+    if ((DBGA_CORE_ENTITIES as readonly string[]).includes(entity)) {
+      required.add(entity);
+    }
+    if (entity.includes("credential")) required.add("credentials");
+  }
+
+  for (const entity of DBGA_CORE_ENTITIES) {
+    const slug = entity.replace(/_/g, "[\\s_-]*");
+    if (new RegExp(`\\b${slug}\\b`, "i").test(corpus)) required.add(entity);
+  }
+
+  if (dbgaCanonical.length >= 3) {
+    for (const entity of DBGA_CORE_ENTITIES) required.add(entity);
+  }
+
+  return [...required].sort();
+}
+
 export type DomainInventoryConformanceReport = {
   missingDbgaCoreInMdd: string[];
   platformTablesWithoutJustification: string[];
   gaps: string[];
 };
 
-/** Entidades núcleo DBGA ausentes en MDD §3. */
 export function checkMissingDbgaCoreEntitiesInMdd(params: {
   dbgaMarkdown?: string | null;
+  brdMarkdown?: string | null;
   mddMarkdown: string;
 }): string[] {
   const section3 = extractSectionByNumber(params.mddMarkdown ?? "", 3) || params.mddMarkdown || "";
   const mddEntities = extractEntities(section3);
-  const dbgaCanonical = extractDbgaCanonicalEntities(params.dbgaMarkdown ?? "");
-  const required = new Set([
-    ...DBGA_CORE_ENTITIES,
-    ...dbgaCanonical.filter((e) => !AUTH_ENTITY_FAMILY.has(e) || e === "users"),
-  ]);
-  return [...required].filter((e) => !mddEntities.has(e));
+  const required = resolveRequiredDbgaCoreEntities(params);
+  return required.filter((e) => !mddSection3HasDbgaCoreEntity(mddEntities, e));
 }
 
 /** Tablas plataforma en §3 sin ancla en BRD/DBGA/MDD §1 — deben eliminarse o documentarse. */
@@ -56,6 +109,7 @@ export function collectDomainInventoryConformanceGaps(params: {
 }): DomainInventoryConformanceReport {
   const missingDbgaCoreInMdd = checkMissingDbgaCoreEntitiesInMdd({
     dbgaMarkdown: params.dbgaMarkdown,
+    brdMarkdown: params.brdMarkdown,
     mddMarkdown: params.mddMarkdown,
   });
   const platformTablesWithoutJustification = checkPlatformTablesOutsideBrd(params);

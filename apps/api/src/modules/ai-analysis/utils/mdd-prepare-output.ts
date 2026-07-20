@@ -203,34 +203,19 @@ export async function prepareMddForOutput(
   );
   const markdown = applyPreDeliveryGateFixes(reconciled);
   let finalMarkdown = markdown;
-  if (options?.brdMarkdown?.trim() || options?.dbgaMarkdown?.trim()) {
-    try {
-      const { rebuildDomainInventoryPreferringBrd } = await import(
-        "../../engine/domain-inventory-persist.util.js"
-      );
-      const { mergeDomainTablesIntoMdd } = await import(
-        "../../engine/compose-section3-from-inventory.util.js"
-      );
-      const inventory = rebuildDomainInventoryPreferringBrd({
-        brdMarkdown: options.brdMarkdown,
-        dbgaMarkdown: options.dbgaMarkdown,
-        mddMarkdown: markdown,
-      });
-      const merged = mergeDomainTablesIntoMdd(markdown, inventory);
-      if (merged.injected.length > 0) {
-        finalMarkdown = applyPreDeliveryGateFixes(merged.markdown);
-        console.log(
-          `[MDD:DeliveryGate] injected domain table stubs: ${merged.injected.slice(0, 8).join(", ")}`,
-        );
-      }
-    } catch (err) {
-      console.warn(
-        `[MDD:DeliveryGate] domain §3 merge skipped: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  }
-  finalMarkdown = prepareMddMarkdownForPersist(finalMarkdown);
   try {
+    const { rebuildDomainInventoryPreferringBrd } = await import(
+      "../../engine/domain-inventory-persist.util.js"
+    );
+    const inventory =
+      options?.brdMarkdown?.trim() || options?.dbgaMarkdown?.trim()
+        ? rebuildDomainInventoryPreferringBrd({
+            brdMarkdown: options.brdMarkdown,
+            dbgaMarkdown: options.dbgaMarkdown,
+            mddMarkdown: markdown,
+          })
+        : undefined;
+    finalMarkdown = prepareMddMarkdownForPersist(finalMarkdown);
     const { reconcileMddSsotBeforeDeliveryGate } = await import(
       "../../engine/mdd-ssot-repair.util.js"
     );
@@ -238,15 +223,17 @@ export async function prepareMddForOutput(
       brdMarkdown: options?.brdMarkdown,
       dbgaMarkdown: options?.dbgaMarkdown,
       specMarkdown: options?.specMarkdown,
+      inventory,
     });
     if (
+      repaired.section3Injected.length > 0 ||
       repaired.uatInjected.length > 0 ||
       repaired.section4Injected.length > 0 ||
       repaired.platformAnnotated.length > 0
     ) {
       finalMarkdown = prepareMddMarkdownForPersist(repaired.markdown);
       console.log(
-        `[MDD:DeliveryGate] SSOT repair — UAT:${repaired.uatInjected.length} §4:${repaired.section4Injected.length} platform:${repaired.platformAnnotated.length}`,
+        `[MDD:DeliveryGate] SSOT repair — §3:${repaired.section3Injected.length} UAT:${repaired.uatInjected.length} §4:${repaired.section4Injected.length} platform:${repaired.platformAnnotated.length}`,
       );
     }
   } catch (err) {

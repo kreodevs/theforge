@@ -48,4 +48,26 @@ describe("mdd-ssot-repair.util", () => {
     assert.match(result.markdown, /\[platform:mcp_plugins\]/);
     assert.equal(result.remainingGaps.length, 0, result.remainingGaps.join("; "));
   });
+
+  it("injects missing credentials stub before gate", () => {
+    const dbga = `
+CREATE TABLE watchlists (id UUID PRIMARY KEY);
+CREATE TABLE users (id UUID PRIMARY KEY);
+CREATE TABLE credentials (id UUID PRIMARY KEY);
+`;
+    const mdd = `
+## 3. Modelo
+\`\`\`sql
+CREATE TABLE watchlists (id UUID PRIMARY KEY);
+CREATE TABLE strategies (id UUID PRIMARY KEY);
+CREATE TABLE operations (id UUID PRIMARY KEY);
+CREATE TABLE dashboard_configs (id UUID PRIMARY KEY);
+CREATE TABLE otp_sessions (id UUID PRIMARY KEY);
+CREATE TABLE users (id UUID PRIMARY KEY);
+\`\`\`
+`;
+    const result = reconcileMddSsotBeforeDeliveryGate(mdd, { dbgaMarkdown: dbga });
+    assert.ok(result.section3Injected.includes("credentials"));
+    assert.match(result.markdown, /CREATE TABLE credentials/i);
+  });
 });
