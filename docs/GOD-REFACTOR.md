@@ -795,4 +795,13 @@ Próximo: ver incrementos 5m-2 y 5m-3.
 | Acciones: `setMddContent`, `persistMddContent`, `persistAndReviewMdd`, jobs MDD, `reapplyMddFormat` | ✅ |
 | `workshopStore.ts` — **~1 900 L** (−~400 vs 5m-3) | ✅ |
 
-Próximo: `slice-deliverables`, `slice-legacy-debug`.
+### Fase 5 — `workshopStore` (incremento 5m-5)
+
+| Ítem | Estado |
+|------|--------|
+| `slice-deliverables.ts` — `createDeliverablesSlice` | ✅ |
+| Acciones: persist/generate por entregable, cascada, agent governance, conformance, Phase 0, estimación, `setAgentProgress` | ✅ |
+| Smoke spec incluye `slice-deliverables.ts` | ✅ |
+| `workshopStore.ts` — **~1 020 L** (−~880 vs 5m-4) | ✅ |
+
+Próximo: `slice-legacy-debug`, `slice-clarify`.
