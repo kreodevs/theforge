@@ -1,8 +1,7 @@
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
-const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), "fixtures/mdd");
+const FIXTURES_DIR = join(__dirname, "fixtures/mdd");
 
 /** Normaliza saltos de línea y espacios finales para comparación estable en golden tests. */
 export function normalizeGoldenText(text: string): string {

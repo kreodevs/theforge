@@ -6,7 +6,6 @@ import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
 import { hasRealBenchmark, LOG, mddHasContent } from "./mdd-manager/manager-context.util.js";
 import { handleManagerDelegateOutcome } from "./mdd-manager/manager-delegate.js";
 import { runManagerLlmTurn } from "./mdd-manager/manager-llm-turn.js";
-import { expandSectionsToRun } from "./mdd-manager/manager-plan.js";
 import { runDeterministicManagerHandlers } from "./mdd-manager/manager-state-handlers.js";
 import type { MddManagerToolDeps } from "./mdd-manager/manager-types.js";
 

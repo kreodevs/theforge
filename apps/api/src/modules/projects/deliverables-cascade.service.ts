@@ -14,11 +14,11 @@ import {
   type DeliverableWaveStep,
 } from "@theforge/shared-types";
 import {
-  buildApiRetryFeedback,
   buildInfraConformanceGapFeedback,
   checkApiVsMdd,
   checkInfraVsMdd,
 } from "../engine/conformance.service.js";
+import { buildApiRetryFeedback } from "../engine/api-conformance-repair.util.js";
 import { computeCascadeAccuracy } from "../engine/cascade-accuracy.util.js";
 import {
   collectSddPrecisionGaps,

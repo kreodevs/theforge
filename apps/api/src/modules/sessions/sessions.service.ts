@@ -59,7 +59,6 @@ import type { WorkshopChatAction } from "../ai/intent-route.types.js";
 import {
   buildEditModeUserPrompt,
   getLastAssistantMessage,
-  hadAnyDocumentDelimiter,
   isDocumentContentNearlyIdentical,
   logDocumentTurnMetrics,
   sanitizeLlmResponse,

@@ -1,57 +1,14 @@
-import type { MddStructured } from "../../state/mdd-structured.schema.js";
-import {
-  formatDocumentMarkdown,
-  repairGluedMarkdownHeadings,
-  peelDocumentBodyForPersist,
-  repairInlineHorizontalRuleSectionBreaks,
-  repairApiResponse204NoContent,
-  repairOrphanFenceBeforeContractLabels,
-  repairUnclosedJsonBeforeApiEndpoint,
-  repairApiContractJsonFences,
-} from "@theforge/shared-types";
-import {
-  ensureMddGovernanceSection,
-  extractGovernanceSection,
-  hasGovernanceSection,
-  selectedPatternIdsFromMdd,
-  updateMddGovernancePatterns,
-} from "@theforge/shared-types/mdd-governance-patterns";
-import { applyMddQualityAutoRepairs, collectMddQualityIssues } from "../../../engine/mdd-quality-audit.util.js";
-import { sanitizeMermaidInDraft } from "../../../engine/mdd-pre-render.js";
-import { subsectionsToMarkdown } from "./json-section-to-markdown.js";
 import { extractMddSectionBody } from "./section-body.util.js";
 import {
-  draftUsesLdapPrimaryAuth,
-  fixIntegrationMetadataCoherence,
-  fixSecurityManifestCoherence,
-} from "./security-manifest.js";
-import {
   formatSqlBlockWithNewlines,
-  sanitizeAllSqlBlocksInDraft,
   sanitizeSqlBrokenCommentsAndProse,
-  sqlBlockContainsProseArtifact,
 } from "./sql-repair.js";
-
 import {
-  deduplicateAndReorderMddSections,
-  ensureMissingCanonicalSections,
   extractContextSectionBody,
-  fixGluedSection6Heading,
   getMddDraftSummary,
-  mddHasDuplicateSectionHeadings,
-  normalizeCanonicalMddSectionHeadings,
-  replaceContextWhenInstructions,
-  stripTrailingDuplicateMddSections,
 } from "./section-merge.js";
 import { findBalancedBrace, findBalancedBraceRespectingStrings } from "./brace.util.js";
-import {
-  fixDoubleMermaidFences,
-  fixSection2UnclosedSqlAndGluedMermaid,
-  repairMermaidBlocksInSectionBody,
-  stripMermaidFences,
-  unescapeMermaidLiteralNewlines,
-} from "./mermaid-fences.js";
-import { stripStrayParenAfterJsonCodeBlocks } from "./persist-format.util.js";
+import { stripMermaidFences } from "./mermaid-fences.js";
 import { corpusUsesRs256Jwt } from "./cross-consistency.js";
 import { nestedSectionKeysToMarkdown, unbulletAndJoinForJson } from "./draft-normalize.js";
 

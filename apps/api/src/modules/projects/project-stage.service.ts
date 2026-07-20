@@ -136,7 +136,8 @@ export class ProjectStageService {
         mddContent,
         status: stStatus,
         precisionScore,
-        legacyChangeState,
+        legacyChangeState:
+          legacyChangeState === null ? Prisma.JsonNull : legacyChangeState,
         isLegacy,
         theforgeProjectId: project.theforgeProjectId,
       },

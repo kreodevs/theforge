@@ -5,7 +5,7 @@ import type { MDDStateType } from "../../state/index.js";
 import { getPlanDirective, getUserBrief } from "../../utils/mdd-user-brief.js";
 import { generateImpactAnalysis } from "../../utils/mdd-impact-analysis.js";
 import { detectLegacyIntegrationIntent, HANDOFF_SPEC_SUGGESTION } from "../../utils/integration-intent.util.js";
-import { LOG, mddHasContent } from "./manager-context.util.js";
+import { LOG } from "./manager-context.util.js";
 import { buildMddPlan, generateMddPlanWithLLM } from "./manager-plan.js";
 import type { ManagerLlmTurnResult } from "./manager-llm-turn.js";
 

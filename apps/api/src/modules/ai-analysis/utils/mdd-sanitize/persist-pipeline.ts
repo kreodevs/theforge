@@ -19,7 +19,6 @@ import { extractMddSectionBody } from "./section-body.util.js";
 import {
   deduplicateAndReorderMddSections,
   ensureMissingCanonicalSections,
-  extractContextSectionBody,
   fixGluedSection6Heading,
   mddHasDuplicateSectionHeadings,
   normalizeCanonicalMddSectionHeadings,

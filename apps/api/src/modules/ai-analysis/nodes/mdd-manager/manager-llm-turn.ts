@@ -200,13 +200,13 @@ export async function runManagerLlmTurn(options: RunManagerLlmTurnOptions): Prom
       let memoryContext = "";
       if (projects && projects.length > 0) {
         memoryContext += "### Proyectos Similares:\n" +
-          projects.map((r: { title: string; id: string; tables: string[]; endpoints: string[] }) =>
+          (projects as Array<{ title: string; id: string; tables: string[]; endpoints: string[] }>).map((r) =>
             `- Proyecto: ${r.title} (ID: ${r.id})\n  Tablas: ${r.tables.join(", ")}\n  Endpoints: ${r.endpoints.join(", ")}`,
           ).join("\n") + "\n\n";
       }
       if (decisions && decisions.length > 0) {
         memoryContext += "### Decisiones Arquitectónicas (ADRs) Relevantes:\n" +
-          decisions.map((d: { title: string; projectTitle: string; context: string; consequence: string }) =>
+          (decisions as Array<{ title: string; projectTitle: string; context: string; consequence: string }>).map((d) =>
             `- **${d.title}** (Proyecto: ${d.projectTitle})\n  Contexto: ${d.context}\n  Consecuencia: ${d.consequence}`,
           ).join("\n") + "\n";
       }

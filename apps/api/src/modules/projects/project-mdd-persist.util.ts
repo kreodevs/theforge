@@ -78,8 +78,7 @@ export function resolveMddPersistMode(
   const skipPipelineForPatternWizard =
     flags.allowGovernancePatternChange === true &&
     flags.clearMddCompletely !== true &&
-    flags.mddGovernanceSeedOnly !== true &&
-    flags.mddFormatOnly !== true;
+    flags.mddGovernanceSeedOnly !== true;
   if (skipPipelineForSeed || skipPipelineForPatternWizard) return "store";
   return "pipeline";
 }

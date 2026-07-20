@@ -490,13 +490,13 @@ export function buildWorkshopSystemPrompt(
     (options?.userMessageImages?.length ?? 0) > 0 ||
     history.some((h) => h.role === "user" && (h.images?.length ?? 0) > 0)
   ) {
-    s +=
+    systemPrompt +=
       "\n\n**Entrada multimodal:** Puede haber imágenes en el historial o en este mensaje. Interprétalas en el contexto del documento activo y la conversación (modelo de datos, UI, flujos); no inventes detalles no visibles.";
     if (
       options?.activeTab?.trim() === "mdd" &&
       (options?.currentMddContent?.trim().length ?? 0) > 400
     ) {
-      s +=
+      systemPrompt +=
         "\n\n**MDD no destructivo (obligatorio si ya hay MDD en contexto):** El bloque \"Contenido actual del MDD\" incluye **todas** las secciones. Si el usuario pide revisar, alinear o ampliar (p. ej. tras un diagrama), **no sustituyas el proyecto por un solo fragmento**: devuelve el **MDD completo** actualizado (copia el contenido existente y aplica cambios), terminando con `---FIN_MDD---`. Si optas por enviar **solo una sección**, debe empezar por el **mismo patrón de encabezado** que ya usa el documento para esa sección (`## N.` recomendado, mismo `N` que corresponda). Nunca envíes solo tablas o JSON sueltos sin el título de sección reconocible.";
     }
   }

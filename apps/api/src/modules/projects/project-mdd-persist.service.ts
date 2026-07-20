@@ -3,7 +3,6 @@ import { Prisma, type Status } from "@theforge/database";
 import type { MddDeliveryGateResult } from "@theforge/shared-types";
 import {
   enforceMddGovernancePatternsOnPersist,
-  mddHasSubstantialBody,
   selectedPatternIdsFromMdd,
   updateMddGovernancePatterns,
 } from "@theforge/shared-types/mdd-governance-patterns";
@@ -225,27 +224,28 @@ export class ProjectMddPersistService {
       { projectId, stageId },
     );
     if (!result.ok) {
-      await this.throwMddPipelineBadRequest(result, stageId, mddMarkdown);
+      return await this.throwMddPipelineBadRequest(result, stageId, mddMarkdown);
     }
 
+    const ok = result;
     await this.prisma.stage.update({
       where: { id: stageId },
       data: {
-        mddContent: storeMddMarkdownForPersist(result.sanitizedMdd),
-        status: result.status,
-        precisionScore: result.precisionScore,
+        mddContent: storeMddMarkdownForPersist(ok.sanitizedMdd),
+        status: ok.status,
+        precisionScore: ok.precisionScore,
         ...documentData,
       },
     });
-    await this.changeLog.log(projectId, "mddContent", result.sanitizedMdd);
+    await this.changeLog.log(projectId, "mddContent", ok.sanitizedMdd);
     void this.persistMddDeliveryGateSnapshot(
       stageId,
-      await evaluateMddDeliveryGatePrepared(result.sanitizedMdd),
+      await evaluateMddDeliveryGatePrepared(ok.sanitizedMdd),
     );
     return {
-      sanitizedMdd: result.sanitizedMdd,
-      status: result.status,
-      precisionScore: result.precisionScore,
+      sanitizedMdd: ok.sanitizedMdd,
+      status: ok.status,
+      precisionScore: ok.precisionScore,
     };
   }
 
