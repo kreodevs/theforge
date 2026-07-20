@@ -30,6 +30,7 @@ import { ProjectMddPersistService } from "./project-mdd-persist.service.js";
 import { DeliverablesCascadeService } from "./deliverables-cascade.service.js";
 import { ProjectStageService } from "./project-stage.service.js";
 import { ProjectUxGuideService } from "./project-ux-guide.service.js";
+import { ProjectDeliverableGeneratorsService } from "./project-deliverable-generators.service.js";
 import { ProjectNotionPortabilityService } from "./project-notion-portability.service.js";
 import { PluginModule } from "../../plugins/plugin.module.js";
 
@@ -69,6 +70,7 @@ import { PluginModule } from "../../plugins/plugin.module.js";
     DeliverablesCascadeService,
     ProjectStageService,
     ProjectUxGuideService,
+    ProjectDeliverableGeneratorsService,
   ],
   exports: [ProjectsService, ProjectIntegrationService, IntegrationAgentService, ProjectMergeService, PROJECTS_ORCHESTRATOR_PORT, DeliverablesQueueService, ProjectGenerationGuardService, PlanValidationService],
 })
