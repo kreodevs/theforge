@@ -11,6 +11,7 @@ Extracción incremental de `workshopStore.ts` (Fase 5a del [GOD-REFACTOR](../../
 | **initial-state.ts** | `workshopInitialState` — valores por defecto del store. |
 | **selectors.ts** | `selectWorkshopAgentsBusy`, `selectPersistedMddBaseline`, `isMddEditorDirty`. |
 | **slice-ui.ts** | `createUiSlice` — setters de UI (loading, error, notice, modales, legacy debug). |
+| **slice-project.ts** | `createProjectSlice` — proyecto, etapas, `fetchProject`, plugin data. |
 | **helpers/** | Funciones puras sin Zustand (ver tabla abajo). |
 
 `workshopStore.ts` compone `createUiSlice` + acciones de dominio y re-exporta tipos/selectores para no romper `@/store/workshopStore`.
@@ -29,4 +30,4 @@ Extracción incremental de `workshopStore.ts` (Fase 5a del [GOD-REFACTOR](../../
 | **session-message.ts** | `sessionMessageBody`, helpers de chat MDD. |
 | **clarified-field-patch.ts** | Parche de campo tras clarificar documento. |
 
-Próximo: slices de dominio (`slice-project`, `slice-mdd`, `slice-deliverables`, …) y `index.ts` fino.
+Próximo: `slice-mdd`, `slice-deliverables`, `slice-session-chat`.

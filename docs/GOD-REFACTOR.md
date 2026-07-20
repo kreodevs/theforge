@@ -561,7 +561,7 @@ Fase 6 (legacy/MCP)
 | Métrica | Actual (2026-07-19) | Objetivo |
 |---------|---------------------|----------|
 | `WorkshopView.tsx` | 5 917 → **~5 140 L** | < 800 L |
-| `workshopStore.ts` | 5 319 → **~4 123 L** (+ ~1 400 L en `store/workshop/`) | < 600 L (compose + helpers fuera) |
+| `workshopStore.ts` | 5 319 → **~3 620 L** (+ módulos en `store/workshop/`) | < 600 L (compose + helpers fuera) |
 | `mdd-sanitize.ts` | 6 065 L | < 200 L (barrel) |
 | `createMddManagerNode` | 1 007 L | < 150 L |
 | `projects.service.ts` | 3 809 L → **~420 L** | < 1 500 L ✅ |
@@ -768,4 +768,12 @@ Fase 6 (legacy/MCP)
 | `workshopStore.ts` — **~4 123 L** (−~1 190 vs ~5 310); API pública sin cambios | ✅ |
 | Smoke `workshopStore.actions.smoke.spec.ts` — incluye slices compuestos | ✅ |
 
-Próximo: `slice-project`, `slice-mdd`, `slice-deliverables`, `slice-session-chat`.
+Próximo: `slice-mdd`, `slice-deliverables`, `slice-session-chat`.
+
+### Fase 5 — `workshopStore` (incremento 5m-2)
+
+| Ítem | Estado |
+|------|--------|
+| `store/workshop/slice-project.ts` — `createProjectSlice` | ✅ |
+| Acciones: `setProject`, `fetchProject`, etapas, `patchPluginData`, panel activo | ✅ |
+| `workshopStore.ts` — **~3 620 L** (−~500 vs 5m-1) | ✅ |

@@ -16,6 +16,7 @@ const STORE_DIR = join(dirname(fileURLToPath(import.meta.url)), "workshop");
 const STORE_PATH = join(dirname(fileURLToPath(import.meta.url)), "workshopStore.ts");
 const SLICE_PATHS = [
   join(STORE_DIR, "slice-ui.ts"),
+  join(STORE_DIR, "slice-project.ts"),
 ];
 
 function workshopStoreSource(): string {
