@@ -231,28 +231,27 @@ export async function prepareMddForOutput(
   }
   finalMarkdown = prepareMddMarkdownForPersist(finalMarkdown);
   try {
-    const { rebuildDomainInventoryPreferringBrd } = await import(
-      "../../engine/domain-inventory-persist.util.js"
+    const { reconcileMddSsotBeforeDeliveryGate } = await import(
+      "../../engine/mdd-ssot-repair.util.js"
     );
-    const { annotateJustifiedPlatformTablesInMdd } = await import(
-      "../../engine/platform-table-justify.util.js"
-    );
-    const inventory =
-      options?.brdMarkdown?.trim() || options?.dbgaMarkdown?.trim()
-        ? rebuildDomainInventoryPreferringBrd({
-            brdMarkdown: options.brdMarkdown,
-            dbgaMarkdown: options.dbgaMarkdown,
-            mddMarkdown: finalMarkdown,
-          })
-        : undefined;
-    finalMarkdown = annotateJustifiedPlatformTablesInMdd(finalMarkdown, {
+    const repaired = reconcileMddSsotBeforeDeliveryGate(finalMarkdown, {
       brdMarkdown: options?.brdMarkdown,
       dbgaMarkdown: options?.dbgaMarkdown,
-      inventory,
-    }).markdown;
+      specMarkdown: options?.specMarkdown,
+    });
+    if (
+      repaired.uatInjected.length > 0 ||
+      repaired.section4Injected.length > 0 ||
+      repaired.platformAnnotated.length > 0
+    ) {
+      finalMarkdown = prepareMddMarkdownForPersist(repaired.markdown);
+      console.log(
+        `[MDD:DeliveryGate] SSOT repair — UAT:${repaired.uatInjected.length} §4:${repaired.section4Injected.length} platform:${repaired.platformAnnotated.length}`,
+      );
+    }
   } catch (err) {
     console.warn(
-      `[MDD:DeliveryGate] platform table annotate skipped: ${err instanceof Error ? err.message : String(err)}`,
+      `[MDD:DeliveryGate] SSOT repair skipped: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
   const deliveryGate = validateMddForDelivery(finalMarkdown, {

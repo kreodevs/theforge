@@ -28,6 +28,7 @@ export const PLATFORM_ORPHAN_TABLES = new Set([
 export const DBGA_CORE_ENTITIES = [
   "users",
   "watchlists",
+  "strategies",
   "operations",
   "credentials",
   "dashboard_configs",

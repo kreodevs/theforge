@@ -46,8 +46,8 @@ import {
   applyDeliveryGateToSemaphoreStatus,
   validateMddForDelivery,
 } from "../utils/mdd-delivery-gate.util.js";
-import { annotateJustifiedPlatformTablesInMdd } from "../../engine/platform-table-justify.util.js";
 import { rebuildDomainInventoryPreferringBrd } from "../../engine/domain-inventory-persist.util.js";
+import { reconcileMddSsotBeforeDeliveryGate } from "../../engine/mdd-ssot-repair.util.js";
 import {
   checkApiVsMdd,
   checkBlueprintVsMdd,
@@ -897,12 +897,13 @@ export class EstimationService {
       dbgaMarkdown: dbgaContent,
       mddMarkdown: content,
     });
-    const gateMarkdown = annotateJustifiedPlatformTablesInMdd(content, {
+    const repaired = reconcileMddSsotBeforeDeliveryGate(content, {
       brdMarkdown: documents.brdContent,
       dbgaMarkdown: dbgaContent,
       specMarkdown: documents.specContent,
       inventory,
-    }).markdown;
+    });
+    const gateMarkdown = repaired.markdown;
     const deliveryGate = validateMddForDelivery(gateMarkdown, {
       brdMarkdown: documents.brdContent,
       dbgaMarkdown: dbgaContent,

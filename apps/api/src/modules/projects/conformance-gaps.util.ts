@@ -11,6 +11,7 @@ import { buildEntityApiTraceReport, formatEntityApiTraceGaps } from "../engine/e
 import { extractDbgaBenchmarkMatrix, formatDbgaBenchmarkMatrixGaps } from "../engine/dbga-benchmark-matrix.util.js";
 import { collectExternalIntegrationContractGaps } from "../engine/sdd-external-contracts.util.js";
 import { resolveDomainInventory } from "../engine/domain-inventory-persist.util.js";
+import { collectMddSsotGateGaps } from "../engine/mdd-ssot-repair.util.js";
 import type { DomainInventory } from "@theforge/shared-types";
 
 export interface ProjectDeliverableSource {
@@ -104,6 +105,15 @@ export function collectConformanceGaps(
       apiContractsMarkdown: project.apiContractsContent,
       architectureMarkdown: project.architectureContent,
       infraMarkdown: project.infraContent,
+    }),
+  );
+
+  gaps.push(
+    ...collectMddSsotGateGaps({
+      brdMarkdown: project.brdContent,
+      dbgaMarkdown: project.dbgaContent,
+      mddMarkdown: mdd,
+      inventory,
     }),
   );
 

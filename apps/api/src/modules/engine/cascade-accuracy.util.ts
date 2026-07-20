@@ -13,6 +13,7 @@ import {
 } from "@theforge/shared-types";
 import { buildDomainInventory, detectAuthOnlySkew } from "./domain-inventory.util.js";
 import { collectDomainInventoryConformanceGaps } from "./domain-inventory-conformance.util.js";
+import { collectMddSsotGateGaps } from "./mdd-ssot-repair.util.js";
 import { extractEntities } from "./conformance.service.js";
 import { extractSectionByNumber } from "./mdd-markdown-parser.js";
 
@@ -447,6 +448,22 @@ export function domainDeliveryGateFindings(input: {
       blockers.push(gap.replace(/^\[MDD §3\]\s*/, "domain-dbga-core-missing: "));
     } else if (invConf.platformTablesWithoutJustification.length > 0) {
       blockers.push(gap.replace(/^\[MDD §3\]\s*/, "domain-platform-orphan: "));
+    } else {
+      warnings.push(gap);
+    }
+  }
+
+  const ssotGaps = collectMddSsotGateGaps({
+    brdMarkdown: input.brdMarkdown,
+    dbgaMarkdown: input.dbgaMarkdown,
+    mddMarkdown: input.mddMarkdown,
+    inventory,
+  });
+  for (const gap of ssotGaps) {
+    if (gap.startsWith("[UAT]")) {
+      blockers.push(gap.replace(/^\[UAT\]\s*/, "domain-uat-regression: "));
+    } else if (gap.startsWith("[MDD §4]")) {
+      blockers.push(gap.replace(/^\[MDD §4\]\s*/, "domain-section4-journey: "));
     } else {
       warnings.push(gap);
     }

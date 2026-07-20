@@ -201,8 +201,10 @@ export function normalizeApiPathForCompare(path: string): string {
   let p = path.replace(/`/g, "").trim().split("?")[0] ?? "";
   if (p.length > 1 && p.endsWith("/")) p = p.slice(0, -1);
   p = p.toLowerCase();
-  p = p.replace(/\{[^}]+\}/g, "/*");
-  p = p.replace(/:[a-z_][a-z0-9_]*/gi, "/*");
+  p = p.replace(/\/\{[^}]+\}/g, "/*");
+  p = p.replace(/\/:[a-z_][a-z0-9_]*/gi, "/*");
+  p = p.replace(/\{[^}]+\}/g, "*");
+  p = p.replace(/:[a-z_][a-z0-9_]*/gi, "*");
   return p;
 }
 
