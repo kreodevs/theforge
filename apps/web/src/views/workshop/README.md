@@ -20,7 +20,8 @@ Subcomponentes extraídos de `WorkshopView.tsx` (Fase 5b del [GOD-REFACTOR](../.
 | **WorkshopAdrsPluginPanels.tsx** | ADRs del grafo y paneles plugin dinámicos. Tipos en `workshopAdrsPluginPanels.types.ts`. |
 | **WorkshopDocPanelContent.tsx** | Compositor del área scroll: encadena todos los subpaneles anteriores. Tipos en `workshopDocPanelContent.types.ts`. |
 | **useWorkshopDocPanelProps.ts** | Hook que consolida los `useMemo` de props de todos los subpaneles del documento. Tipos de entrada en `useWorkshopDocPanelProps.types.ts`. |
+| **WorkshopMetricsColumn.tsx** | Columna métricas: panel móvil + flyout desktop (semáforo). Tipos en `workshopMetricsColumn.types.ts`. Usa `WorkshopMetricsColumnInner`. |
 
 Utilidades puras compartidas con otros módulos viven en `utils/workshopDocToolbar.ts`.
 
-Próximas extracciones planificadas: columna métricas/chat, layout shell 3 columnas.
+Próximas extracciones planificadas: layout shell 3 columnas, nav móvil y FABs.

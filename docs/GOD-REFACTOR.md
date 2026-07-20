@@ -725,3 +725,10 @@ Fase 6 (legacy/MCP)
 |------|--------|
 | `useWorkshopDocPanelProps.ts` + `useWorkshopDocPanelProps.types.ts` | ✅ |
 | `WorkshopView.tsx` — ~3 647 L (−~430 vs 5f) | ✅ |
+
+### Fase 5 — Workshop frontend (incremento 5h)
+
+| Ítem | Estado |
+|------|--------|
+| `WorkshopMetricsColumn.tsx` + types (móvil + flyout lg) | ✅ |
+| `WorkshopView.tsx` — ~3 517 L | ✅ |
