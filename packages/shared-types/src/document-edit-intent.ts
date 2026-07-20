@@ -12,7 +12,11 @@ const DBGA_DOC_TARGET_RE =
   /\b(?:al|en\s+el|del|sobre\s+el)\s+(?:documento|dbga|benchmark|panel|an[aá]lisis)\b/i;
 
 const DBGA_IMPERATIVE_RE =
-  /\b(?:haz\s+las\s+modific|aplica\s+los\s+cambios|persiste\s+en\s+el\s+panel|guarda\s+en\s+el\s+panel)\b/i;
+  /\b(?:haz\s+(?:las\s+modific|los\s+cambios|el\s+cambio|los\s+ajustes)|aplica\s+(?:los\s+)?cambios|aplica\s+el\s+cambio|persiste\s+en\s+el\s+panel|guarda\s+en\s+el\s+panel)\b/i;
+
+/** Renombre / etiquetado explícito (p. ej. «llamarlos PAT Wasender y PAT SSO»). */
+const DBGA_RENAME_INTENT_RE =
+  /\b(?:llamarl[oa]s|renombr(?:ar|a|e)|n[oó]mbral[oa]s|denomin(?:ar|a)|para\s+evitar\s+confusiones)\b/i;
 
 const DBGA_DOMAIN_WITH_VERB_RE =
   /\b(?:modific|actualiz|añad|agreg|ajust|incorpor|integr|corrige|cubr|elimina|saca|quita)/i;
@@ -123,6 +127,11 @@ export function looksLikeDbgaEditRequest(message: string): boolean {
   }
 
   if (DBGA_VERB_WITH_DOC_RE.test(m) || DBGA_IMPERATIVE_RE.test(m)) {
+    return true;
+  }
+
+  // «existen 2 PAT… llamarlos PAT Wasender y PAT SSO» + «haz los cambios»
+  if (DBGA_RENAME_INTENT_RE.test(m) && (DBGA_DOC_TARGET_RE.test(m) || DBGA_IMPERATIVE_RE.test(m) || /\bPAT\b|\btoken\b|\bsecret\b/i.test(m))) {
     return true;
   }
 

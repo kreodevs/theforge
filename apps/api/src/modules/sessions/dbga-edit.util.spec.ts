@@ -6,6 +6,7 @@ import {
   dbgaContainsUserEditKeywords,
   dbgaReflectsUserEditIntent,
   extractDbgaEditKeywords,
+  extractDbgaProposedLabels,
   isDbgaContentNearlyIdentical,
   isPartialBenchmarkDoc,
   looksLikeDbgaEditRequest,
@@ -134,6 +135,37 @@ describe("extractDbgaEditKeywords", () => {
     assert.ok(keys.includes("kill"));
     assert.ok(keys.includes("switch") || keys.some((k) => k.includes("kill")));
     assert.ok(keys.includes("tablero") || keys.includes("aprobación") || keys.includes("aprobacion"));
+  });
+
+  it("incluye acrónimos cortos (pat, sso)", () => {
+    const keys = extractDbgaEditKeywords(
+      "existen 2 PAT wasender y PAT SSO para el usuario",
+    );
+    assert.ok(keys.includes("pat"));
+    assert.ok(keys.includes("sso"));
+    assert.ok(keys.includes("wasender"));
+  });
+});
+
+describe("extractDbgaProposedLabels + rename reflect", () => {
+  it("extrae PAT Wasender y PAT SSO", () => {
+    const labels = extractDbgaProposedLabels(
+      "Sugiero llamarlos PAT Wasender y PAT SSO para evitar confusiones",
+    );
+    assert.ok(labels.some((l) => /pat\s+wasender/i.test(l)));
+    assert.ok(labels.some((l) => /pat\s+sso/i.test(l)));
+  });
+
+  it("acepta DBGA que solo incorpora las etiquetas propuestas", () => {
+    const user =
+      "existen 2 PAT wasender y sso. Sugiero llamarlos PAT Wasender y PAT SSO para evitar confusiones. Haz los cambios al documento";
+    const doc = `# Domain Benchmark
+
+## Tokens
+- **PAT Wasender**: cuenta que coordina sesiones WaSender.
+- **PAT SSO**: token del usuario en SSO.
+`;
+    assert.equal(dbgaReflectsUserEditIntent(doc, user), true);
   });
 });
 
