@@ -4,6 +4,38 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+## [v1.5.0] — 2026-07-19
+
+> **GOD-REFACTOR (Fases 0–6)** — Descomposición de god modules sin cambiar contratos públicos: MDD sanitize/manager, chat API, `projects.service`, Workshop UI/store, legacy coordinator, MCP server y gobernanía IA por artefacto. Build monorepo verde.
+
+### Added
+
+- **Fase 0:** red de specs de regresión (golden MDD, workshop store smoke, MCP tools).
+- **`store/workshop/`:** 7 slices Zustand (`project`, `session-chat`, `mdd`, `deliverables`, `clarify`, `legacy-debug`, `ui`) + composición en `workshopStore.ts` (~51 L).
+- **`packages/mcp-server/src/tools/`:** tools MCP por dominio (`project`, `generation`, `analysis`, `orchestrator`, `legacy`, `integration`, `markdown`); bootstrap HTTP/stdio ~248 L.
+- **`agent-governance/`:** módulos por artefacto (`rules-artifacts`, `skills-artifacts`, `agents-artifacts`, `install-map`, `sdd-conflict`).
+- **Legacy-flow:** `legacy-stage-context`, `legacy-mdd-generation`, `legacy-deliverables-orchestrator` + util/types compartidos.
+
+### Changed
+
+- **`mdd-sanitize.ts`:** barrel sobre submódulos (`section-merge`, `persist-pipeline`, `sql-repair`, `mermaid-fences`, …).
+- **`mdd-manager`:** plan, heuristics, LLM turn, state handlers y delegate en archivos dedicados.
+- **Chat API:** `workshop-system-prompt.builder.ts`, runner compartido de turnos en `sessions`; duplicación sync/stream reducida.
+- **`projects.service.ts`:** fachada ~420 L; lógica en servicios por dominio (MDD persist, entregables, etapas, conformidad, …).
+- **`WorkshopView.tsx`:** layout shell, paneles, hooks de props y métricas extraídos (~5 140 L vs ~5 917).
+- **`legacy-coordinator.service.ts`:** ~680 L; delega MDD y entregables en orchestrators.
+- **`packages/mcp-server`:** cliente API, tipos y registry en `tools/index.ts`; `.gitignore` corrige exclusión de `packages/mcp-server/src/tools/`.
+
+### Fixed
+
+- **Build API (Nest):** typo `systemPrompt` en multimodal; import `buildApiRetryFeedback`; narrowing `MddUpdatePipelineResult`; `legacyChangeState` con `Prisma.JsonNull`; imports muertos tras split `mdd-sanitize/internal.ts`.
+- **`mdd-golden.util.ts`:** `__dirname` compatible con salida CJS del build.
+
+### Architecture
+
+- Documentación: `docs/GOD-REFACTOR.md` (incrementos 5a–6-4), READMEs de carpetas afectadas.
+- **Sin cambios** en fórmulas MXN (`packages/business-rules`), delimitadores `---FIN_*---`, contratos MCP/REST públicos ni flujo legacy de negocio.
+
 ### Removed
 
 - **Integración Hermes Agent:** eliminados webhook (`HERMES_*`), endpoints `GET /projects/hermes-status` y `POST /projects/:id/launch-hermes`, botón «Lanzar a Hermes» en Workshop y claves en Ajustes → Sistema. Handoff sigue vía export ZIP / repo-handoff / MCP.
