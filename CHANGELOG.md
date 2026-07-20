@@ -4,6 +4,33 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+## [v1.6.1] — 2026-07-19
+
+> **MDD como SSOT — brechas críticas de dominio** — Entidades DBGA en §3, tablas plataforma, prefijo API unificado, decision log BRD, trazabilidad entidad→API e integraciones externas.
+
+### Added
+
+- **`domain-inventory-conformance.util.ts`:** gate entidades DBGA faltantes (`users`, `watchlists`, `operations`, `credentials`, `dashboard_configs`, `otp_sessions`) y tablas plataforma (`messages`, `mcp_plugins`, `conversation_memory`) sin ancla BRD/DBGA.
+- **`brd-decision-log.util.ts`:** cierre decision log (fiscal %, `$N$`, tokens/plan, «Por validar»).
+- **`api-prefix-unify.util.ts`:** reconcilia `/api/` → `/api/v1/` en contratos según MDD §4.
+- **`entity-api-trace.util.ts`:** matriz explícita entidad → §3 → endpoint API.
+- **`dbga-benchmark-matrix.util.ts`:** aviso si DBGA promete matriz competitiva sin tabla.
+- **`sdd-external-contracts.util.ts`:** WebSocket gateway, Banxico, Polygon cuando DBGA/BRD los mantienen en alcance.
+- **`PLATFORM_ORPHAN_TABLES` / `DBGA_CORE_ENTITIES`** en `@theforge/shared-types`.
+- **Specs:** domain-inventory-conformance, mdd-ssot-gaps.
+
+### Changed
+
+- **Delivery gate MDD** y **cascada W4:** blockers de dominio + decision log; retry API/Architecture ante gaps SSOT.
+- **`collectConformanceGaps` / `audit_documents`:** incluye inventario, trazabilidad, benchmark DBGA e integraciones.
+- **`repairApiProgrammaticGaps`:** unifica prefijo antes de inyectar endpoints §4 faltantes.
+- **`mdd-quality-audit.util.ts`:** DLQ distingue RabbitMQ vs Celery; Argon2id sin cambio de contrato.
+
+### Fixed
+
+- **MDD auth-skewed:** inventario DBGA alimenta `suggestedEntities` y stubs §3 deterministas.
+- **Drift API prefix:** contratos ya no mezclan `/api/` y `/api/v1/` tras reparación programática.
+
 ## [v1.6.0] — 2026-07-19
 
 > **Pipeline de generación — 10 brechas post GOD-REFACTOR** — IDs US estables, SSOT tasks, bundle version atómico, conformidad cross-artifact, partición por journey, alcance v1 de pantallas, cardinalidad Prisma, parser tasksJson v2, re-estimación post-consolidación y cableado MCP/spec-kit.
