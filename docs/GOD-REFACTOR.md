@@ -813,4 +813,13 @@ Próximo: ver incrementos 5m-2 y 5m-3.
 | Smoke spec incluye `slice-legacy-debug.ts` | ✅ |
 | `workshopStore.ts` — **~340 L** (−~650 vs 5m-5) | ✅ |
 
-Próximo: `slice-clarify` (governance, traceability, clarify, converge/tasks, `reset`).
+### Fase 5 — `workshopStore` (incremento 5m-7)
+
+| Ítem | Estado |
+|------|--------|
+| `slice-clarify.ts` — `createClarifySlice` | ✅ |
+| Acciones: ADRs, governance, traceability, clarify/resolve, converge/tasks, `reset` | ✅ |
+| Smoke spec incluye `slice-clarify.ts` | ✅ |
+| `workshopStore.ts` — **~50 L** (solo composición + re-exports) | ✅ |
+
+**Fase 5a completada:** store descompuesto en 7 slices + helpers; API pública de `useWorkshopStore` sin cambios.
