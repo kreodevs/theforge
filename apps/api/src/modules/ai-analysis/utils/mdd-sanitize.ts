@@ -1,5 +1,6 @@
 /** Barrel estable: re-exports de submódulos + implementación restante en internal. */
 export * from "./mdd-sanitize/internal.js";
+export * from "./mdd-sanitize/cross-consistency.js";
 export { jsonSectionToMarkdown } from "./mdd-sanitize/json-section-to-markdown.js";
 export { draftUsesLdapPrimaryAuth } from "./mdd-sanitize/security-manifest.js";
 export {

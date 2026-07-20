@@ -49,11 +49,14 @@ import {
 import {
   alignInfraNodeVersionWithSection2,
   applyDeterministicCrossConsistencyFixes,
+  ensureSecurityLockoutInSection6,
+  fixDeterministicMddCoherence,
+} from "./cross-consistency.js";
+import {
   ensureManifestInJsonBlock,
   ensureSection2SqlBlockClosed,
   ensureSection2SqlFormattedInSection,
   ensureTechnicalMetadataAtEndOfSection2,
-  fixDeterministicMddCoherence,
   fixSection6BulletedJsonToMarkdown,
   forceStripBrokenPrefix,
   formatContratosBody,
@@ -72,7 +75,6 @@ import {
   unwrapSection2SqlBlockContainingJson,
   repairDisplacedJsonBracesInContratos,
   repairNestedJsonFencesInDraft,
-  ensureSecurityLockoutInSection6,
   ensureTechnicalMetadataBlockInDraft,
   mddExcludesWebUiSurface,
   CANONICAL_HEADINGS,

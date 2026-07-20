@@ -13,7 +13,8 @@ Submódulos extraídos de `../mdd-sanitize.ts` durante el refactor GOD-REFACTOR 
 | `mermaid-fences.ts` | 5 exports (re-export barrel) | Fences mermaid: strip, fix doble fence, unescape, §3 repair |
 | `persist-format.util.ts` | 3 exports (re-export barrel) | HR/fences del pipeline de persist: `closeUnclosedCodeFencesInDraft`, `collapseConsecutiveHorizontalRules`, `stripStrayParenAfterJsonCodeBlocks` |
 | `persist-pipeline.ts` | 11 exports (re-export barrel) | `prepare/store/sanitize` at persist, `normalizeMddFormat`, `finalizeMddDeliverable`, `applyPreDeliveryGateFixes` |
-| `internal.ts` | resto de exports vía barrel | Implementación restante (cross-consistency, contratos, etc.) |
+| `cross-consistency.ts` | ~25 exports (re-export barrel) | Coherencia cruzada §1–§7: JWT, outbox, dual approval, lockout, patches LLM, detect* |
+| `internal.ts` | resto de exports vía barrel | JSON §4, contratos, normalize markdown, structured helpers |
 
 El entrypoint estable para consumidores sigue siendo `../mdd-sanitize.ts` (re-exports).
 
@@ -24,3 +25,5 @@ El entrypoint estable para consumidores sigue siendo `../mdd-sanitize.ts` (re-ex
 **Exports de `mermaid-fences.ts`:** `stripMermaidFences`, `fixDoubleMermaidFences`, `unescapeMermaidLiteralNewlines`, `fixSection2UnclosedSqlAndGluedMermaid`.
 
 **Exports de `persist-pipeline.ts`:** `sanitizeMddAtPersist`, `prepareMddMarkdownForPersist`, `storeMddMarkdownForPersist`, `sanitizeMddForExport`, `normalizeMddFormat`, `finalizeMddDeliverable`, `applyPreDeliveryGateFixes`, `repairGarbageHeadings`, `repairManifestJsonClosing`, `demoteProseHeadingsInSections`, `stripUiUxSectionForApiOnlyMvp`.
+
+**Exports principales de `cross-consistency.ts`:** `applyDeterministicCrossConsistencyFixes`, `detectCrossConsistencyIssues`, `applyCrossConsistencyPatches`, `fixDeterministicMddCoherence`, `ensureSecurityLockoutInSection6`, `fixDualApprovalSchemaInDraft`, `detectDuplicateOutboxTables`, `draftUsesRs256Jwt`.

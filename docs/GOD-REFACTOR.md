@@ -599,5 +599,6 @@ Fase 6 (legacy/MCP)
 | `section-merge.ts` (merge/preserve/dedupe §1–§7, validateMddStructure) | ✅ |
 | `mermaid-fences.ts` + `brace.util.ts` | ✅ |
 | `persist-pipeline.ts` + `persist-format.util.ts` | ✅ |
-| `cross-consistency.ts`, … | pendiente |
-| Barrel `mdd-sanitize.ts` &lt; 200 L | ✅ (~75 L; re-exports) |
+| `cross-consistency.ts` | ✅ |
+| Barrel `mdd-sanitize.ts` &lt; 200 L | ✅ (~76 L) |
+| `internal.ts` &lt; 800 L | pendiente (~2540 L) |
