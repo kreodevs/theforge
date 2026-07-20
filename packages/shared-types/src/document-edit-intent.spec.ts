@@ -38,6 +38,16 @@ describe("looksLikeDbgaEditRequest", () => {
     );
   });
 
+  it("detecta «Haz los cambios al documento» (imperativo común)", () => {
+    assert.ok(looksLikeDbgaEditRequest("Haz los cambios al documento"));
+  });
+
+  it("detecta renombre PAT Wasender / PAT SSO + aplicar cambios", () => {
+    const msg =
+      "existen 2 PAT , uno es el de wasender api que es el de la cuenta que coordinará las sesiones de los teléfonos de los tenant y el otro es el PAT del sso para el usuario. Sugiero llamarlos PAT Wasender y PAT SSO para evitar confusiones\n\nHaz los cambios al documento";
+    assert.ok(looksLikeDbgaEditRequest(msg));
+  });
+
   it("detecta tenant con verbo de cambio", () => {
     assert.ok(
       looksLikeDbgaEditRequest(

@@ -4,6 +4,10 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+### Fixed
+
+- **Chat Fase 0 (DBGA) — cambios que no se persistían:** (1) `parseBenchmarkResponse` tolera variantes del marcador (`---FIN_DBGA`, `FIN_DBGA---`, `## FIN_DBGA`, `**FIN_DBGA**`). (2) `isDbgaContentNearlyIdentical` con tolerancia acotada (cap 200 chars) para no descartar ediciones pequeñas en DBGA grandes. (3) Imperativo «Haz los cambios al documento» y renombres propuestos (p. ej. **PAT Wasender** / **PAT SSO**) se detectan y validan sin rechazar acrónimos cortos.
+
 ## [v1.6.2] — 2026-07-19
 
 > **MDD SSOT — UAT, §4 journeys y tablas plataforma** — Paridad escenarios UAT BRD→MDD, contratos CRUD/journey en §4, gate MCP/memoria alineado con contexto BRD.

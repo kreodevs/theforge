@@ -6,6 +6,7 @@ import {
   dbgaContainsUserEditKeywords,
   dbgaReflectsUserEditIntent,
   extractDbgaEditKeywords,
+  extractDbgaProposedLabels,
   isDbgaContentNearlyIdentical,
   isPartialBenchmarkDoc,
   looksLikeDbgaEditRequest,
@@ -135,6 +136,37 @@ describe("extractDbgaEditKeywords", () => {
     assert.ok(keys.includes("switch") || keys.some((k) => k.includes("kill")));
     assert.ok(keys.includes("tablero") || keys.includes("aprobación") || keys.includes("aprobacion"));
   });
+
+  it("incluye acrónimos cortos (pat, sso)", () => {
+    const keys = extractDbgaEditKeywords(
+      "existen 2 PAT wasender y PAT SSO para el usuario",
+    );
+    assert.ok(keys.includes("pat"));
+    assert.ok(keys.includes("sso"));
+    assert.ok(keys.includes("wasender"));
+  });
+});
+
+describe("extractDbgaProposedLabels + rename reflect", () => {
+  it("extrae PAT Wasender y PAT SSO", () => {
+    const labels = extractDbgaProposedLabels(
+      "Sugiero llamarlos PAT Wasender y PAT SSO para evitar confusiones",
+    );
+    assert.ok(labels.some((l) => /pat\s+wasender/i.test(l)));
+    assert.ok(labels.some((l) => /pat\s+sso/i.test(l)));
+  });
+
+  it("acepta DBGA que solo incorpora las etiquetas propuestas", () => {
+    const user =
+      "existen 2 PAT wasender y sso. Sugiero llamarlos PAT Wasender y PAT SSO para evitar confusiones. Haz los cambios al documento";
+    const doc = `# Domain Benchmark
+
+## Tokens
+- **PAT Wasender**: cuenta que coordina sesiones WaSender.
+- **PAT SSO**: token del usuario en SSO.
+`;
+    assert.equal(dbgaReflectsUserEditIntent(doc, user), true);
+  });
 });
 
 describe("dbgaContainsUserEditKeywords", () => {
@@ -150,6 +182,16 @@ describe("isDbgaContentNearlyIdentical", () => {
     const a = "x".repeat(10_000);
     const b = a + " ";
     assert.equal(isDbgaContentNearlyIdentical(b, a), true);
+  });
+
+  it("NO descarta una aclaración pequeña en un documento grande", () => {
+    // Regresión: un DBGA de ~90 KB con una aclaración de ~250 chars no debe tratarse
+    // como "sin cambios" (antes el umbral proporcional 0.008 llegaba a ~720 chars).
+    const current = "# Domain Benchmark\n\n" + "contenido de dominio. ".repeat(4_000);
+    const edit =
+      current +
+      "\n\n## PAT\nExisten dos tipos de PAT: el de la cuenta maestra de Wasender API que coordina las sesiones de cada tenant, y el del usuario provisto por el SSO corporativo.";
+    assert.equal(isDbgaContentNearlyIdentical(edit, current), false);
   });
 });
 
@@ -167,6 +209,33 @@ describe("parseBenchmarkResponse", () => {
     const split = parseBenchmarkResponse(text);
     assert.ok(split);
     assert.match(split!.docPart, /Arquitectura/);
+  });
+
+  it("tolera delimitador sin guiones finales (---FIN_DBGA)", () => {
+    const text = "# Domain Benchmark\n\nContenido con tenant_id.\n\n---FIN_DBGA";
+    const split = parseBenchmarkResponse(text);
+    assert.ok(split);
+    assert.match(split!.docPart, /tenant_id/);
+    assert.doesNotMatch(split!.docPart, /FIN_DBGA/);
+    assert.equal(split!.chatPart, BENCHMARK_CHAT_ACK);
+  });
+
+  it("tolera delimitador sin guiones iniciales (FIN_DBGA---)", () => {
+    const text = "# Domain Benchmark\n\nContenido.\n\nFIN_DBGA---\nListo.";
+    const split = parseBenchmarkResponse(text);
+    assert.ok(split);
+    assert.match(split!.docPart, /Contenido/);
+    assert.match(split!.chatPart, /Listo/);
+  });
+
+  it("tolera delimitador en su propia línea sin guiones o envuelto", () => {
+    for (const marker of ["FIN_DBGA", "## FIN_DBGA", "**FIN_DBGA**"]) {
+      const text = `# Domain Benchmark\n\nCuerpo del análisis.\n\n${marker}\n\nRevisa el panel.`;
+      const split = parseBenchmarkResponse(text);
+      assert.ok(split, `marker=${marker}`);
+      assert.match(split!.docPart, /Cuerpo del análisis/);
+      assert.doesNotMatch(split!.docPart, /FIN_DBGA/);
+    }
   });
 });
 

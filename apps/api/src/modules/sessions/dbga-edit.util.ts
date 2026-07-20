@@ -38,21 +38,63 @@ const DBGA_EDIT_STOPWORDS = new Set([
   "cambio",
 ]);
 
+/** Acrónimos / etiquetas cortas que sí importan en renombres (PAT, SSO, API…). */
+const DBGA_SHORT_TOKEN_ALLOW =
+  /^(?:pat|sso|api|jwt|oidc|oauth|mfa|rbac|rds|eks|alb|iam|sql|http|https|ws|wss)$/i;
+
 /** Palabras significativas del pedido del usuario (para reintentos y validación laxa). */
 export function extractDbgaEditKeywords(message: string, max = 10): string[] {
   const words =
     message
       .toLowerCase()
-      .match(/\b[\p{L}\p{N}]{4,}\b/gu) ?? [];
+      .match(/\b[\p{L}\p{N}]{3,}\b/gu) ?? [];
   const seen = new Set<string>();
   const out: string[] = [];
   for (const w of words) {
     if (DBGA_EDIT_STOPWORDS.has(w) || seen.has(w)) continue;
+    if (w.length < 4 && !DBGA_SHORT_TOKEN_ALLOW.test(w)) continue;
     seen.add(w);
     out.push(w);
     if (out.length >= max) break;
   }
   return out;
+}
+
+/**
+ * Nombres propuestos en renombres («llamarlos PAT Wasender y PAT SSO»).
+ * Si el usuario pide etiquetar X/Y, el doc debe contener esas etiquetas.
+ */
+export function extractDbgaProposedLabels(message: string, max = 6): string[] {
+  const m = message.trim();
+  if (!m) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (raw: string) => {
+    const t = raw.replace(/\s+/g, " ").trim();
+    if (t.length < 3) return;
+    const key = t.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(t);
+  };
+
+  // «llamarlos PAT Wasender y PAT SSO» / «renombrar a X y Y»
+  const renameTail =
+    m.match(
+      /\b(?:llamarl[oa]s|renombr(?:ar|a|e)|n[oó]mbral[oa]s|denomin(?:ar|a))\s+(?:como\s+|a\s+)?(.+?)(?:\.|$|\n|para\s+evitar)/isu,
+    )?.[1] ?? "";
+  if (renameTail) {
+    for (const part of renameTail.split(/\s+y\s+|\s*,\s*|\s+o\s+/i)) {
+      push(part.replace(/["'«»]/g, "").trim());
+    }
+  }
+
+  // Etiquetas tipo «PAT Wasender» / «PAT SSO» en cualquier parte del mensaje
+  for (const hit of m.matchAll(/\bPAT\s+[A-Za-zÁÉÍÓÚÜÑ][\wÁÉÍÓÚÜÑ-]{1,32}\b/giu)) {
+    push(hit[0]!);
+  }
+
+  return out.slice(0, max);
 }
 
 export function dbgaContainsUserEditKeywords(doc: string, userMessage: string): boolean {
@@ -72,7 +114,14 @@ export function isDbgaContentNearlyIdentical(next: string, current: string): boo
   const b = normalizeDbgaForCompare(current);
   if (a === b) return true;
   const lenDiff = Math.abs(a.length - b.length);
-  return lenDiff < Math.max(150, b.length * 0.008);
+  // Tolerancia ACOTADA. El factor proporcional anterior (`b.length * 0.008`) crecía
+  // con el tamaño del documento: en un DBGA de ~90 KB el umbral llegaba a ~720 chars,
+  // así que una aclaración legítima de 1–2 frases se descartaba como "sin cambios" y
+  // el panel nunca se actualizaba (mensaje "No se guardaron cambios en Fase 0"). Con
+  // el cap, cualquier edición real (> ~90–200 chars) se persiste; solo se considera
+  // idéntico un eco casi textual del documento.
+  const tolerance = Math.min(Math.max(64, b.length * 0.001), 200);
+  return lenDiff < tolerance;
 }
 
 /**
@@ -137,6 +186,17 @@ export function dbgaReflectsUserEditIntent(doc: string, userMessage: string): bo
     return /##\s*11\.\s+|\/v1\/chats|API de Integraci[oó]n con Chat/i.test(d);
   }
 
+  // Renombres: basta con que las etiquetas propuestas aparezcan en el doc.
+  const proposed = extractDbgaProposedLabels(userMessage);
+  if (proposed.length >= 1) {
+    const hit = proposed.filter((label) => d.includes(label.toLowerCase())).length;
+    if (hit >= Math.min(2, proposed.length) || (proposed.length === 1 && hit === 1)) {
+      return true;
+    }
+    // Si pidió 2+ nombres y ninguno está, falla; si está 1 de 2, aún no basta.
+    if (hit === 0) return false;
+  }
+
   if (extractDbgaEditKeywords(userMessage, 8).length >= 2 && !dbgaContainsUserEditKeywords(doc, userMessage)) {
     return false;
   }
@@ -148,7 +208,7 @@ export const BENCHMARK_CHAT_ACK =
   "Fase 0 (DBGA) actualizado. Revisa el panel «Análisis (DBGA)».";
 
 export const BENCHMARK_CHAT_NO_CHANGE =
-  "No se guardaron cambios en Fase 0 (DBGA). La respuesta no incluyó el documento completo con ---FIN_DBGA---. Repite la petición (p. ej. integrar el diagrama en tablas espejo con tenant_id) o edita el panel directamente.";
+  "No se guardaron cambios en Fase 0 (DBGA). La respuesta no incluyó el documento completo con ---FIN_DBGA--- (o el refinado no reflejó el pedido). Repite p. ej. «Haz los cambios al documento: usa PAT Wasender y PAT SSO» o edita el panel directamente.";
 
 /** Evita mensaje de éxito en chat cuando el panel no se persistió. */
 export function benchmarkAssistantChatMessage(
@@ -180,6 +240,18 @@ export function benchmarkAssistantChatMessage(
   return chat;
 }
 
+/**
+ * Marcador `---FIN_DBGA---` tolerante a las variantes que emiten los modelos:
+ * - Con guiones a ambos lados (`---FIN_DBGA---`), solo a la izquierda (`---FIN_DBGA`)
+ *   o solo a la derecha (`FIN_DBGA---`). Antes se exigía `-{1,}` en AMBOS lados, así
+ *   que un cierre sin guiones finales (muy común) no se detectaba y el panel no se
+ *   persistía.
+ * - En su propia línea, opcionalmente envuelto por `#`, `*`, `>` o espacios
+ *   (`## FIN_DBGA`, `**FIN_DBGA**`), con o sin salto de línea final.
+ */
+const FIN_DBGA_MARKER_RE =
+  /-{1,}[ \t]*FIN_DBGA[ \t]*-*|FIN_DBGA[ \t]*-{1,}|(?:^|\n)[ \t>*#]*FIN_DBGA[ \t*]*(?=\r?\n|$)/i;
+
 /** Separa documento DBGA del mensaje de chat (tolerante a `---FIN_DBGA---` pegado al texto). */
 export function parseBenchmarkResponse(
   response: string,
@@ -187,8 +259,7 @@ export function parseBenchmarkResponse(
   const trimmed = response.trim();
   if (!trimmed) return null;
   const normalized = trimmed.replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-");
-  const re = /-{1,}\s*FIN_DBGA\s*-{1,}/i;
-  const match = re.exec(normalized);
+  const match = FIN_DBGA_MARKER_RE.exec(normalized);
   if (!match || match.index == null) return null;
   const idx = match.index;
   const docPart = trimmed.slice(0, idx).trim();

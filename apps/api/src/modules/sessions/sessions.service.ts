@@ -35,6 +35,7 @@ import {
   benchmarkAssistantChatMessage,
   dbgaReflectsUserEditIntent,
   extractDbgaEditKeywords,
+  extractDbgaProposedLabels,
   dbgaContainsUserEditKeywords,
   isDbgaContentNearlyIdentical,
   isPartialBenchmarkDoc,
@@ -1413,6 +1414,12 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
       ? "\n\n**Tablas espejo (obligatorio si aplica):** En cada tabla espejo documenta `tenant_id`, el **id de origen** (clave en el sistema fuente) y el **id propio** (PK de la fila en la tabla espejo). Refleja esto en SQL o tablas markdown del DBGA."
       : "";
 
+    const proposedLabels = extractDbgaProposedLabels(msg);
+    const renameHint =
+      proposedLabels.length > 0
+        ? `\n\n**Renombres / etiquetas (obligatorio):** Usa explícitamente estas etiquetas en el documento (en las menciones relevantes): ${proposedLabels.map((l) => `"${l}"`).join(", ")}. No inventes otros nombres para esos conceptos.`
+        : "";
+
     const fase0FormatHint = isPhase0StructuredMarkdown(current)
       ? `\n\n${PHASE0_MARKDOWN_FORMAT_RULES}`
       : "";
@@ -1424,7 +1431,7 @@ Según tu rol (INICIO DE SESIÓN en tus instrucciones): saluda al usuario y lanz
 Petición del usuario:
 ---
 ${msg}
----${mirrorHint}${fase0FormatHint}`;
+---${mirrorHint}${renameHint}${fase0FormatHint}`;
 
     const llmOpts = {
       activeTab: "benchmark" as const,
