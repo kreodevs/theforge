@@ -37,7 +37,7 @@ import { apiFetch, API_BASE, getOfflineQueue } from "../utils/apiClient";
 import { isWorkshopConnectionError, isSsotPatternsNotice } from "../utils/workshopSyncStatus";
 import { activeGenerationLabel, generationJobAllowed, primaryMddJob } from "../utils/projectGenerationGate";
 import { MDD_JOB_MODE_LABELS } from "@theforge/shared-types";
-import type { ArtifactTypeDefinition, GenerationJobType } from "@theforge/shared-types";
+import type { ArtifactTypeDefinition, ClarifyableDocumentField, GenerationJobType, AemMarketScope } from "@theforge/shared-types";
 import ChatContainer from "../components/ChatContainer";
 import ComplexityPendingBanner from "../components/ComplexityPendingBanner";
 import MddUpstreamSyncBanner from "../components/MddUpstreamSyncBanner";
@@ -69,12 +69,7 @@ import {
 import { WorkshopHeaderBar } from "./workshop/WorkshopHeaderBar";
 import { WorkshopDocPanel } from "./workshop/WorkshopDocPanel";
 import { WorkshopModals } from "./workshop/WorkshopModals";
-import { WorkshopStandardDocPanels } from "./workshop/WorkshopStandardDocPanels";
-import { WorkshopLegacyPanels } from "./workshop/WorkshopLegacyPanels";
-import { WorkshopBenchmarkPanel } from "./workshop/WorkshopBenchmarkPanel";
-import { WorkshopMddPanel } from "./workshop/WorkshopMddPanel";
-import { WorkshopSpecBrdAemPanels } from "./workshop/WorkshopSpecBrdAemPanels";
-import { WorkshopAgentPanels } from "./workshop/WorkshopAgentPanels";
+import { WorkshopDocPanelContent } from "./workshop/WorkshopDocPanelContent";
 import { HANDOFF_GATE_STORAGE_KEY } from "./workshop/workshopLegacyPanels.types";
 import type { WorkshopDocToolbarProps } from "./workshop/workshopDocToolbar.types";
 import { type DocumentsForZip } from "../utils/downloadDocumentsZip";
@@ -96,7 +91,7 @@ import {
 } from "../utils/printDocument";
 import { isTabVisibleForComplexity, type WorkshopDocTab } from "../utils/complexityTabs";
 import { evaluateTasksGenerationPrerequisites } from "../utils/tasksGenerationPrerequisites";
-import { isWorkshopAgentActivityPanel, isPluginPanel } from "../utils/workshopDocNav";
+import { isWorkshopAgentActivityPanel } from "../utils/workshopDocNav";
 import { fetchPluginArtifacts } from "../utils/pluginApi";
 import {
   buildRegenerateSectionChatMessage,
@@ -105,12 +100,6 @@ import {
   mddSectionRegenDisabledTitle,
   resolveEffectiveMddContent,
 } from "../utils/mddSectionRegen";
-import { PluginDocPanel } from "../components/PluginDocPanel";
-import type { ClarifyableDocumentField } from "@theforge/shared-types";
-import type { AemMarketScope } from "@theforge/shared-types";
-import { UxUiGuidePanel } from "../components/UxUiGuidePanel";
-import { ErrorBoundary } from "../components/ErrorBoundary";
-import { AdrsPanel } from "../components/AdrsPanel";
 import { useAutoSaveContent } from "../hooks/useAutoSaveContent";
 import {
   Tooltip,
@@ -3390,6 +3379,54 @@ export default function WorkshopView({
 
   const uxUiGuideDirty = (uxUiGuideContent ?? "") !== (project?.uxUiGuideContent ?? "");
 
+  const workshopUxGuidePanelProps = useMemo(
+    (): import("./workshop/workshopUxGuidePanel.types").WorkshopUxGuidePanelProps => ({
+      projectName,
+      uxUiGuideContent,
+      uxUiGuideDirty,
+      uxUiGuideViewMode,
+      effectiveMddTrimmed,
+      blueprintContent,
+      loading,
+      uxGenerating,
+      uxGuideDesignRef: project?.uxGuideDesignRef ?? "auto",
+      docTs,
+      onUxUiGuideContentChange: setUxUiGuideContent,
+      onPersistUxUiGuideContent: persistUxUiGuideContent,
+      onGenerateUxGuide: generateUxGuideSequential,
+      onDesignRefChange: handleDesignRefChange,
+      onUxUiGuideBlur: handleUxUiGuideBlur,
+    }),
+    [
+      projectName,
+      uxUiGuideContent,
+      uxUiGuideDirty,
+      uxUiGuideViewMode,
+      effectiveMddTrimmed,
+      blueprintContent,
+      loading,
+      uxGenerating,
+      project?.uxGuideDesignRef,
+      docTs,
+      persistUxUiGuideContent,
+      generateUxGuideSequential,
+      handleDesignRefChange,
+      handleUxUiGuideBlur,
+    ],
+  );
+
+  const workshopAdrsPluginPanelsProps = useMemo(
+    (): import("./workshop/workshopAdrsPluginPanels.types").WorkshopAdrsPluginPanelsProps => ({
+      centralPanel,
+      projectId,
+      activeStageId,
+      adrs,
+      pluginArtifactTypes,
+      onRefreshAdrs: fetchAdrs,
+    }),
+    [centralPanel, projectId, activeStageId, adrs, pluginArtifactTypes, fetchAdrs],
+  );
+
   if (error && !project) {
     return (
       <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex items-center justify-center">
@@ -3682,61 +3719,17 @@ export default function WorkshopView({
           isLgLayout={isLgLayout}
           docBubbleMenuItems={docBubbleMenuItems}
         >
-            <WorkshopLegacyPanels {...workshopLegacyPanelsProps} />
-            {centralPanel === "benchmark" && (
-              <WorkshopBenchmarkPanel {...workshopBenchmarkPanelProps} />
-            )}
-            {centralPanel === "mdd" && (
-              <WorkshopMddPanel {...workshopMddPanelProps} />
-            )}
-            <WorkshopStandardDocPanels {...workshopStandardDocPanelsProps} />
-            {centralPanel === "ux-ui-guide" && (
-              <ErrorBoundary>
-              <UxUiGuidePanel
-                key={uxUiGuideContent ? "populated" : "empty"}
-                content={uxUiGuideContent}
-                onContentChange={(v) => setUxUiGuideContent(v)}
-                onSave={() => {
-                  const content = replaceYamlFrontMatter(uxUiGuideContent ?? "", projectName);
-                  if (content !== (uxUiGuideContent ?? "")) setUxUiGuideContent(content);
-                  void persistUxUiGuideContent(content);
-                }}
-                isDirty={uxUiGuideDirty}
-                viewMode={uxUiGuideViewMode}
-                onGenerate={generateUxGuideSequential}
-                canGenerate={!!(effectiveMddTrimmed && blueprintContent?.trim())}
-                isLoading={loading}
-                isGenerating={uxGenerating}
-                designRef={project?.uxGuideDesignRef ?? "auto"}
-                onDesignRefChange={(ref) => {
-                  void handleDesignRefChange(ref);
-                }}
-                onDesignRefAutoMatch={() => {
-                  void handleDesignRefChange("auto");
-                }}
-                placeholder="# Design System\n\nConversa con la IA sobre marca, estilos, prioridades y componentes; el contenido se irá generando aquí."
-                onBlur={handleUxUiGuideBlur}
-                documentTimestamps={docTs("uxUiGuideContent")}
-              />
-              </ErrorBoundary>
-            )}
-            <WorkshopSpecBrdAemPanels {...workshopSpecBrdAemPanelsProps} />
-            <WorkshopAgentPanels {...workshopAgentPanelsProps} />
-            {centralPanel === "adrs" && (
-              <AdrsPanel
-                adrs={adrs}
-                projectId={projectId}
-                onRefresh={fetchAdrs}
-              />
-            )}
-            {isPluginPanel(centralPanel) && projectId && (
-              <PluginDocPanel
-                panel={centralPanel}
-                projectId={projectId}
-                artifactTypes={pluginArtifactTypes}
-                stageId={activeStageId}
-              />
-            )}
+          <WorkshopDocPanelContent
+            centralPanel={centralPanel}
+            legacy={workshopLegacyPanelsProps}
+            benchmark={workshopBenchmarkPanelProps}
+            mdd={workshopMddPanelProps}
+            standard={workshopStandardDocPanelsProps}
+            ux={workshopUxGuidePanelProps}
+            specBrdAem={workshopSpecBrdAemPanelsProps}
+            agent={workshopAgentPanelsProps}
+            adrsPlugin={workshopAdrsPluginPanelsProps}
+          />
         </WorkshopDocPanel>
 
         {/* Columna C: métricas — solo móvil (panel completo). En lg la pestaña flota sobre el área de trabajo (sin tercera columna). */}

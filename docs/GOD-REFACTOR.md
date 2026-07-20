@@ -709,3 +709,12 @@ Fase 6 (legacy/MCP)
 | `views/workshop/WorkshopAgentPanels.tsx` + types | ✅ |
 | Spec, AEM, UI Screens, BRD y paneles agente extraídos | ✅ |
 | `WorkshopView.tsx` — ~4 085 L | ✅ |
+
+### Fase 5 — Workshop frontend (incremento 5f)
+
+| Ítem | Estado |
+|------|--------|
+| `WorkshopUxGuidePanel.tsx` + types | ✅ |
+| `WorkshopAdrsPluginPanels.tsx` + types | ✅ |
+| `WorkshopDocPanelContent.tsx` — compositor scroll | ✅ |
+| `WorkshopView.tsx` — ~4 078 L | ✅ |
