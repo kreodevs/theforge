@@ -58,7 +58,6 @@ import { isPhase0StructuredMarkdown } from "../ai-analysis/phase0/phase0-from-ma
 import { PHASE0_MARKDOWN_FORMAT_RULES } from "../ai-analysis/prompts/load-prompts.js";
 import type { WorkshopChatAction } from "../ai/intent-route.types.js";
 import {
-  applyIntentPersistGate,
   buildEditModeUserPrompt,
   getLastAssistantMessage,
   hadAnyDocumentDelimiter,
@@ -69,6 +68,12 @@ import {
 } from "./workshop-document-turn.util.js";
 import { buildSessionChatGenerateOptions } from "./session-chat-llm-options.util.js";
 import { parseWorkshopAssistantResponse } from "./session-chat-response-parse.util.js";
+import {
+  buildSessionChatDonePayload,
+  isDocumentTurnPersisted,
+  processSessionChatTurnOutcome,
+  type SessionChatTurnRunnerDeps,
+} from "./session-chat-turn.runner.js";
 import {
   buildDocumentRefinePrompt,
   buildLlmCurrentDocOptions,
@@ -170,13 +175,6 @@ export class SessionsService {
     return action === "edit_document"
       ? buildEditModeUserPrompt(userPrompt, activeTab)
       : userPrompt;
-  }
-
-  private applyIntentGateToDocFlags(
-    action: WorkshopChatAction,
-    flags: DocPersistFlags,
-  ): DocPersistFlags {
-    return applyIntentPersistGate(action, flags);
   }
 
   private extractDocPartFromRefineResponse(
@@ -378,19 +376,6 @@ export class SessionsService {
     }
 
     return { content: merged, retried };
-  }
-
-  private userMessageForDocHeuristics(userMessage: string, llmUserPrompt: string): string {
-    return userMessage.trim() || llmUserPrompt.trim();
-  }
-
-  private wantsDbgaDocumentProcessing(
-    intentAction: WorkshopChatAction,
-    userMessage: string,
-    llmUserPrompt: string,
-  ): boolean {
-    if (intentAction === "edit_document") return true;
-    return looksLikeDbgaEditRequest(this.userMessageForDocHeuristics(userMessage, llmUserPrompt));
   }
 
   private computeTabDocumentPersisted(
@@ -608,6 +593,25 @@ export class SessionsService {
     return { finalDbga, assistantContent };
   }
 
+
+  private chatTurnRunnerDeps(): SessionChatTurnRunnerDeps {
+    return {
+      finalizeBenchmarkTurn: (...args) => this.finalizeBenchmarkTurn(...args),
+      resolveMddContentForReturn: (...args) => this.resolveMddContentForReturn(...args),
+      resolveDbgaContentForReturn: (...args) => this.resolveDbgaContentForReturn(...args),
+      resolveDeliverableContentForReturn: (...args) => this.resolveDeliverableContentForReturn(...args),
+      stripChatLabel: (raw) => this.parser.stripChatLabel(raw),
+      maybeWarnOrchestratorDocNotPersisted: (...args) => this.maybeWarnOrchestratorDocNotPersisted(...args),
+      computeTabDocumentPersisted: (...args) => this.computeTabDocumentPersisted(...args),
+    };
+  }
+
+  private async processChatTurnFromResponse(
+    input: Parameters<typeof processSessionChatTurnOutcome>[0],
+  ) {
+    return processSessionChatTurnOutcome(input, this.chatTurnRunnerDeps());
+  }
+
   private async resolveUserTurnForLlm(
     userMessage: string,
     images: ChatImagePart[] | undefined,
@@ -778,278 +782,27 @@ export class SessionsService {
       intentAction: intentRoute.action,
       mode: "sync",
     });
-    let {
-      dualMdd,
-      mddSplit,
-      specSplit,
-      brdSplit,
-      blueSplit,
-      apiSplit,
-      flowsSplit,
-      tasksSplit,
-      infraSplit,
-      archSplit,
-      useCasesSplit,
-      storiesSplit,
-      hasMdd,
-      hasUx,
-      hasDbga,
-      hasSpec,
-      hasBrd,
-      hasPhase0,
-      hasBlue,
-      hasApi,
-      hasFlows,
-      hasTasks,
-      hasInfra,
-      hasArch,
-      hasUseCases,
-      hasStories,
-      uxDocPart,
-      dbgaDocPart,
-      phase0DocPart,
-      rawChat,
-    } = parsed;
-
-    const effectiveUserMessage = llmUserPrompt.trim() || userMessage.trim();
-    const heuristicsUserMsg = this.userMessageForDocHeuristics(userMessage, llmUserPrompt);
-    const wantsDocumentEdit =
-      intentRoute.action === "edit_document" ||
-      (activeTab === "benchmark" && looksLikeDbgaEditRequest(heuristicsUserMsg));
-    const processDbga = this.wantsDbgaDocumentProcessing(
-      wantsDocumentEdit ? "edit_document" : intentRoute.action,
+    const outcome = await this.processChatTurnFromResponse({
+      safeResponse,
+      parsed,
+      activeTab,
       userMessage,
       llmUserPrompt,
-    );
-
-    const docFlagsBeforeGate: DocPersistFlags = {
-      hasMdd,
-      hasSpec,
-      hasArch,
-      hasUseCases,
-      hasStories,
-      hasBlue,
-      hasApi,
-      hasFlows,
-      hasTasks,
-      hasInfra,
-      hasBrd,
-      hasDbga,
-      hasUx,
-      hasPhase0,
-    };
-    const hadDelimiter = hadAnyDocumentDelimiter(docFlagsBeforeGate);
-    const gatedFlags = this.applyIntentGateToDocFlags(
-      wantsDocumentEdit ? "edit_document" : intentRoute.action,
-      docFlagsBeforeGate,
-    );
-    hasMdd = Boolean(gatedFlags.hasMdd);
-    hasSpec = Boolean(gatedFlags.hasSpec);
-    hasArch = Boolean(gatedFlags.hasArch);
-    hasUseCases = Boolean(gatedFlags.hasUseCases);
-    hasStories = Boolean(gatedFlags.hasStories);
-    hasBlue = Boolean(gatedFlags.hasBlue);
-    hasApi = Boolean(gatedFlags.hasApi);
-    hasFlows = Boolean(gatedFlags.hasFlows);
-    hasTasks = Boolean(gatedFlags.hasTasks);
-    hasInfra = Boolean(gatedFlags.hasInfra);
-    hasBrd = Boolean(gatedFlags.hasBrd);
-    hasDbga = Boolean(gatedFlags.hasDbga);
-    hasUx = Boolean(gatedFlags.hasUx);
-    hasPhase0 = Boolean(gatedFlags.hasPhase0);
-
-    ({
-      hasDbga,
-      dbgaDocPart,
-      rawChat,
-    } = this.finalizeBenchmarkTurn(activeTab, safeResponse, effectiveUserMessage, {
-      hasDbga,
-      dbgaDocPart,
-      rawChat,
-    }, wantsDocumentEdit));
-
-    const mddResolved = await this.resolveMddContentForReturn(
-      effectiveUserMessage,
-      { ...options, wantsDocumentEdit },
-      hasMdd ? mddSplit!.mddPart : undefined,
-      dualMdd?.markdown,
-    );
-    const finalMdd = mddResolved.content;
-    let docRetried = mddResolved.retried;
-
-    const finalDbga = await this.resolveDbgaContentForReturn(
-      effectiveUserMessage,
-      { ...options, wantsDocumentEdit: processDbga },
-      processDbga ? dbgaDocPart : undefined,
-    );
-
-    const specResolved = await this.resolveDeliverableContentForReturn(
-      activeTab,
-      "spec",
-      hasSpec,
-      specSplit?.docPart,
-      options?.currentSpecContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const brdResolved = await this.resolveDeliverableContentForReturn(
-      activeTab,
-      "brd",
-      hasBrd,
-      brdSplit?.docPart,
-      options?.currentBrdContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const blueprintResolved = await this.resolveDeliverableContentForReturn(
-      activeTab,
-      "blueprint",
-      hasBlue,
-      blueSplit?.docPart,
-      options?.currentBlueprintContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const apiResolved = await this.resolveDeliverableContentForReturn(
-      activeTab,
-      "api-contracts",
-      hasApi,
-      apiSplit?.docPart,
-      options?.currentApiContractsContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const flowsResolved = await this.resolveDeliverableContentForReturn(
-      activeTab,
-      "logic-flows",
-      hasFlows,
-      flowsSplit?.docPart,
-      options?.currentLogicFlowsContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const tasksResolved = await this.resolveDeliverableContentForReturn(
-      activeTab,
-      "tasks",
-      hasTasks,
-      tasksSplit?.docPart,
-      options?.currentTasksContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const infraResolved = await this.resolveDeliverableContentForReturn(
-      activeTab,
-      "infra",
-      hasInfra,
-      infraSplit?.docPart,
-      options?.currentInfraContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const archResolved = await this.resolveDeliverableContentForReturn(
-      activeTab,
-      "architecture",
-      hasArch,
-      archSplit?.docPart,
-      options?.currentArchitectureContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const useCasesResolved = await this.resolveDeliverableContentForReturn(
-      activeTab,
-      "use-cases",
-      hasUseCases,
-      useCasesSplit?.docPart,
-      options?.currentUseCasesContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const storiesResolved = await this.resolveDeliverableContentForReturn(
-      activeTab,
-      "user-stories",
-      hasStories,
-      storiesSplit?.docPart,
-      options?.currentUserStoriesContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const uxResolved = await this.resolveDeliverableContentForReturn(
-      activeTab,
-      "ux-ui-guide",
-      hasUx,
-      uxDocPart,
-      options?.currentUxUiGuideContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const phase0Resolved = await this.resolveDeliverableContentForReturn(
-      activeTab,
-      "phase0",
-      hasPhase0,
-      phase0DocPart,
-      options?.currentPhase0SummaryContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    docRetried =
-      docRetried ||
-      specResolved.retried ||
-      brdResolved.retried ||
-      blueprintResolved.retried ||
-      apiResolved.retried ||
-      flowsResolved.retried ||
-      tasksResolved.retried ||
-      infraResolved.retried ||
-      archResolved.retried ||
-      useCasesResolved.retried ||
-      storiesResolved.retried ||
-      uxResolved.retried ||
-      phase0Resolved.retried;
-
-    let assistantContent = this.parser.stripChatLabel(
-      activeTab === "benchmark"
-        ? benchmarkAssistantChatMessage(rawChat, finalDbga)
-        : rawChat,
-    );
-    assistantContent = this.maybeWarnOrchestratorDocNotPersisted(
-      activeTab,
-      heuristicsUserMsg,
-      assistantContent,
-      {
-        hasMdd: Boolean(finalMdd),
-        hasSpec: Boolean(specResolved.content),
-        hasArch: Boolean(archResolved.content),
-        hasUseCases: Boolean(useCasesResolved.content),
-        hasStories: Boolean(storiesResolved.content),
-        hasBlue: Boolean(blueprintResolved.content),
-        hasApi: Boolean(apiResolved.content),
-        hasFlows: Boolean(flowsResolved.content),
-        hasTasks: Boolean(tasksResolved.content),
-        hasInfra: Boolean(infraResolved.content),
-        hasBrd: Boolean(brdResolved.content),
-        hasDbga: Boolean(finalDbga),
-        hasUx: Boolean(uxResolved.content),
-        hasPhase0: Boolean(phase0Resolved.content),
-      },
+      intentRoute,
       options,
-      this.computeTabDocumentPersisted(activeTab, {
-        finalMdd,
-        finalDbga,
-        spec: specResolved.content,
-        brd: brdResolved.content,
-        blueprint: blueprintResolved.content,
-        api: apiResolved.content,
-        flows: flowsResolved.content,
-        tasks: tasksResolved.content,
-        infra: infraResolved.content,
-        arch: archResolved.content,
-        useCases: useCasesResolved.content,
-        stories: storiesResolved.content,
-        ux: uxResolved.content,
-        phase0: phase0Resolved.content,
-      }),
+    });
+    const {
+      assistantContent,
       hadDelimiter,
-    );
+      docRetried,
+      parts,
+      mddSplit,
+      uxDocPart,
+      dbgaDocPart,
+      hasMdd,
+      hasInfra,
+      infraSplit,
+    } = outcome;
 
     const tab = activeTab;
     const stageId = options?.stageId?.trim();
@@ -1073,7 +826,7 @@ export class SessionsService {
       mddPartLength: hasMdd ? mddSplit!.mddPart.length : 0,
       uxDocPartLength: uxDocPart?.length ?? 0,
       dbgaDocPartLength: dbgaDocPart?.length ?? 0,
-      dbgaPersistedLength: finalDbga?.length ?? 0,
+      dbgaPersistedLength: parts.finalDbga?.length ?? 0,
       infraLength: hasInfra ? infraSplit!.docPart.length : 0,
     });
 
@@ -1083,64 +836,16 @@ export class SessionsService {
       source: intentRoute.source,
       confidence: intentRoute.confidence,
       hadDelimiter,
-      persisted: Boolean(
-        (tab === "mdd" && finalMdd) ||
-          (tab === "benchmark" && finalDbga) ||
-          (tab === "spec" && specResolved.content) ||
-          (tab === "brd" && brdResolved.content) ||
-          (tab === "blueprint" && blueprintResolved.content) ||
-          (tab === "api-contracts" && apiResolved.content) ||
-          (tab === "logic-flows" && flowsResolved.content) ||
-          (tab === "tasks" && tasksResolved.content) ||
-          (tab === "infra" && infraResolved.content) ||
-          (tab === "architecture" && archResolved.content) ||
-          (tab === "use-cases" && useCasesResolved.content) ||
-          (tab === "user-stories" && storiesResolved.content) ||
-          (tab === "ux-ui-guide" && uxResolved.content) ||
-          (tab === "phase0" && phase0Resolved.content),
-      ),
+      persisted: isDocumentTurnPersisted(tab, parts),
       retried: docRetried,
     });
 
     const updatedSession = await this.prisma.session.findFirst({
       where: this.sessionScope(sessionId),
     });
-    const documentPersisted = this.computeTabDocumentPersisted(tab, {
-      finalMdd,
-      finalDbga,
-      spec: specResolved.content,
-      brd: brdResolved.content,
-      blueprint: blueprintResolved.content,
-      api: apiResolved.content,
-      flows: flowsResolved.content,
-      tasks: tasksResolved.content,
-      infra: infraResolved.content,
-      arch: archResolved.content,
-      useCases: useCasesResolved.content,
-      stories: storiesResolved.content,
-      ux: uxResolved.content,
-      phase0: phase0Resolved.content,
-    });
     return {
       session: updatedSession,
-      documentHadDelimiter: hadDelimiter,
-      documentPersisted,
-      mddContent: tab === "mdd" && finalMdd && finalMdd.length > 0 ? finalMdd : undefined,
-      uxUiGuideContent: tab === "ux-ui-guide" ? uxResolved.content : undefined,
-      dbgaContent: tab === "benchmark" ? finalDbga : undefined,
-      phase0SummaryContent: tab === "phase0" ? phase0Resolved.content : undefined,
-      specContent: specResolved.content,
-      brdContent: brdResolved.content,
-      blueprintContent: blueprintResolved.content,
-      apiContractsContent: apiResolved.content,
-      logicFlowsContent: flowsResolved.content,
-      tasksContent: tasksResolved.content,
-      infraContent: infraResolved.content,
-      architectureContent: archResolved.content,
-      useCasesContent: useCasesResolved.content,
-      userStoriesContent: storiesResolved.content,
-      documentAst: (dualMdd?.ast as Record<string, unknown> | undefined) ?? null,
-      documentVersion: dualMdd?.ast ? ((dualMdd.ast as { metadata?: { patchVersion?: number } }).metadata?.patchVersion ?? 0) : null,
+      ...buildSessionChatDonePayload(tab, outcome),
     };
   }
 
@@ -1339,280 +1044,16 @@ export class SessionsService {
       intentAction: intentRoute.action,
       mode: "stream",
     });
-    let {
-      dualMdd,
-      mddSplit,
-      specSplit,
-      brdSplit,
-      blueSplit,
-      apiSplit,
-      flowsSplit,
-      tasksSplit,
-      infraSplit,
-      archSplit,
-      useCasesSplit,
-      storiesSplit,
-      hasMdd,
-      hasUx,
-      hasDbga,
-      hasSpec,
-      hasBrd,
-      hasPhase0,
-      hasBlue,
-      hasApi,
-      hasFlows,
-      hasTasks,
-      hasInfra,
-      hasArch,
-      hasUseCases,
-      hasStories,
-      uxDocPart,
-      dbgaDocPart,
-      phase0DocPart,
-      rawChat,
-    } = parsed;
-
-    const effectiveUserMessage = llmUserPrompt.trim() || userMessage.trim();
-    const heuristicsUserMsg = this.userMessageForDocHeuristics(userMessage, llmUserPrompt);
-    const wantsDocumentEdit =
-      intentRoute.action === "edit_document" ||
-      (activeTab === "benchmark" && looksLikeDbgaEditRequest(heuristicsUserMsg));
-    const processDbga = this.wantsDbgaDocumentProcessing(
-      wantsDocumentEdit ? "edit_document" : intentRoute.action,
+    const outcome = await this.processChatTurnFromResponse({
+      safeResponse,
+      parsed,
+      activeTab,
       userMessage,
       llmUserPrompt,
-    );
-
-    const docFlagsBeforeGate: DocPersistFlags = {
-      hasMdd,
-      hasSpec,
-      hasArch,
-      hasUseCases,
-      hasStories,
-      hasBlue,
-      hasApi,
-      hasFlows,
-      hasTasks,
-      hasInfra,
-      hasBrd,
-      hasDbga,
-      hasUx,
-      hasPhase0,
-    };
-    const hadDelimiter = hadAnyDocumentDelimiter(docFlagsBeforeGate);
-    const gatedFlags = this.applyIntentGateToDocFlags(
-      wantsDocumentEdit ? "edit_document" : intentRoute.action,
-      docFlagsBeforeGate,
-    );
-    hasMdd = Boolean(gatedFlags.hasMdd);
-    hasSpec = Boolean(gatedFlags.hasSpec);
-    hasArch = Boolean(gatedFlags.hasArch);
-    hasUseCases = Boolean(gatedFlags.hasUseCases);
-    hasStories = Boolean(gatedFlags.hasStories);
-    hasBlue = Boolean(gatedFlags.hasBlue);
-    hasApi = Boolean(gatedFlags.hasApi);
-    hasFlows = Boolean(gatedFlags.hasFlows);
-    hasTasks = Boolean(gatedFlags.hasTasks);
-    hasInfra = Boolean(gatedFlags.hasInfra);
-    hasBrd = Boolean(gatedFlags.hasBrd);
-    hasDbga = Boolean(gatedFlags.hasDbga);
-    hasUx = Boolean(gatedFlags.hasUx);
-    hasPhase0 = Boolean(gatedFlags.hasPhase0);
-
-    ({
-      hasDbga,
-      dbgaDocPart,
-      rawChat,
-    } = this.finalizeBenchmarkTurn(tab, safeResponse, effectiveUserMessage, {
-      hasDbga,
-      dbgaDocPart,
-      rawChat,
-    }, wantsDocumentEdit));
-
-    const mddResolved = await this.resolveMddContentForReturn(
-      effectiveUserMessage,
-      { ...options, wantsDocumentEdit },
-      hasMdd ? mddSplit!.mddPart : undefined,
-      dualMdd?.markdown,
-    );
-    const finalMdd = mddResolved.content;
-    let docRetried = mddResolved.retried;
-
-    const finalDbga = await this.resolveDbgaContentForReturn(
-      effectiveUserMessage,
-      { ...options, wantsDocumentEdit: processDbga },
-      processDbga ? dbgaDocPart : undefined,
-    );
-
-    const specResolved = await this.resolveDeliverableContentForReturn(
-      tab,
-      "spec",
-      hasSpec,
-      specSplit?.docPart,
-      options?.currentSpecContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const brdResolved = await this.resolveDeliverableContentForReturn(
-      tab,
-      "brd",
-      hasBrd,
-      brdSplit?.docPart,
-      options?.currentBrdContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const blueprintResolved = await this.resolveDeliverableContentForReturn(
-      tab,
-      "blueprint",
-      hasBlue,
-      blueSplit?.docPart,
-      options?.currentBlueprintContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const apiResolved = await this.resolveDeliverableContentForReturn(
-      tab,
-      "api-contracts",
-      hasApi,
-      apiSplit?.docPart,
-      options?.currentApiContractsContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const flowsResolved = await this.resolveDeliverableContentForReturn(
-      tab,
-      "logic-flows",
-      hasFlows,
-      flowsSplit?.docPart,
-      options?.currentLogicFlowsContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const tasksResolved = await this.resolveDeliverableContentForReturn(
-      tab,
-      "tasks",
-      hasTasks,
-      tasksSplit?.docPart,
-      options?.currentTasksContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const infraResolved = await this.resolveDeliverableContentForReturn(
-      tab,
-      "infra",
-      hasInfra,
-      infraSplit?.docPart,
-      options?.currentInfraContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const archResolved = await this.resolveDeliverableContentForReturn(
-      tab,
-      "architecture",
-      hasArch,
-      archSplit?.docPart,
-      options?.currentArchitectureContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const useCasesResolved = await this.resolveDeliverableContentForReturn(
-      tab,
-      "use-cases",
-      hasUseCases,
-      useCasesSplit?.docPart,
-      options?.currentUseCasesContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const storiesResolved = await this.resolveDeliverableContentForReturn(
-      tab,
-      "user-stories",
-      hasStories,
-      storiesSplit?.docPart,
-      options?.currentUserStoriesContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const uxResolved = await this.resolveDeliverableContentForReturn(
-      tab,
-      "ux-ui-guide",
-      hasUx,
-      uxDocPart,
-      options?.currentUxUiGuideContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    const phase0Resolved = await this.resolveDeliverableContentForReturn(
-      tab,
-      "phase0",
-      hasPhase0,
-      phase0DocPart,
-      options?.currentPhase0SummaryContent,
-      effectiveUserMessage,
-      wantsDocumentEdit,
-    );
-    docRetried =
-      docRetried ||
-      specResolved.retried ||
-      brdResolved.retried ||
-      blueprintResolved.retried ||
-      apiResolved.retried ||
-      flowsResolved.retried ||
-      tasksResolved.retried ||
-      infraResolved.retried ||
-      archResolved.retried ||
-      useCasesResolved.retried ||
-      storiesResolved.retried ||
-      uxResolved.retried ||
-      phase0Resolved.retried;
-
-    let assistantContent = this.parser.stripChatLabel(
-      tab === "benchmark"
-        ? benchmarkAssistantChatMessage(rawChat, finalDbga)
-        : rawChat,
-    );
-    const documentPersisted = this.computeTabDocumentPersisted(tab, {
-      finalMdd,
-      finalDbga,
-      spec: specResolved.content,
-      brd: brdResolved.content,
-      blueprint: blueprintResolved.content,
-      api: apiResolved.content,
-      flows: flowsResolved.content,
-      tasks: tasksResolved.content,
-      infra: infraResolved.content,
-      arch: archResolved.content,
-      useCases: useCasesResolved.content,
-      stories: storiesResolved.content,
-      ux: uxResolved.content,
-      phase0: phase0Resolved.content,
-    });
-
-    assistantContent = this.maybeWarnOrchestratorDocNotPersisted(
-      tab,
-      heuristicsUserMsg,
-      assistantContent,
-      {
-        hasMdd: Boolean(finalMdd),
-        hasSpec: Boolean(specResolved.content),
-        hasArch: Boolean(archResolved.content),
-        hasUseCases: Boolean(useCasesResolved.content),
-        hasStories: Boolean(storiesResolved.content),
-        hasBlue: Boolean(blueprintResolved.content),
-        hasApi: Boolean(apiResolved.content),
-        hasFlows: Boolean(flowsResolved.content),
-        hasTasks: Boolean(tasksResolved.content),
-        hasInfra: Boolean(infraResolved.content),
-        hasBrd: Boolean(brdResolved.content),
-        hasDbga: Boolean(finalDbga),
-        hasUx: Boolean(uxResolved.content),
-        hasPhase0: Boolean(phase0Resolved.content),
-      },
+      intentRoute,
       options,
-      documentPersisted,
-      hadDelimiter,
-    );
+    });
+    const { assistantContent, hadDelimiter, docRetried, parts } = outcome;
     const assistantEntry = stageId
       ? { role: "assistant" as const, content: assistantContent, tab, stageId }
       : { role: "assistant" as const, content: assistantContent, tab };
@@ -1631,44 +1072,14 @@ export class SessionsService {
       source: intentRoute.source,
       confidence: intentRoute.confidence,
       hadDelimiter,
-      persisted: Boolean(
-        (tab === "mdd" && finalMdd) ||
-          (tab === "benchmark" && finalDbga) ||
-          (tab === "spec" && specResolved.content) ||
-          (tab === "brd" && brdResolved.content) ||
-          (tab === "blueprint" && blueprintResolved.content) ||
-          (tab === "api-contracts" && apiResolved.content) ||
-          (tab === "logic-flows" && flowsResolved.content) ||
-          (tab === "tasks" && tasksResolved.content) ||
-          (tab === "infra" && infraResolved.content) ||
-          (tab === "architecture" && archResolved.content) ||
-          (tab === "use-cases" && useCasesResolved.content) ||
-          (tab === "user-stories" && storiesResolved.content) ||
-          (tab === "ux-ui-guide" && uxResolved.content) ||
-          (tab === "phase0" && phase0Resolved.content),
-      ),
+      persisted: isDocumentTurnPersisted(tab, parts),
       retried: docRetried,
     });
 
     yield {
       type: "done",
       session: updatedSession,
-      documentHadDelimiter: hadDelimiter,
-      documentPersisted,
-      mddContent: tab === "mdd" && finalMdd && finalMdd.length > 0 ? finalMdd : undefined,
-      uxUiGuideContent: tab === "ux-ui-guide" ? uxResolved.content : undefined,
-      dbgaContent: tab === "benchmark" ? finalDbga : undefined,
-      phase0SummaryContent: tab === "phase0" ? phase0Resolved.content : undefined,
-      specContent: specResolved.content,
-      brdContent: brdResolved.content,
-      blueprintContent: blueprintResolved.content,
-      apiContractsContent: apiResolved.content,
-      logicFlowsContent: flowsResolved.content,
-      tasksContent: tasksResolved.content,
-      infraContent: infraResolved.content,
-      architectureContent: archResolved.content,
-      useCasesContent: useCasesResolved.content,
-      userStoriesContent: storiesResolved.content,
+      ...buildSessionChatDonePayload(tab, outcome),
     };
   }
 

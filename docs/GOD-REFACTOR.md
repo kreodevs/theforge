@@ -630,6 +630,7 @@ Fase 6 (legacy/MCP)
 | `workshop-system-prompt.builder.spec.ts` | ✅ 3 tests |
 | `session-chat-llm-options.util.ts` | ✅ |
 | `session-chat-response-parse.util.ts` | ✅ |
-| `sessions.service.ts` usa utils compartidos en `chat` / `chatStream` | ✅ (~2 385 L, −~250 L post-parse) |
-| `runChatTurn` unificado (runner completo) | ⏳ pendiente |
+| `session-chat-turn.runner.ts` (`processSessionChatTurnOutcome`) | ✅ |
+| `sessions.service.ts` usa runner en `chat` / `chatStream` | ✅ (~1 795 L) |
+| `runChatTurn` unificado (setup LLM + stream buffer en runner) | ⏳ pendiente |
 | `sessions.chat.contract.spec.ts` | ✅ 3 tests (sin regresión) |
