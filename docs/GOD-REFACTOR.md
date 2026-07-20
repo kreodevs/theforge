@@ -561,7 +561,7 @@ Fase 6 (legacy/MCP)
 | Métrica | Actual (2026-07-19) | Objetivo |
 |---------|---------------------|----------|
 | `WorkshopView.tsx` | 5 917 → **~5 140 L** | < 800 L |
-| `workshopStore.ts` | 5 319 → **~2 310 L** (+ módulos en `store/workshop/`) | < 600 L (compose + helpers fuera) |
+| `workshopStore.ts` | 5 319 → **~1 900 L** (+ módulos en `store/workshop/`) | < 600 L (compose + helpers fuera) |
 | `mdd-sanitize.ts` | 6 065 L | < 200 L (barrel) |
 | `createMddManagerNode` | 1 007 L | < 150 L |
 | `projects.service.ts` | 3 809 L → **~420 L** | < 1 500 L ✅ |
@@ -787,4 +787,12 @@ Próximo: ver incrementos 5m-2 y 5m-3.
 | Acciones: `setSession`, `retryWorkshopSync`, `fetchWelcome`, `clearChat`, `formatDocumentForActiveTab`, `sendMessage` | ✅ |
 | `workshopStore.ts` — **~2 308 L** (−~1 470 vs 5m-1) | ✅ |
 
-Próximo: `slice-mdd`, `slice-deliverables`.
+### Fase 5 — `workshopStore` (incremento 5m-4)
+
+| Ítem | Estado |
+|------|--------|
+| `slice-mdd.ts` — `createMddSlice` | ✅ |
+| Acciones: `setMddContent`, `persistMddContent`, `persistAndReviewMdd`, jobs MDD, `reapplyMddFormat` | ✅ |
+| `workshopStore.ts` — **~1 900 L** (−~400 vs 5m-3) | ✅ |
+
+Próximo: `slice-deliverables`, `slice-legacy-debug`.

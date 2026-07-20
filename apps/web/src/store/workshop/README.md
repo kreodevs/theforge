@@ -13,6 +13,7 @@ Extracción incremental de `workshopStore.ts` (Fase 5a del [GOD-REFACTOR](../../
 | **slice-ui.ts** | `createUiSlice` — setters de UI (loading, error, notice, modales, legacy debug). |
 | **slice-project.ts** | `createProjectSlice` — proyecto, etapas, `fetchProject`, plugin data. |
 | **slice-session-chat.ts** | `createSessionChatSlice` — sesión, chat, `/formatear`, `sendMessage`. |
+| **slice-mdd.ts** | `createMddSlice` — editor MDD, persist, jobs benchmark/upstream, review/format. |
 | **helpers/persist-field.ts** | `persistField` — PATCH genérico de entregables (usado por chat y store). |
 | **helpers/agent-progress-patch.ts** | `patchAgentProgressFromMddEvent` — progreso MDD en stream. |
 | **helpers/** | Funciones puras sin Zustand (ver tabla abajo). |
@@ -33,4 +34,4 @@ Extracción incremental de `workshopStore.ts` (Fase 5a del [GOD-REFACTOR](../../
 | **session-message.ts** | `sessionMessageBody`, helpers de chat MDD. |
 | **clarified-field-patch.ts** | Parche de campo tras clarificar documento. |
 
-Próximo: `slice-mdd`, `slice-deliverables`.
+Próximo: `slice-deliverables`, `slice-legacy-debug`.

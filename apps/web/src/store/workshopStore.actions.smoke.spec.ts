@@ -18,6 +18,7 @@ const SLICE_PATHS = [
   join(STORE_DIR, "slice-ui.ts"),
   join(STORE_DIR, "slice-project.ts"),
   join(STORE_DIR, "slice-session-chat.ts"),
+  join(STORE_DIR, "slice-mdd.ts"),
 ];
 
 function workshopStoreSource(): string {
