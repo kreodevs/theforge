@@ -1,13 +1,137 @@
 import type { IntentRouteResult } from "../ai/intent-route.types.js";
 import type { WorkshopChatAction } from "../ai/intent-route.types.js";
+import type { ChatImagePart, ChatMessage } from "@theforge/shared-types";
+import type { ChatMessage as LlmChatMessage } from "../ai/interfaces/llm-provider.interface.js";
 import { benchmarkAssistantChatMessage, looksLikeDbgaEditRequest } from "./dbga-edit.util.js";
+import { normalizeDashes } from "./document-content.util.js";
 import type { DocPersistFlags } from "./orchestrator-doc-guard.util.js";
 import type { SessionChatTurnOptions } from "./session-chat-llm-options.util.js";
 import type { ParsedWorkshopAssistantResponse } from "./session-chat-response-parse.util.js";
 import {
   applyIntentPersistGate,
   hadAnyDocumentDelimiter,
+  sanitizeLlmResponse,
 } from "./workshop-document-turn.util.js";
+
+/** Delimitador de documento Workshop en respuestas stream (ocultar doc, emitir solo chat). */
+export const WORKSHOP_DOC_DELIMITER_RE =
+  /-{1,}\s*FIN_(?:MDD|UX_UI|DBGA|PHASE0|SPEC|BRD|BLUEPRINT|API|FLOWS|TASKS|INFRA|ARCH|USECASES|STORIES)\s*-{1,}/i;
+
+export const EMPTY_LLM_RESPONSE_ERROR =
+  "La IA no generó texto (respuesta vacía o bloqueada). Intenta de nuevo o reformula el mensaje.";
+
+export type SessionChatUserTurn = {
+  promptForModel: string;
+  contentForLog: string;
+  imagesForLlm?: ChatImagePart[];
+};
+
+export type SessionChatTurnSessionRef = {
+  id: string;
+  projectId: string;
+  chatLog: unknown;
+};
+
+export type SessionChatTurnReady = {
+  sessionId: string;
+  session: SessionChatTurnSessionRef;
+  fullLog: ChatMessage[];
+  history: ChatMessage[];
+  activeTab: string;
+  tab: string;
+  stageId?: string;
+  userMessage: string;
+  userTurn: SessionChatUserTurn;
+  userEntry: ChatMessage;
+  intentRoute: IntentRouteResult;
+  llmUserPrompt: string;
+  llmHistory: LlmChatMessage[];
+  learningHistory: string;
+  options: SessionChatTurnOptions | undefined;
+};
+
+export type SessionChatDbgaEarlyTurn = {
+  kind: "dbga_early";
+  sessionId: string;
+  session: SessionChatTurnSessionRef;
+  fullLog: ChatMessage[];
+  tab: string;
+  stageId?: string;
+  userEntry: ChatMessage;
+  assistantContent: string;
+  finalDbga?: string;
+};
+
+export type SessionChatTurnPrepareResult =
+  | SessionChatDbgaEarlyTurn
+  | { kind: "ready"; ready: SessionChatTurnReady };
+
+export function buildSessionChatUserLogEntry(
+  userTurn: SessionChatUserTurn,
+  tab: string,
+  stageId?: string,
+  userImages?: ChatImagePart[],
+): ChatMessage {
+  const userEntryBase = {
+    role: "user" as const,
+    content: userTurn.contentForLog,
+    tab,
+    ...(userImages?.length ? { images: userImages } : {}),
+  };
+  return stageId ? { ...userEntryBase, stageId } : userEntryBase;
+}
+
+export function buildSessionChatAssistantLogEntry(
+  content: string,
+  tab: string,
+  stageId?: string,
+): ChatMessage {
+  const base = { role: "assistant" as const, content, tab };
+  return stageId ? { ...base, stageId } : base;
+}
+
+export function appendSessionChatLogPair(
+  fullLog: ChatMessage[],
+  userEntry: ChatMessage,
+  assistantEntry: ChatMessage,
+): ChatMessage[] {
+  return [...fullLog, userEntry, assistantEntry];
+}
+
+export function sanitizeAndAssertChatResponse(raw: string): string {
+  const safeResponse = sanitizeLlmResponse(raw);
+  if (!safeResponse.trim()) {
+    throw new Error(EMPTY_LLM_RESPONSE_ERROR);
+  }
+  return safeResponse;
+}
+
+export async function* workshopStreamToChatEvents(
+  stream: AsyncIterable<string>,
+): AsyncGenerator<
+  { type: "chunk"; content: string } | { type: "complete"; buffer: string }
+> {
+  let buffer = "";
+  let documentChunksDone = false;
+  for await (const chunk of stream) {
+    buffer += chunk;
+    if (documentChunksDone) {
+      yield { type: "chunk", content: chunk };
+    } else if (WORKSHOP_DOC_DELIMITER_RE.test(normalizeDashes(buffer))) {
+      documentChunksDone = true;
+      const normBuffer = normalizeDashes(buffer);
+      const match = normBuffer.match(WORKSHOP_DOC_DELIMITER_RE);
+      if (match) {
+        const idx = normBuffer.indexOf(match[0]);
+        const afterDelim = buffer.slice(idx + match[0].length);
+        if (afterDelim.trim()) {
+          yield { type: "chunk", content: afterDelim };
+        }
+      }
+    }
+  }
+  yield { type: "complete", buffer };
+}
 
 export type DeliverableResolveResult = { content?: string; retried: boolean };
 

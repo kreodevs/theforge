@@ -23,7 +23,6 @@ import {
   mergeUserTextWithVisionBlock,
 } from "../ai/utils/vision-context.util.js";
 import { resolveLlmMaxTokensForPurpose } from "../ai/config/llm-config.js";
-import { normalizeDashes } from "./document-content.util.js";
 import {
   appendOrchestratorDocNotPersistedWarning,
   currentDocLengthForTab,
@@ -66,12 +65,22 @@ import {
   sanitizeLlmResponse,
   validateStructuralForTab,
 } from "./workshop-document-turn.util.js";
-import { buildSessionChatGenerateOptions } from "./session-chat-llm-options.util.js";
+import {
+  buildSessionChatGenerateOptions,
+  type SessionChatTurnOptions,
+} from "./session-chat-llm-options.util.js";
 import { parseWorkshopAssistantResponse } from "./session-chat-response-parse.util.js";
 import {
+  appendSessionChatLogPair,
+  buildSessionChatAssistantLogEntry,
   buildSessionChatDonePayload,
+  buildSessionChatUserLogEntry,
   isDocumentTurnPersisted,
   processSessionChatTurnOutcome,
+  sanitizeAndAssertChatResponse,
+  workshopStreamToChatEvents,
+  type SessionChatTurnPrepareResult,
+  type SessionChatTurnReady,
   type SessionChatTurnRunnerDeps,
 } from "./session-chat-turn.runner.js";
 import {
@@ -612,6 +621,152 @@ export class SessionsService {
     return processSessionChatTurnOutcome(input, this.chatTurnRunnerDeps());
   }
 
+  private buildSessionChatLlmOptions(ready: SessionChatTurnReady) {
+    return buildSessionChatGenerateOptions(ready.options, {
+      intent: ready.intentRoute.intent,
+      learningHistory: ready.learningHistory || undefined,
+      userMessageImages: ready.userTurn.imagesForLlm,
+    });
+  }
+
+  private async prepareSessionChatTurn(
+    sessionId: string,
+    userMessage: string,
+    options?: SessionChatTurnOptions,
+  ): Promise<SessionChatTurnPrepareResult> {
+    const session = await this.prisma.session.findFirst({
+      where: this.sessionScope(sessionId),
+    });
+    if (!session) throw new NotFoundException("Session not found");
+
+    const fullLog = (session.chatLog as ChatMessage[]) ?? [];
+    const activeTab = options?.activeTab ?? "mdd";
+    const tab = activeTab;
+    const stageId = options?.stageId?.trim();
+    const history = filterChatByTab(fullLog, activeTab);
+    const userTurn = await this.resolveUserTurnForLlm(
+      userMessage,
+      options?.userImages,
+      activeTab,
+    );
+    const userEntry = buildSessionChatUserLogEntry(
+      userTurn,
+      tab,
+      stageId,
+      options?.userImages,
+    );
+
+    const intentRoute = await this.intentRouter.route(
+      userTurn.promptForModel,
+      this.intentRouteContext(options, history),
+    );
+    const llmUserPrompt = this.promptForIntentTurn(
+      userTurn.promptForModel,
+      intentRoute.action,
+      activeTab,
+    );
+
+    const dbgaEditTurn = await this.tryBenchmarkDbgaEditTurn(
+      tab,
+      llmUserPrompt,
+      options?.currentDbgaContent,
+      { userImages: options?.userImages, intentRoute },
+    );
+    if (dbgaEditTurn) {
+      return {
+        kind: "dbga_early",
+        sessionId,
+        session,
+        fullLog,
+        tab,
+        stageId,
+        userEntry,
+        assistantContent: dbgaEditTurn.assistantContent,
+        finalDbga: dbgaEditTurn.finalDbga,
+      };
+    }
+
+    const learningHistory = await this.preferences.getPreferencesForContext(session.projectId, 5);
+    return {
+      kind: "ready",
+      ready: {
+        sessionId,
+        session,
+        fullLog,
+        history,
+        activeTab,
+        tab,
+        stageId,
+        userMessage,
+        userTurn,
+        userEntry,
+        intentRoute,
+        llmUserPrompt,
+        llmHistory: sessionHistoryToLlm(history),
+        learningHistory: learningHistory || "",
+        options,
+      },
+    };
+  }
+
+  private async persistSessionChatTurn(
+    sessionId: string,
+    fullLog: ChatMessage[],
+    userEntry: ChatMessage,
+    assistantContent: string,
+    tab: string,
+    stageId?: string,
+  ): Promise<Session | null> {
+    const assistantEntry = buildSessionChatAssistantLogEntry(assistantContent, tab, stageId);
+    const updated = appendSessionChatLogPair(fullLog, userEntry, assistantEntry);
+    await this.prisma.session.update({
+      where: { id: sessionId },
+      data: { chatLog: updated as object },
+    });
+    return this.prisma.session.findFirst({
+      where: this.sessionScope(sessionId),
+    });
+  }
+
+  private async completeSessionChatTurn(
+    ready: SessionChatTurnReady,
+    safeResponse: string,
+    mode: "sync" | "stream",
+  ): Promise<{ outcome: Awaited<ReturnType<typeof processSessionChatTurnOutcome>>; session: Session | null }> {
+    const parsed = parseWorkshopAssistantResponse(safeResponse, this.parser, {
+      activeTab: ready.activeTab,
+      intentAction: ready.intentRoute.action,
+      mode,
+    });
+    const outcome = await this.processChatTurnFromResponse({
+      safeResponse,
+      parsed,
+      activeTab: ready.activeTab,
+      userMessage: ready.userMessage,
+      llmUserPrompt: ready.llmUserPrompt,
+      intentRoute: ready.intentRoute,
+      options: ready.options,
+    });
+    const session = await this.persistSessionChatTurn(
+      ready.sessionId,
+      ready.fullLog,
+      ready.userEntry,
+      outcome.assistantContent,
+      ready.tab,
+      ready.stageId,
+    );
+    logDocumentTurnMetrics(this.logger, {
+      tab: ready.tab,
+      action: ready.intentRoute.action,
+      source: ready.intentRoute.source,
+      confidence: ready.intentRoute.confidence,
+      hadDelimiter: outcome.hadDelimiter,
+      persisted: isDocumentTurnPersisted(ready.tab, outcome.parts),
+      retried: outcome.docRetried,
+    });
+    return { outcome, session };
+  }
+
   private async resolveUserTurnForLlm(
     userMessage: string,
     images: ChatImagePart[] | undefined,
@@ -631,38 +786,7 @@ export class SessionsService {
   async chat(
     sessionId: string,
     userMessage: string,
-    options?: {
-      currentMddContent?: string;
-      currentDbgaContent?: string;
-      currentUxUiGuideContent?: string;
-      currentPhase0SummaryContent?: string;
-      currentBlueprintContent?: string;
-      currentSpecContent?: string;
-      currentBrdContent?: string;
-      currentArchitectureContent?: string;
-      currentUseCasesContent?: string;
-      currentUserStoriesContent?: string;
-      currentApiContractsContent?: string;
-      currentLogicFlowsContent?: string;
-      currentTasksContent?: string;
-      currentInfraContent?: string;
-      activeTab?: string;
-      /** Override system prompt (ej. modo legacy con TheForge). */
-      systemPrompt?: string;
-      /** Etapa activa del Workshop: se guarda en cada mensaje user/assistant del par. */
-      stageId?: string;
-      /** Fase 0 (benchmark): instrucciones de entrevista proactiva + contexto HITL de complejidad */
-      complexityInterviewContext?: string;
-      /** Guía UX/UI: NEW → bloque Google Stitch para el producto; LEGACY → prohibido. */
-      projectTypeForUxGuide?: GenerateResponseOptions["projectTypeForUxGuide"];
-      uxGuideAdditionalDocs?: GenerateResponseOptions["uxGuideAdditionalDocs"];
-      uxGuideDesignRef?: GenerateResponseOptions["uxGuideDesignRef"];
-      uxGuideDesignRefPromptBlock?: GenerateResponseOptions["uxGuideDesignRefPromptBlock"];
-      uxGuideDesignRefEffectiveSlug?: GenerateResponseOptions["uxGuideDesignRefEffectiveSlug"];
-      uxGuideDesignRefMode?: GenerateResponseOptions["uxGuideDesignRefMode"];
-      /** Imágenes del turno actual (solo usuario). */
-      userImages?: ChatImagePart[];
-    },
+    options?: SessionChatTurnOptions,
   ): Promise<{
     session: Session | null;
     mddContent?: string | null;
@@ -680,121 +804,54 @@ export class SessionsService {
     architectureContent?: string | null;
     useCasesContent?: string | null;
     userStoriesContent?: string | null;
-    /** RFC-001: AST estructurado del documento devuelto por Dual Output Protocol v2. */
     documentAst?: Record<string, unknown> | null;
-    /** RFC-001: Versión de parche atómico del documento (documentVersion). */
     documentVersion?: number | null;
     documentHadDelimiter?: boolean;
     documentPersisted?: boolean;
   }> {
-    const session = await this.prisma.session.findFirst({
-      where: this.sessionScope(sessionId),
-    });
-    if (!session) throw new NotFoundException("Session not found");
+    const prepared = await this.prepareSessionChatTurn(sessionId, userMessage, options);
+    if (prepared.kind === "dbga_early") {
+      const session = await this.persistSessionChatTurn(
+        prepared.sessionId,
+        prepared.fullLog,
+        prepared.userEntry,
+        prepared.assistantContent,
+        prepared.tab,
+        prepared.stageId,
+      );
+      return { session, dbgaContent: prepared.finalDbga };
+    }
 
-    const fullLog = (session.chatLog as ChatMessage[]) ?? [];
-    const history = filterChatByTab(fullLog, options?.activeTab ?? "mdd");
-    const activeTab = options?.activeTab ?? "mdd";
+    const { ready } = prepared;
     const ts = () => new Date().toISOString();
     console.log(`[Chat] ${ts()} → Enviando mensaje al LLM:`, {
-      activeTab,
+      activeTab: ready.activeTab,
       userMessagePreview: userMessage.slice(0, 200) + (userMessage.length > 200 ? "…" : ""),
-      historyLength: history.length,
+      historyLength: ready.history.length,
     });
-    const learningHistory = await this.preferences.getPreferencesForContext(session.projectId, 5);
-    const llmHistory = sessionHistoryToLlm(history);
-    const userTurn = await this.resolveUserTurnForLlm(
-      userMessage,
-      options?.userImages,
-      activeTab,
-    );
-
-    const intentRoute = await this.intentRouter.route(
-      userTurn.promptForModel,
-      this.intentRouteContext(options, history),
-    );
-    const llmUserPrompt = this.promptForIntentTurn(
-      userTurn.promptForModel,
-      intentRoute.action,
-      activeTab,
-    );
-
-    const dbgaEditTurn = await this.tryBenchmarkDbgaEditTurn(
-      activeTab,
-      llmUserPrompt,
-      options?.currentDbgaContent,
-      { userImages: options?.userImages, intentRoute },
-    );
-    if (dbgaEditTurn) {
-      const tab = activeTab;
-      const stageId = options?.stageId?.trim();
-      const assistantContent = dbgaEditTurn.assistantContent;
-      const userMsgBase = {
-        role: "user" as const,
-        content: userTurn.contentForLog,
-        tab,
-        ...(options?.userImages?.length ? { images: options.userImages } : {}),
-      };
-      const userMsg = stageId ? { ...userMsgBase, stageId } : userMsgBase;
-      const asstMsg = { role: "assistant" as const, content: assistantContent, tab };
-      const updated = [...fullLog, userMsg, stageId ? { ...asstMsg, stageId } : asstMsg];
-      await this.prisma.session.update({
-        where: { id: sessionId },
-        data: { chatLog: updated as object },
-      });
-      const updatedSession = await this.prisma.session.findFirst({
-        where: this.sessionScope(sessionId),
-      });
-      return {
-        session: updatedSession,
-        dbgaContent: dbgaEditTurn.finalDbga,
-      };
-    }
 
     let response: string;
     try {
       response = await this.ai.generateResponse(
-        llmUserPrompt,
-        llmHistory,
-        buildSessionChatGenerateOptions(options, {
-          intent: intentRoute.intent,
-          learningHistory: learningHistory || undefined,
-          userMessageImages: userTurn.imagesForLlm,
-        }),
+        ready.llmUserPrompt,
+        ready.llmHistory,
+        this.buildSessionChatLlmOptions(ready),
       );
     } catch (err) {
       console.error("[Chat] ai.generateResponse error:", err);
       throw err;
     }
-    const safeResponse = sanitizeLlmResponse(typeof response === "string" ? response : "");
+
+    const safeResponse = sanitizeAndAssertChatResponse(typeof response === "string" ? response : "");
     console.log(`[Chat] ${ts()} ← Respuesta del LLM recibida:`, {
       length: safeResponse.length,
       preview: safeResponse.slice(0, 300) + (safeResponse.length > 300 ? "…" : ""),
       isEmpty: !safeResponse.trim(),
     });
-    if (!safeResponse.trim()) {
-      throw new Error(
-        "La IA no generó texto (respuesta vacía o bloqueada). Intenta de nuevo o reformula el mensaje.",
-      );
-    }
-    const parsed = parseWorkshopAssistantResponse(safeResponse, this.parser, {
-      activeTab,
-      intentAction: intentRoute.action,
-      mode: "sync",
-    });
-    const outcome = await this.processChatTurnFromResponse({
-      safeResponse,
-      parsed,
-      activeTab,
-      userMessage,
-      llmUserPrompt,
-      intentRoute,
-      options,
-    });
+
+    const { outcome, session } = await this.completeSessionChatTurn(ready, safeResponse, "sync");
     const {
       assistantContent,
-      hadDelimiter,
-      docRetried,
       parts,
       mddSplit,
       uxDocPart,
@@ -803,23 +860,6 @@ export class SessionsService {
       hasInfra,
       infraSplit,
     } = outcome;
-
-    const tab = activeTab;
-    const stageId = options?.stageId?.trim();
-    const userMsgBase = {
-      role: "user" as const,
-      content: userTurn.contentForLog,
-      tab,
-      ...(options?.userImages?.length ? { images: options.userImages } : {}),
-    };
-    const userMsg = stageId ? { ...userMsgBase, stageId } : userMsgBase;
-    const asstMsg = { role: "assistant" as const, content: assistantContent, tab };
-    const updated = [...fullLog, userMsg, stageId ? { ...asstMsg, stageId } : asstMsg];
-
-    await this.prisma.session.update({
-      where: { id: sessionId },
-      data: { chatLog: updated as object },
-    });
 
     console.log(`[Chat] ${ts()} → Cliente recibirá:`, {
       chatPartLength: assistantContent.length,
@@ -830,22 +870,9 @@ export class SessionsService {
       infraLength: hasInfra ? infraSplit!.docPart.length : 0,
     });
 
-    logDocumentTurnMetrics(this.logger, {
-      tab: activeTab,
-      action: intentRoute.action,
-      source: intentRoute.source,
-      confidence: intentRoute.confidence,
-      hadDelimiter,
-      persisted: isDocumentTurnPersisted(tab, parts),
-      retried: docRetried,
-    });
-
-    const updatedSession = await this.prisma.session.findFirst({
-      where: this.sessionScope(sessionId),
-    });
     return {
-      session: updatedSession,
-      ...buildSessionChatDonePayload(tab, outcome),
+      session,
+      ...buildSessionChatDonePayload(ready.tab, outcome),
     };
   }
 
@@ -855,33 +882,7 @@ export class SessionsService {
   async *chatStream(
     sessionId: string,
     userMessage: string,
-    options?: {
-      currentMddContent?: string;
-      currentDbgaContent?: string;
-      currentUxUiGuideContent?: string;
-      currentPhase0SummaryContent?: string;
-      currentBlueprintContent?: string;
-      currentSpecContent?: string;
-      currentBrdContent?: string;
-      currentArchitectureContent?: string;
-      currentUseCasesContent?: string;
-      currentUserStoriesContent?: string;
-      currentApiContractsContent?: string;
-      currentLogicFlowsContent?: string;
-      currentTasksContent?: string;
-      currentInfraContent?: string;
-      activeTab?: string;
-      systemPrompt?: string;
-      stageId?: string;
-      complexityInterviewContext?: string;
-      projectTypeForUxGuide?: GenerateResponseOptions["projectTypeForUxGuide"];
-      uxGuideAdditionalDocs?: GenerateResponseOptions["uxGuideAdditionalDocs"];
-      uxGuideDesignRef?: GenerateResponseOptions["uxGuideDesignRef"];
-      uxGuideDesignRefPromptBlock?: GenerateResponseOptions["uxGuideDesignRefPromptBlock"];
-      uxGuideDesignRefEffectiveSlug?: GenerateResponseOptions["uxGuideDesignRefEffectiveSlug"];
-      uxGuideDesignRefMode?: GenerateResponseOptions["uxGuideDesignRefMode"];
-      userImages?: ChatImagePart[];
-    },
+    options?: SessionChatTurnOptions,
   ): AsyncGenerator<
     | { type: "chunk"; content: string }
     | {
@@ -906,101 +907,51 @@ export class SessionsService {
       documentPersisted?: boolean;
     }
   > {
-    const session = await this.prisma.session.findFirst({
-      where: this.sessionScope(sessionId),
-    });
-    if (!session) throw new NotFoundException("Session not found");
-
-    const fullLog = (session.chatLog as ChatMessage[]) ?? [];
-    const history = filterChatByTab(fullLog, options?.activeTab ?? "mdd");
-    const activeTab = options?.activeTab ?? "mdd";
-    const tab = activeTab;
-    const stageId = options?.stageId?.trim();
-    const userTurn = await this.resolveUserTurnForLlm(
-      userMessage,
-      options?.userImages,
-      activeTab,
-    );
-    const userEntryBase = {
-      role: "user" as const,
-      content: userTurn.contentForLog,
-      tab,
-      ...(options?.userImages?.length ? { images: options.userImages } : {}),
-    };
-    const userEntry = stageId ? { ...userEntryBase, stageId } : userEntryBase;
-
-    const intentRoute = await this.intentRouter.route(
-      userTurn.promptForModel,
-      this.intentRouteContext(options, history),
-    );
-    const llmUserPrompt = this.promptForIntentTurn(
-      userTurn.promptForModel,
-      intentRoute.action,
-      activeTab,
-    );
-
-    const dbgaEditTurn = await this.tryBenchmarkDbgaEditTurn(
-      tab,
-      llmUserPrompt,
-      options?.currentDbgaContent,
-      { userImages: options?.userImages, intentRoute },
-    );
-    if (dbgaEditTurn) {
-      const assistantContent = dbgaEditTurn.assistantContent;
-      const assistantEntry = stageId
-        ? { role: "assistant" as const, content: assistantContent, tab, stageId }
-        : { role: "assistant" as const, content: assistantContent, tab };
-      const updated = [...fullLog, userEntry, assistantEntry];
-      await this.prisma.session.update({
-        where: { id: sessionId },
-        data: { chatLog: updated as object },
-      });
-      const updatedSession = await this.prisma.session.findFirst({
-        where: this.sessionScope(sessionId),
-      });
-      yield { type: "chunk", content: assistantContent };
-      yield {
-        type: "done",
-        session: updatedSession,
-        dbgaContent: dbgaEditTurn.finalDbga,
-      };
+    const prepared = await this.prepareSessionChatTurn(sessionId, userMessage, options);
+    if (prepared.kind === "dbga_early") {
+      const session = await this.persistSessionChatTurn(
+        prepared.sessionId,
+        prepared.fullLog,
+        prepared.userEntry,
+        prepared.assistantContent,
+        prepared.tab,
+        prepared.stageId,
+      );
+      yield { type: "chunk", content: prepared.assistantContent };
+      yield { type: "done", session, dbgaContent: prepared.finalDbga };
       return;
     }
 
-    const learningHistory = await this.preferences.getPreferencesForContext(session.projectId, 5);
-    const llmHistory = sessionHistoryToLlm(history);
+    const { ready } = prepared;
     llmDebug("ChatStream", "inicio generateResponseStream", {
-      sessionId,
-      projectId: session.projectId,
-      activeTab: options?.activeTab ?? "mdd",
+      sessionId: ready.sessionId,
+      projectId: ready.session.projectId,
+      activeTab: ready.activeTab,
       userId: getRequestUserId(),
-      historyTurns: llmHistory.length,
+      historyTurns: ready.llmHistory.length,
     });
+
     let stream: AsyncIterable<string>;
     try {
       stream = await this.ai.generateResponseStream(
-        llmUserPrompt,
-        llmHistory,
-        buildSessionChatGenerateOptions(options, {
-          intent: intentRoute.intent,
-          learningHistory: learningHistory || undefined,
-          userMessageImages: userTurn.imagesForLlm,
-        }),
+        ready.llmUserPrompt,
+        ready.llmHistory,
+        this.buildSessionChatLlmOptions(ready),
       );
     } catch (err) {
       if (err instanceof ModelsUnavailableError) {
         llmWarn("ChatStream", "ModelsUnavailableError", {
-          sessionId,
-          projectId: session.projectId,
-          activeTab: options?.activeTab ?? "mdd",
+          sessionId: ready.sessionId,
+          projectId: ready.session.projectId,
+          activeTab: ready.activeTab,
           message: err.message,
           details: err.details,
         });
       } else {
         llmWarn("ChatStream", "generateResponseStream error", {
-          sessionId,
-          projectId: session.projectId,
-          activeTab: options?.activeTab ?? "mdd",
+          sessionId: ready.sessionId,
+          projectId: ready.session.projectId,
+          activeTab: ready.activeTab,
           error: err instanceof Error ? err.message : String(err),
         });
       }
@@ -1008,78 +959,21 @@ export class SessionsService {
       throw err;
     }
 
-    const DOC_DELIMITER_RE = /-{1,}\s*FIN_(?:MDD|UX_UI|DBGA|PHASE0|SPEC|BRD|BLUEPRINT|API|FLOWS|TASKS|INFRA|ARCH|USECASES|STORIES)\s*-{1,}/i;
     let buffer = "";
-    let documentChunksDone = false;
-    for await (const chunk of stream) {
-      buffer += chunk;
-      if (documentChunksDone) {
-        // Already past the delimiter — yield normally
-        yield { type: "chunk", content: chunk };
-      } else if (DOC_DELIMITER_RE.test(normalizeDashes(buffer))) {
-        // Delimiter found — stop buffering document content, yield chat part
-        documentChunksDone = true;
-        const normBuffer = normalizeDashes(buffer);
-        const match = normBuffer.match(DOC_DELIMITER_RE);
-        if (match) {
-          const idx = normBuffer.indexOf(match[0]);
-          const afterDelim = buffer.slice(idx + match[0].length);
-          if (afterDelim.trim()) {
-            yield { type: "chunk", content: afterDelim };
-          }
-        }
+    for await (const event of workshopStreamToChatEvents(stream)) {
+      if (event.type === "chunk") {
+        yield event;
+      } else {
+        buffer = event.buffer;
       }
-      // Before the delimiter: silent buffer (document content, not chat)
     }
 
-    const safeResponse = sanitizeLlmResponse(buffer);
-    if (!safeResponse) {
-      throw new Error(
-        "La IA no generó texto (respuesta vacía o bloqueada). Intenta de nuevo o reformula el mensaje.",
-      );
-    }
-
-    const parsed = parseWorkshopAssistantResponse(safeResponse, this.parser, {
-      activeTab,
-      intentAction: intentRoute.action,
-      mode: "stream",
-    });
-    const outcome = await this.processChatTurnFromResponse({
-      safeResponse,
-      parsed,
-      activeTab,
-      userMessage,
-      llmUserPrompt,
-      intentRoute,
-      options,
-    });
-    const { assistantContent, hadDelimiter, docRetried, parts } = outcome;
-    const assistantEntry = stageId
-      ? { role: "assistant" as const, content: assistantContent, tab, stageId }
-      : { role: "assistant" as const, content: assistantContent, tab };
-    const updated = [...fullLog, userEntry, assistantEntry];
-    await this.prisma.session.update({
-      where: { id: sessionId },
-      data: { chatLog: updated as object },
-    });
-
-    const updatedSession = await this.prisma.session.findFirst({
-      where: this.sessionScope(sessionId),
-    });
-    logDocumentTurnMetrics(this.logger, {
-      tab,
-      action: intentRoute.action,
-      source: intentRoute.source,
-      confidence: intentRoute.confidence,
-      hadDelimiter,
-      persisted: isDocumentTurnPersisted(tab, parts),
-      retried: docRetried,
-    });
-
+    const safeResponse = sanitizeAndAssertChatResponse(buffer);
+    const { outcome, session } = await this.completeSessionChatTurn(ready, safeResponse, "stream");
     yield {
       type: "done",
-      session: updatedSession,
-      ...buildSessionChatDonePayload(tab, outcome),
+      session,
+      ...buildSessionChatDonePayload(ready.tab, outcome),
     };
   }
 
