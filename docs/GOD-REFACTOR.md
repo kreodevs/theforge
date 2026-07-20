@@ -804,4 +804,13 @@ Próximo: ver incrementos 5m-2 y 5m-3.
 | Smoke spec incluye `slice-deliverables.ts` | ✅ |
 | `workshopStore.ts` — **~1 020 L** (−~880 vs 5m-4) | ✅ |
 
-Próximo: `slice-legacy-debug`, `slice-clarify`.
+### Fase 5 — `workshopStore` (incremento 5m-6)
+
+| Ítem | Estado |
+|------|--------|
+| `slice-legacy-debug.ts` — `createLegacyDebugSlice` | ✅ |
+| Acciones: `fetchGenerationStatus`, `cancelMddJob`, plan validation, flujos legacy, `suggestBrdFromDbga` | ✅ |
+| Smoke spec incluye `slice-legacy-debug.ts` | ✅ |
+| `workshopStore.ts` — **~340 L** (−~650 vs 5m-5) | ✅ |
+
+Próximo: `slice-clarify` (governance, traceability, clarify, converge/tasks, `reset`).
