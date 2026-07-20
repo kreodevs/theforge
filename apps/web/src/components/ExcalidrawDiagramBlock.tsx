@@ -42,8 +42,9 @@ type ExcalidrawModule = typeof import("@excalidraw/excalidraw");
 type ExcalidrawComponent = ExcalidrawModule["Excalidraw"];
 type OrderedExcalidrawElement = ReturnType<ExcalidrawModule["convertToExcalidrawElements"]>[number];
 
+/** Align with Excalidraw native `MIN_ZOOM` / `MAX_ZOOM` (0.1–30). */
 const ZOOM_MIN = 0.1;
-const ZOOM_MAX = 4;
+const ZOOM_MAX = 30;
 const ZOOM_STEP = 0.15;
 
 /** Resolve a CSS color (incl. oklch vars) to `#rrggbb` for Excalidraw appState. */

@@ -245,8 +245,9 @@ function MermaidSvgCanvas({
   );
 }
 
-const PAN_ZOOM_MIN = 0.15;
-const PAN_ZOOM_MAX = 4;
+/** Keep SVG fullscreen zoom range in line with ExcalidrawDiagramBlock (native max 30×). */
+const PAN_ZOOM_MIN = 0.1;
+const PAN_ZOOM_MAX = 30;
 const PAN_ZOOM_FIT_PADDING = 40;
 
 function clampPanZoomScale(scale: number): number {
