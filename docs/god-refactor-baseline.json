@@ -1,0 +1,28 @@
+{
+  "capturedAt": "2026-07-19",
+  "branch": "refactor-god-functions",
+  "phase": 0,
+  "units": {
+    "WorkshopView.tsx": { "path": "apps/web/src/views/WorkshopView.tsx", "lines": 5917 },
+    "workshopStore.ts": { "path": "apps/web/src/store/workshopStore.ts", "lines": 5319 },
+    "mdd-sanitize.ts": { "path": "apps/api/src/modules/ai-analysis/utils/mdd-sanitize.ts", "lines": 6065 },
+    "createMddManagerNode": {
+      "path": "apps/api/src/modules/ai-analysis/nodes/mdd-manager.node.ts",
+      "lines": 1544,
+      "note": "closure ~1007L dentro del archivo"
+    },
+    "projects.service.ts": { "path": "apps/api/src/modules/projects/projects.service.ts", "lines": 3809 },
+    "sessions.service.ts": {
+      "path": "apps/api/src/modules/sessions/sessions.service.ts",
+      "lines": 2635,
+      "note": "chat ~652L + chatStream ~649L"
+    }
+  },
+  "phase0Artifacts": {
+    "goldenFixtures": "apps/api/src/modules/ai-analysis/utils/fixtures/mdd/",
+    "goldenSpec": "apps/api/src/modules/ai-analysis/utils/mdd-sanitize.golden.spec.ts",
+    "orchestratorContract": "apps/api/src/modules/ai-orchestrator/ai-orchestrator.chat.contract.spec.ts",
+    "sessionsContract": "apps/api/src/modules/sessions/sessions.chat.contract.spec.ts",
+    "workshopStoreSmoke": "apps/web/src/store/workshopStore.actions.smoke.spec.ts"
+  }
+}

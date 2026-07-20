@@ -1,0 +1,10 @@
+{
+  "title": "Visión del producto",
+  "content": [
+    "Plataforma SaaS de gestión.",
+    {
+      "title": "Objetivos",
+      "description": ["Automatizar onboarding", "Reducir time-to-market"]
+    }
+  ]
+}
