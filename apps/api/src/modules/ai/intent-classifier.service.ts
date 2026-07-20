@@ -45,10 +45,12 @@ export class IntentClassifierService {
     /^(cambia|cambiar|modifica|modificar|actualiza|actualizar|edita|editar)\b/i,
     /^(elimina|eliminar|borra|borrar|saca|quita|remueve|remover)\b/i,
     /^(corrige|corregir|arregla|arreglar|repara|reparar)\b/i,
+    // Solo imperativos al inicio del mensaje (confirmaciones cortas). Pedidos largos
+    // con «Haz los cambios…» al final los resuelve IntentRouter + LLM, no este clasificador.
     /^(haz|hacer|crea|crear|genera|generar)\b.*(cambio|cambios|modificación)/i,
     /apli(ca|car) (esto|ese|el) cambio/i,
-    /haz (los |esos )?cambios/i,
-    /(actualiza|modifica|corrige) el documento/i,
+    /^haz (los |esos )?cambios\b/i,
+    /^(actualiza|modifica|corrige) el documento\b/i,
     /integra esto/i,
     /ingrésalo/i,
   ];

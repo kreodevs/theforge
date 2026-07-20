@@ -6,7 +6,7 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ### Fixed
 
-- **Chat Fase 0 (DBGA) — cambios que no se persistían:** (1) `parseBenchmarkResponse` tolera variantes del marcador (`---FIN_DBGA`, `FIN_DBGA---`, `## FIN_DBGA`, `**FIN_DBGA**`). (2) `isDbgaContentNearlyIdentical` con tolerancia acotada (cap 200 chars) para no descartar ediciones pequeñas en DBGA grandes. (3) Imperativo «Haz los cambios al documento» y renombres propuestos (p. ej. **PAT Wasender** / **PAT SSO**) se detectan y validan sin rechazar acrónimos cortos.
+- **Chat Fase 0 (DBGA) — cambios que no se persistían:** (1) `parseBenchmarkResponse` tolera variantes del marcador (`---FIN_DBGA`, `FIN_DBGA---`, `## FIN_DBGA`, `**FIN_DBGA**`). (2) `isDbgaContentNearlyIdentical` con tolerancia acotada (cap 200 chars) para no descartar ediciones pequeñas en DBGA grandes. (3) Imperativo «Haz los cambios al documento» y renombres propuestos (p. ej. **PAT Wasender** / **PAT SSO**) se detectan y validan sin rechazar acrónimos cortos. (4) Pedidos largos de edición DBGA pasan por **LLM de intención** (confianza heurística ~0.78; el clasificador por keywords ya no corta con 0.92 ante «haz los cambios» embebido). (5) `isDbgaEditEffectivelyUnchanged` no descarta renombres cortos que sí reflejan el pedido. (6) El refinado exige marcador `FIN_DBGA` (sin fallback H1) antes de persistir.
 
 ## [v1.6.2] — 2026-07-19
 

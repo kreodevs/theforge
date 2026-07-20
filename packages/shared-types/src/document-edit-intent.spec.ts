@@ -42,6 +42,14 @@ describe("looksLikeDbgaEditRequest", () => {
     assert.ok(looksLikeDbgaEditRequest("Haz los cambios al documento"));
   });
 
+  it("detecta «PAT de Wasender (llámalo ya así)» + Haz los cambios", () => {
+    const msg =
+      "tenemos un error en el uso de PAT con wasender , el PAT de Wasender (llámalo ya así) es de la cuenta principal, " +
+      "para asociar un teléfono y poder crear sesión, se necesita tener el PAT configurado y luego el admin lee un QR. " +
+      "Haz los cambios al documento";
+    assert.ok(looksLikeDbgaEditRequest(msg));
+  });
+
   it("detecta renombre PAT Wasender / PAT SSO + aplicar cambios", () => {
     const msg =
       "existen 2 PAT , uno es el de wasender api que es el de la cuenta que coordinará las sesiones de los teléfonos de los tenant y el otro es el PAT del sso para el usuario. Sugiero llamarlos PAT Wasender y PAT SSO para evitar confusiones\n\nHaz los cambios al documento";

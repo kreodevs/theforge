@@ -92,3 +92,4 @@ cron/
 
 # Plugin commercial — lives in separate repo (https://github.com/kreodevs/evd-plugin)
 packages/evd-executive-visual-deck/
+.tmp/

@@ -8,6 +8,7 @@ import {
   extractDbgaEditKeywords,
   extractDbgaProposedLabels,
   isDbgaContentNearlyIdentical,
+  isDbgaEditEffectivelyUnchanged,
   isPartialBenchmarkDoc,
   looksLikeDbgaEditRequest,
   mergeBenchmarkPartialDoc,
@@ -156,6 +157,13 @@ describe("extractDbgaProposedLabels + rename reflect", () => {
     assert.ok(labels.some((l) => /pat\s+sso/i.test(l)));
   });
 
+  it("extrae PAT Wasender desde «PAT de Wasender (llámalo ya así)»", () => {
+    const labels = extractDbgaProposedLabels(
+      "el PAT de Wasender (llámalo ya así) es de la cuenta principal",
+    );
+    assert.ok(labels.some((l) => /pat\s+wasender/i.test(l)));
+  });
+
   it("acepta DBGA que solo incorpora las etiquetas propuestas", () => {
     const user =
       "existen 2 PAT wasender y sso. Sugiero llamarlos PAT Wasender y PAT SSO para evitar confusiones. Haz los cambios al documento";
@@ -166,6 +174,19 @@ describe("extractDbgaProposedLabels + rename reflect", () => {
 - **PAT SSO**: token del usuario en SSO.
 `;
     assert.equal(dbgaReflectsUserEditIntent(doc, user), true);
+  });
+});
+
+describe("isDbgaEditEffectivelyUnchanged", () => {
+  it("no descarta renombre corto PAT Wasender por delta de tamaño", () => {
+    const current = `# Domain Benchmark\n\n## Auth\nUsa un PAT de wasender para la cuenta.\n` + "x".repeat(5000);
+    const next =
+      `# Domain Benchmark\n\n## Auth\nUsa **PAT Wasender** (cuenta principal) para asociar teléfonos.\n` +
+      "x".repeat(5000);
+    const user =
+      "el PAT de Wasender (llámalo ya así) es de la cuenta principal. Haz los cambios al documento";
+    assert.equal(isDbgaEditEffectivelyUnchanged(next, current, user), false);
+    assert.equal(dbgaReflectsUserEditIntent(next, user), true);
   });
 });
 

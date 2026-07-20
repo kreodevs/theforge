@@ -78,18 +78,22 @@ export function extractDbgaProposedLabels(message: string, max = 6): string[] {
     out.push(t);
   };
 
-  // «llamarlos PAT Wasender y PAT SSO» / «renombrar a X y Y»
+  // «llamarlos PAT Wasender…» / «llámalo ya así» junto a PAT Wasender
   const renameTail =
     m.match(
-      /\b(?:llamarl[oa]s|renombr(?:ar|a|e)|n[oó]mbral[oa]s|denomin(?:ar|a))\s+(?:como\s+|a\s+)?(.+?)(?:\.|$|\n|para\s+evitar)/isu,
+      /\b(?:llamarl[oa]s|ll[aá]mal[oa]|renombr(?:ar|a|e)|n[oó]mbral[oa]s|denomin(?:ar|a))\s+(?:como\s+|a\s+|ya\s+as[ií]\s+)?(.+?)(?:\.|$|\n|para\s+evitar)/isu,
     )?.[1] ?? "";
-  if (renameTail) {
+  if (renameTail && !/^ya\s+as[ií]$/i.test(renameTail.trim())) {
     for (const part of renameTail.split(/\s+y\s+|\s*,\s*|\s+o\s+/i)) {
-      push(part.replace(/["'«»]/g, "").trim());
+      push(part.replace(/["'«»()]/g, "").trim());
     }
   }
 
-  // Etiquetas tipo «PAT Wasender» / «PAT SSO» en cualquier parte del mensaje
+  // «el PAT de Wasender (llámalo ya así)» / «PAT Wasender»
+  for (const hit of m.matchAll(/\bPAT\s+(?:de\s+)?([A-Za-zÁÉÍÓÚÜÑ][\wÁÉÍÓÚÜÑ-]{1,32})\b/giu)) {
+    const brand = hit[1]!;
+    push(`PAT ${brand}`);
+  }
   for (const hit of m.matchAll(/\bPAT\s+[A-Za-zÁÉÍÓÚÜÑ][\wÁÉÍÓÚÜÑ-]{1,32}\b/giu)) {
     push(hit[0]!);
   }
@@ -204,11 +208,45 @@ export function dbgaReflectsUserEditIntent(doc: string, userMessage: string): bo
   return true;
 }
 
+/**
+ * ¿Debemos tratar `next` como "sin cambios" respecto a `current`?
+ * Renombres (p. ej. PAT Wasender) cambian poco el tamaño y antes se descartaban
+ * por `isDbgaContentNearlyIdentical` aunque sí reflejaran el pedido.
+ */
+export function isDbgaEditEffectivelyUnchanged(
+  next: string,
+  current: string,
+  userMessage: string,
+): boolean {
+  if (normalizeDbgaForCompare(next) === normalizeDbgaForCompare(current)) return true;
+  if (!isDbgaContentNearlyIdentical(next, current)) return false;
+
+  const proposed = extractDbgaProposedLabels(userMessage);
+  if (proposed.length > 0) {
+    const cur = current.toLowerCase();
+    const nxt = next.toLowerCase();
+    const newlyPresent = proposed.some(
+      (label) => !cur.includes(label.toLowerCase()) && nxt.includes(label.toLowerCase()),
+    );
+    if (newlyPresent) return false;
+  }
+
+  if (
+    dbgaReflectsUserEditIntent(next, userMessage) &&
+    dbgaContainsUserEditKeywords(next, userMessage) &&
+    !dbgaContainsUserEditKeywords(current, userMessage)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 export const BENCHMARK_CHAT_ACK =
   "Fase 0 (DBGA) actualizado. Revisa el panel «Análisis (DBGA)».";
 
 export const BENCHMARK_CHAT_NO_CHANGE =
-  "No se guardaron cambios en Fase 0 (DBGA). La respuesta no incluyó el documento completo con ---FIN_DBGA--- (o el refinado no reflejó el pedido). Repite p. ej. «Haz los cambios al documento: usa PAT Wasender y PAT SSO» o edita el panel directamente.";
+  "No se guardaron cambios en Fase 0 (DBGA). El asistente no devolvió el documento completo listo para persistir (falta el cierre del documento o el cambio no quedó reflejado). Repite el pedido tal cual; The Forge reintentará automáticamente.";
 
 /** Evita mensaje de éxito en chat cuando el panel no se persistió. */
 export function benchmarkAssistantChatMessage(

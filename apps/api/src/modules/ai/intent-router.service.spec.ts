@@ -119,4 +119,16 @@ describe("IntentRouterService", () => {
     assert.equal(route.source, "heuristic");
     assert.equal(llmCalls, 0);
   });
+
+  it("consulta LLM en pedido largo de edición DBGA (no corta solo por heurística)", async () => {
+    const router = buildRouter();
+    const message =
+      "tenemos un error en el uso de PAT con wasender , el PAT de Wasender (llámalo ya así) es de la cuenta principal, " +
+      "para asociar un teléfono y poder crear sesión, se necesita tener el PAT configurado y luego el admin lee un QR. " +
+      "Haz los cambios al documento";
+    const route = await router.route(message, { activeTab: "benchmark", hasDocumentContent: true });
+    assert.equal(route.action, "edit_document");
+    assert.equal(route.source, "llm");
+    assert.equal(llmCalls, 1);
+  });
 });
