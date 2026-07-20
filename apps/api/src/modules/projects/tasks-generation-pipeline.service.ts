@@ -113,7 +113,6 @@ export class TasksGenerationPipelineService {
 
     const plannerContext = this.buildPlannerContext(input);
     const plan = await this.runPlanner(plannerContext, input);
-    const planJson = JSON.stringify(plan, null, 2);
     const redactorMaxTokens = resolveLlmMaxTokensForPurpose("tasksDoc");
     this.logger.log(
       `[Tasks pipeline] plan ${plan.items.length} items → redactor max_tokens=${redactorMaxTokens} (global ceiling llm_max_tokens)`,
