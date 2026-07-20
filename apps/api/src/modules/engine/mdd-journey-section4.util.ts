@@ -20,8 +20,6 @@ export type JourneyEndpointRequirement = {
   triggerEntity?: string;
 };
 
-const CRUD_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
-
 function crudRoutes(entitySlug: string): JourneyEndpointRequirement[] {
   const base = entitySlug.replace(/_/g, "-");
   return [
