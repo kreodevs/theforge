@@ -31,6 +31,9 @@ import { DeliverablesCascadeService } from "./deliverables-cascade.service.js";
 import { ProjectStageService } from "./project-stage.service.js";
 import { ProjectUxGuideService } from "./project-ux-guide.service.js";
 import { ProjectDeliverableGeneratorsService } from "./project-deliverable-generators.service.js";
+import { ProjectDeliverableGateService } from "./project-deliverable-gate.service.js";
+import { ProjectConformanceService } from "./project-conformance.service.js";
+import { ProjectBrdService } from "./project-brd.service.js";
 import { ProjectNotionPortabilityService } from "./project-notion-portability.service.js";
 import { PluginModule } from "../../plugins/plugin.module.js";
 
@@ -71,6 +74,9 @@ import { PluginModule } from "../../plugins/plugin.module.js";
     ProjectStageService,
     ProjectUxGuideService,
     ProjectDeliverableGeneratorsService,
+    ProjectDeliverableGateService,
+    ProjectConformanceService,
+    ProjectBrdService,
   ],
   exports: [ProjectsService, ProjectIntegrationService, IntegrationAgentService, ProjectMergeService, PROJECTS_ORCHESTRATOR_PORT, DeliverablesQueueService, ProjectGenerationGuardService, PlanValidationService],
 })

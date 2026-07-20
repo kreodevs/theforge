@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, forwardRef } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, forwardRef } from "@nestjs/common";
 import { ComplexityLevel, Prisma, StageStatus, Status } from "@theforge/database";
 import type { Estimation, Project, Stage } from "@theforge/database";
 import { getRequestUserId, getRequestUserRole } from "../../common/request-user.store.js";
@@ -13,24 +13,15 @@ import {
   DocumentSnapshotService,
   type DocumentSnapshotSource,
 } from "../document-snapshot/document-snapshot.service.js";
-import { SemaphoreService } from "../engine/semaphore.service.js";
-import { normalizeMddContent } from "../engine/mdd-markdown-parser.js";
 import { shouldReplacePhase0SummaryWithBorrador } from "@theforge/shared-types";
-import { prependDocumentTimestamps, stampMarkdownIfBodyChanged } from "../engine/document-date-header.util.js";
+import { stampMarkdownIfBodyChanged } from "../engine/document-date-header.util.js";
 import { enforceMddGovernancePatternsOnPersist } from "@theforge/shared-types/mdd-governance-patterns";
 import { ProjectEstimationRecalcService } from "./project-estimation-recalc.service.js";
-import type { ApiConformanceResult, ConformanceResult } from "../engine/conformance.service.js";
-import { ConformanceService } from "../engine/conformance.service.js";
-import { AiService } from "../ai/ai.service.js";
 import { DiscoveryService } from "../ai/discovery.service.js";
 import { ScraperService } from "../scraper/scraper.service.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
 import { GraphMemoryService } from "../ai-analysis/graph-memory/graph-memory.service.js";
 import { ChangeLogService } from "../change-log/change-log.service.js";
-import {
-  buildConformanceSummary,
-  collectConformanceGaps,
-} from "./conformance-gaps.util.js";
 import type { IOrchestratorProjectsPort } from "./projects-service.port.js";
 import { resolveUrls } from "../scraper/url-utils.js";
 import {
@@ -43,20 +34,12 @@ import {
   type CreateProjectDto,
   type UpdateProjectDto,
 } from "@theforge/shared-types";
-import {
-  brdGenerationErrorMessage,
-  extractBrdFromLlmResponse,
-  type BrdExtractFailure,
-} from "../ai/utils/brd-extract.util.js";
-import { validateBrdMermaidOutput } from "../ai/utils/brd-mermaid-validate.util.js";
-import { truncateSourceDocForBrdPrompt } from "../ai/utils/dbga-prompt-context.util.js";
 
 import {
   loadAccessibleProjectWithStages,
   projectWhereForOwner,
 } from "./project-access.util.js";
 import {
-  buildSemaphoreBaseFromProject,
   mergeProjectFieldsForSemaphore,
 } from "./project-mdd-persist.util.js";
 import { ProjectMddPersistService } from "./project-mdd-persist.service.js";
@@ -64,26 +47,17 @@ import { DeliverablesCascadeService } from "./deliverables-cascade.service.js";
 import { ProjectStageService } from "./project-stage.service.js";
 import { ProjectUxGuideService } from "./project-ux-guide.service.js";
 import { ProjectDeliverableGeneratorsService } from "./project-deliverable-generators.service.js";
-import {
-  buildConstitutionMarkdown,
-  pickMddFromStages,
-} from "./constitution-markdown.util.js";
-import { syncDomainInventoryForStage as persistDomainInventoryForStage } from "./sync-domain-inventory-stage.util.js";
+import { ProjectDeliverableGateService } from "./project-deliverable-gate.service.js";
+import { ProjectConformanceService } from "./project-conformance.service.js";
+import { ProjectBrdService } from "./project-brd.service.js";
+import { pickMddFromStages } from "./constitution-markdown.util.js";
 import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
 import { resolveStageDeliverables } from "./stage-deliverables.util.js";
-import {
-  buildMddDeliveryGateConflictBody,
-  evaluateMddDeliveryGatePrepared,
-} from "../ai-analysis/utils/mdd-delivery-gate-guard.util.js";
-import type { MddDeliveryGateResult } from "@theforge/shared-types";
 import {
   persistStageAndProjectDeliverables,
 } from "./stage-deliverable-persist.util.js";
 import { pickDeliverableFieldsFromSource, type ProjectDeliverableSource } from "@theforge/shared-types";
 import { DocumentationGapService } from "../documentation-gap/documentation-gap.service.js";
-import {
-  collectSddPrecisionGaps,
-} from "../engine/sdd-precision-checks.util.js";
 import { PluginDocumentPipelineService } from "../../plugins/plugin-document-pipeline.service.js";
 import {
   buildProjectCloneCreateInput,
@@ -93,12 +67,6 @@ import {
 import { ProjectGroupsService } from "../project-groups/project-groups.service.js";
 
 import { toApiProjectListItem } from "./project-list-item.util.js";
-
-import {
-  BRD_GENERATION_SYSTEM,
-  buildBrdGenerationRetryReminder,
-  buildBrdUserPrompt,
-} from "../ai/prompts/brd-generation-prompt.js";
 
 type StageWithEst = Stage & { estimation: Estimation | null };
 
@@ -135,12 +103,9 @@ export class ProjectsService implements IOrchestratorProjectsPort {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly conformance: ConformanceService,
-    private readonly ai: AiService,
     private readonly discovery: DiscoveryService,
     private readonly scraper: ScraperService,
     private readonly estimationRecalc: ProjectEstimationRecalcService,
-    private readonly semaphore: SemaphoreService,
     private readonly theforge: TheForgeService,
     private readonly graphMemory: GraphMemoryService,
     private readonly changeLog: ChangeLogService,
@@ -157,6 +122,9 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly uxGuide: ProjectUxGuideService,
     @Inject(forwardRef(() => ProjectDeliverableGeneratorsService))
     private readonly deliverableGenerators: ProjectDeliverableGeneratorsService,
+    private readonly deliverableGate: ProjectDeliverableGateService,
+    private readonly projectConformance: ProjectConformanceService,
+    private readonly projectBrd: ProjectBrdService,
   ) {}
 
   /** Fire-and-forget lifecycle hook tras persistir cambios de proyecto. */
@@ -228,142 +196,6 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     }
 
     throw new BadRequestException(`Restauración no implementada para ${snap.field}.`);
-  }
-
-  private mddJsonStringForSemaphore(mddContent: string | null): string | null {
-    if (!mddContent?.trim()) return null;
-    const normalized = normalizeMddContent(mddContent);
-    return JSON.stringify(normalized);
-  }
-
-  private countSddPrecisionGaps(
-    project: Pick<
-      Project,
-      | "architectureContent"
-      | "blueprintContent"
-      | "tasksContent"
-      | "logicFlowsContent"
-      | "userStoriesContent"
-      | "useCasesContent"
-      | "apiContractsContent"
-      | "uiScreensContent"
-      | "phase0SummaryContent"
-    >,
-    mddMarkdown: string | null | undefined,
-  ): number {
-    const mdd = (mddMarkdown ?? "").trim();
-    if (mdd.length < 120) return 0;
-    return collectSddPrecisionGaps({
-      mdd,
-      architecture: project.architectureContent,
-      blueprint: project.blueprintContent,
-      tasks: project.tasksContent,
-      logicFlows: project.logicFlowsContent,
-      userStories: project.userStoriesContent,
-      useCases: project.useCasesContent,
-      apiContracts: project.apiContractsContent,
-      pantallas: project.uiScreensContent,
-      phase0Summary: project.phase0SummaryContent,
-    }).length;
-  }
-
-  /** Recalcula semáforo de la etapa principal cuando cambian entregables/complejidad sin tocar el MDD. */
-  async refreshStageSemaphoreFromProject(projectId: string): Promise<void> {
-    const project = await this.prisma.project.findFirst({
-      where: { id: projectId },
-      include: { stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } } },
-    });
-    if (!project) return;
-    const targetStage = pickPrimaryStage(project.stages);
-    if (!targetStage) return;
-
-    const mddMarkdown = targetStage.mddContent ?? "";
-    const sddCrossArtifactGapCount = this.countSddPrecisionGaps(project, mddMarkdown);
-
-    const { status, precisionScore } = this.semaphore.evaluate({
-      ...buildSemaphoreBaseFromProject(project),
-      mddJsonString: this.mddJsonStringForSemaphore(mddMarkdown),
-      sddCrossArtifactGapCount,
-    });
-
-    await this.prisma.stage.update({
-      where: { id: targetStage.id },
-      data: { status, precisionScore },
-    });
-
-    const mddForRecalc = targetStage.mddContent ?? null;
-    if (mddForRecalc != null) {
-      await this.estimationRecalc.recalcAndUpsert(targetStage.id, {
-        mddContent: mddForRecalc,
-        infraContent: project.infraContent ?? null,
-        status,
-      });
-    }
-  }
-
-  private mddFromStages(stages: StageWithEst[]): string {
-    return pickMddFromStages(stages);
-  }
-
-  /** Insumo principal para prompts de entregables: MDD o, en LOW/MEDIUM sin MDD, DBGA + resumen + spec. */
-  private constitutionMarkdown(project: Project & { stages: StageWithEst[] }): string {
-    return buildConstitutionMarkdown(project);
-  }
-
-  /** Bloquea generación de entregables si el MDD no aprueba el gate (409 + ERR_MDD_DELIVERY_GATE). */
-  async assertDeliverablesAllowed(
-    projectId: string,
-    options?: { acknowledgeGaps?: boolean },
-  ): Promise<void> {
-    const project = await this.assertProjectAccess(projectId);
-    if (project.projectType === "LEGACY") return;
-    await this.assertDeliverablesMddGate(project, options?.acknowledgeGaps === true);
-  }
-
-  /** Gate MDD de entrega para cualquier tipo de proyecto (incl. LEGACY). */
-  async assertMddDeliveryGateForDeliverables(projectId: string): Promise<void> {
-    const project = await this.assertProjectAccess(projectId);
-    await this.assertDeliverablesMddGate(project);
-  }
-
-  private async assertDeliverablesMddGate(
-    project: Project & { stages: StageWithEst[] },
-    acknowledgeGaps = false,
-  ): Promise<void> {
-    const stage = pickPrimaryStage(project.stages);
-    const mdd = this.mddFromStages(project.stages).trim();
-    const cx = project.complexity ?? ComplexityLevel.HIGH;
-
-    if (!mdd) {
-      if (cx !== ComplexityLevel.HIGH) return;
-      const gate: MddDeliveryGateResult = {
-        ok: false,
-        score: 0,
-        blockers: [
-          "No hay MDD en la etapa activa; completa la Constitución antes de generar entregables.",
-        ],
-        warnings: [],
-      };
-      if (stage?.id) void this.mddPersist.persistMddDeliveryGateSnapshot(stage.id, gate);
-      if (!acknowledgeGaps) {
-        throw new ConflictException(
-          buildMddDeliveryGateConflictBody(gate, gate.blockers[0]!),
-        );
-      }
-      return;
-    }
-
-    const gate = await evaluateMddDeliveryGatePrepared(mdd, {
-      brdMarkdown: stage?.brdContent,
-      dbgaMarkdown: project.dbgaContent,
-    });
-    if (stage?.id) {
-      void this.mddPersist.persistMddDeliveryGateSnapshot(stage.id, gate);
-      void persistDomainInventoryForStage(this.prisma, project, stage.id);
-    }
-    if (!gate.ok && !acknowledgeGaps) {
-      throw new ConflictException(buildMddDeliveryGateConflictBody(gate));
-    }
   }
 
   async create(data: CreateProjectDto) {
@@ -777,7 +609,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
         cpInput !== undefined ||
         clearComplexityPending === true);
     if (shouldRefreshSemaphoreWithoutMdd) {
-      await this.refreshStageSemaphoreFromProject(id);
+      await this.deliverableGate.refreshStageSemaphoreFromProject(id);
     }
 
     const project = await this.findOne(id);
@@ -950,7 +782,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const project = await this.assertProjectAccess(projectId);
 
     const dbga = (project.dbgaContent ?? "").trim();
-    const mdd = this.mddFromStages(project.stages).trim();
+    const mdd = pickMddFromStages(project.stages).trim();
     const spec = (project.specContent ?? "").trim();
     const phase0 = (project.phase0SummaryContent ?? "").trim();
 
@@ -1052,6 +884,43 @@ export class ProjectsService implements IOrchestratorProjectsPort {
   /** Repara/regenera solo el YAML frontmatter de la Guía UX/UI. */
   async repairUxUiGuideYaml(projectId: string): Promise<string> {
     return this.uxGuide.repairUxUiGuideYaml(projectId);
+  }
+
+  async refreshStageSemaphoreFromProject(projectId: string): Promise<void> {
+    return this.deliverableGate.refreshStageSemaphoreFromProject(projectId);
+  }
+
+  async assertDeliverablesAllowed(
+    projectId: string,
+    options?: { acknowledgeGaps?: boolean },
+  ): Promise<void> {
+    return this.deliverableGate.assertDeliverablesAllowed(projectId, options);
+  }
+
+  async assertMddDeliveryGateForDeliverables(projectId: string): Promise<void> {
+    return this.deliverableGate.assertMddDeliveryGateForDeliverables(projectId);
+  }
+
+  async auditDocuments(projectId: string, options?: { useLlm?: boolean }) {
+    return this.projectConformance.auditDocuments(projectId, options);
+  }
+
+  async getConformance(projectId: string, options?: { useLlm?: boolean }) {
+    return this.projectConformance.getConformance(projectId, options);
+  }
+
+  async verifyDeliverable(
+    projectId: string,
+    deliverable: "blueprint" | "api" | "infra" | "logicFlows",
+  ): Promise<string> {
+    return this.projectConformance.verifyDeliverable(projectId, deliverable);
+  }
+
+  async suggestBrdFromDbga(
+    projectId: string,
+    opts?: { stageId?: string | null },
+  ): Promise<{ brdContent: string; stageId: string }> {
+    return this.projectBrd.suggestBrdFromDbga(projectId, opts);
   }
 
   async generateDocument(
@@ -1267,182 +1136,5 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     options?: { stageId?: string; finalize?: boolean; lockedPatternIds?: readonly string[] },
   ): Promise<void> {
     return this.mddPersist.persistMddFromBackgroundJob(projectId, rawMarkdown, options);
-  }
-
-
-  /** Auditoría integral: conformidad heurística + métricas en vivo + gaps SDD. */
-  async auditDocuments(projectId: string, options?: { useLlm?: boolean }) {
-    const project = await this.assertProjectAccess(projectId);
-    const mdd = this.constitutionMarkdown(project);
-    const conformance = await this.getConformance(projectId, options);
-    const conformanceSummary = buildConformanceSummary(this.conformance, mdd, project);
-    const crossArtifactGaps = collectConformanceGaps(this.conformance, mdd, project);
-    const stage = pickPrimaryStage(project.stages ?? []);
-    return {
-      projectId,
-      projectName: project.name,
-      stageStatus: stage?.status ?? null,
-      precisionScore: stage?.precisionScore ?? null,
-      conformance,
-      conformanceSummary,
-      crossArtifactGaps: crossArtifactGaps.slice(0, 24),
-      auditedAt: new Date().toISOString(),
-    };
-  }
-
-  async getConformance(
-    projectId: string,
-    options?: { useLlm?: boolean },
-  ): Promise<{
-    blueprint: ConformanceResult;
-    blueprintDataModel: ConformanceResult;
-    api: ApiConformanceResult;
-    logicFlows: ConformanceResult;
-    infra: ConformanceResult;
-  }> {
-    const p = await this.assertProjectAccess(projectId);
-    const mdd = this.constitutionMarkdown(p);
-
-    const blueprintDataModel = this.conformance.checkBlueprintDataModel(mdd, p.blueprintContent);
-    const heuristic = {
-      blueprint: this.conformance.checkBlueprint(mdd, p.blueprintContent),
-      blueprintDataModel,
-      api: this.conformance.checkApi(mdd, p.apiContractsContent),
-      logicFlows: this.conformance.checkLogicFlows(mdd, p.logicFlowsContent),
-      infra: this.conformance.checkInfra(mdd, p.infraContent),
-    };
-
-    if (!options?.useLlm) return heuristic;
-
-    const mddTrim = mdd.trim();
-    if (mddTrim.length < 200) return heuristic;
-
-    const [blueprintLlm, apiLlm, logicFlowsLlm, infraLlm] = await Promise.all([
-      this.ai.conformanceCheck(mddTrim, (p.blueprintContent ?? "").trim(), "blueprint"),
-      this.ai.conformanceCheck(mddTrim, (p.apiContractsContent ?? "").trim(), "api"),
-      this.ai.conformanceCheck(mddTrim, (p.logicFlowsContent ?? "").trim(), "logicFlows"),
-      this.ai.conformanceCheck(mddTrim, (p.infraContent ?? "").trim(), "infra"),
-    ]);
-
-    return {
-      blueprint: blueprintLlm.ok ? { ok: true, gaps: [] } : { ok: false, gaps: blueprintLlm.gaps },
-      blueprintDataModel,
-      api: apiLlm.ok
-        ? { ok: true, missingInApi: [], extraInApi: [] }
-        : { ok: false, missingInApi: apiLlm.gaps, extraInApi: [] },
-      logicFlows: logicFlowsLlm.ok ? { ok: true, gaps: [] } : { ok: false, gaps: logicFlowsLlm.gaps },
-      infra: infraLlm.ok ? { ok: true, gaps: [] } : { ok: false, gaps: infraLlm.gaps },
-    };
-  }
-
-  async verifyDeliverable(
-    projectId: string,
-    deliverable: "blueprint" | "api" | "infra" | "logicFlows",
-  ): Promise<string> {
-    const p = await this.assertProjectAccess(projectId);
-    const doc =
-      deliverable === "blueprint"
-        ? p.blueprintContent
-        : deliverable === "api"
-          ? p.apiContractsContent
-          : deliverable === "logicFlows"
-            ? p.logicFlowsContent
-            : p.infraContent;
-    return this.ai.verifyDeliverable(this.constitutionMarkdown(p), doc ?? "", deliverable);
-  }
-
-  /**
-   * Genera BRD desde `Project.dbgaContent` (greenfield). LEGACY debe usar
-   * `POST …/legacy/suggest-brd-from-codebase-doc`. (To-Be eliminado del sistema.)
-   */
-  async suggestBrdFromDbga(
-    projectId: string,
-    opts?: { stageId?: string | null },
-  ): Promise<{ brdContent: string; stageId: string }> {
-    const project = await this.assertProjectAccess(projectId);
-    if (project.projectType === "LEGACY") {
-      throw new BadRequestException(
-        "En proyectos legacy usa POST …/legacy/suggest-brd-from-codebase-doc (documentación Ariadne).",
-      );
-    }
-    const dbga = String(project.dbgaContent ?? "").trim();
-    const phase0 = String(project.phase0SummaryContent ?? "").trim();
-    const effectiveDbga = dbga.length >= 300 ? dbga : phase0;
-    if (effectiveDbga.length < 300) {
-      throw new BadRequestException(
-        "Se requiere DBGA en el proyecto (mín. ~300 caracteres). Genera el benchmark en el Paso 0 o pégalo en el proyecto.",
-      );
-    }
-    const sid = opts?.stageId?.trim();
-    const stage: StageWithEst | undefined =
-      (sid ? project.stages.find((s) => s.id === sid) : undefined) ||
-      pickPrimaryStage(project.stages as StageWithEst[]);
-    if (!stage?.id) {
-      throw new BadRequestException("No hay etapa para persistir BRD.");
-    }
-    const { text: dbgaForPrompt, truncated: dbgaTruncated } = truncateSourceDocForBrdPrompt(effectiveDbga);
-
-    const brdPromptBase = buildBrdUserPrompt({
-      mode: "greenfield-from-dbga",
-      sourceLabel: "DBGA",
-      sourceDocument: dbgaForPrompt,
-    });
-
-    let brd = "";
-    let lastFailure: BrdExtractFailure = "no_delimiter";
-    let lastMermaidHint = "";
-    let lastRawLength = 0;
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      const formatReminder =
-        attempt > 1
-          ? buildBrdGenerationRetryReminder({
-              delimiterRetry: !lastMermaidHint,
-              mermaidRetry: Boolean(lastMermaidHint),
-              mermaidHint: lastMermaidHint || undefined,
-            })
-          : "";
-      const raw = await this.ai.generateResponse(brdPromptBase + formatReminder, [], {
-        systemPrompt: BRD_GENERATION_SYSTEM,
-      });
-      lastRawLength = (raw ?? "").length;
-      const extracted = extractBrdFromLlmResponse(raw ?? "");
-      if (!extracted.ok) {
-        lastFailure = extracted.failure;
-        lastMermaidHint = "";
-        if (attempt < 2) {
-          console.warn(
-            `[suggestBrdFromDbga] Intento BRD ${attempt}/2: ${extracted.failure} (raw ~${lastRawLength} chars), reintentando...`,
-          );
-        }
-        continue;
-      }
-      const mermaidVal = validateBrdMermaidOutput(extracted.content);
-      if (!mermaidVal.ok) {
-        lastMermaidHint = mermaidVal.hint;
-        if (attempt < 2) {
-          console.warn(
-            `[suggestBrdFromDbga] Intento BRD ${attempt}/2: Mermaid inválido (${mermaidVal.hint}), reintentando...`,
-          );
-        }
-        continue;
-      }
-      brd = cleanDocumentContent(extracted.content);
-      break;
-    }
-    if (!brd) {
-      throw new BadRequestException(
-        brdGenerationErrorMessage(lastFailure, {
-          dbgaTruncated,
-          rawLength: lastRawLength,
-        }) +
-          (lastMermaidHint ? ` Diagramas §4: ${lastMermaidHint}.` : ""),
-      );
-    }
-
-    await this.prisma.stage.update({
-      where: { id: stage.id },
-      data: { brdContent: prependDocumentTimestamps(brd) },
-    });
-    return { brdContent: brd, stageId: stage.id };
   }
 }

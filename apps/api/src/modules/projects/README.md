@@ -11,6 +11,9 @@ CRUD de proyectos, actualización de MDD y entregables (Blueprint, API, etc.).
 - **ProjectStageService:** CRUD de etapas (`createStage`, `patchStage`, `transitionStage`, `activateStageExclusive`). Integración FalkorDB en etapas legacy al crear.
 - **ProjectUxGuideService:** generación LLM (`generateUxUiGuide`), composición desde referencia (`composeUxGuideFromDesignRef`) y reparación YAML (`repairUxUiGuideYaml`).
 - **ProjectDeliverableGeneratorsService:** generadores thin de entregables (`generateDocument`, `generateSpec`, `generateBlueprint`, `generateApiContracts`, `generateTasks`, `generateAem`, gobernanza de agentes, etc.). `ProjectsService` delega la API pública sin cambiar contratos HTTP/MCP.
+- **ProjectDeliverableGateService:** gate MDD de entrega (`assertDeliverablesAllowed`, `assertMddDeliveryGateForDeliverables`) y recálculo de semáforo (`refreshStageSemaphoreFromProject`). Utils: `project-semaphore.util.ts`.
+- **ProjectConformanceService:** auditoría y conformidad (`auditDocuments`, `getConformance`, `verifyDeliverable`).
+- **ProjectBrdService:** generación greenfield de BRD desde DBGA (`suggestBrdFromDbga`).
 - **DeliverablesCascadeService:** orquestación multi-ola (`generateDeliverablesCascade`), sync pantallas MCP (`syncUiScreens`), post-pase W4 y retry de conformidad API/Infra. Utils: `deliverables-cascade-gaps.util.ts`, `constitution-markdown.util.ts`, `sync-domain-inventory-stage.util.ts`.
 - **ProjectMddPersistService:** persistencia MDD desde jobs en background (`persistMddFromBackgroundJob`), PATCH (`persistMddFromPatch`), snapshot de delivery gate y errores estructurados del pipeline (`throwMddPipelineBadRequest`). Utils: `project-mdd-persist.util.ts` (`buildSemaphoreBaseFromProject`, `mergeProjectFieldsForSemaphore`, `resolveMddPersistMode`), `project-access.util.ts` (`loadAccessibleProjectWithStages`).
 - **stage-helpers.ts:** `pickPrimaryStage`, `flattenStageDeliverables`.
