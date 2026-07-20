@@ -684,3 +684,11 @@ Fase 6 (legacy/MCP)
 |------|--------|
 | `views/workshop/WorkshopStandardDocPanels.tsx` + types | ✅ |
 | Ocho entregables `StandardDocPanel` fuera de `WorkshopView` | ✅ |
+
+### Fase 5 — Workshop frontend (incremento 5b)
+
+| Ítem | Estado |
+|------|--------|
+| `views/workshop/WorkshopLegacyPanels.tsx` + types | ✅ |
+| `views/workshop/WorkshopBenchmarkPanel.tsx` + types | ✅ |
+| `WorkshopView.tsx` — cluster legacy/benchmark (~4 380 L) | ✅ |
