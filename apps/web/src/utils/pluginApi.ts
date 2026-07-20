@@ -64,26 +64,6 @@ export async function installPluginFromFile(file: File): Promise<PluginInstallRe
   return res.json();
 }
 
-export async function installPluginFromLicense(
-  licenseKey: string,
-  pluginId?: string,
-): Promise<PluginInstallResult> {
-  const res = await apiFetch(`${API_BASE}/plugins/install`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ licenseKey, pluginId }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(
-      typeof (err as { message?: string }).message === "string"
-        ? (err as { message: string }).message
-        : "Licencia rechazada o portal no disponible",
-    );
-  }
-  return res.json();
-}
-
 export async function uninstallPlugin(pluginId: string): Promise<PluginUninstallResult> {
   const res = await apiFetch(
     `${API_BASE}/plugins/installed/${encodeURIComponent(pluginId)}`,
