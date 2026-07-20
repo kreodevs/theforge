@@ -4,6 +4,31 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+## [v1.6.2] — 2026-07-19
+
+> **MDD SSOT — UAT, §4 journeys y tablas plataforma** — Paridad escenarios UAT BRD→MDD, contratos CRUD/journey en §4, gate MCP/memoria alineado con contexto BRD.
+
+### Added
+
+- **`brd-mdd-uat-conformance.util.ts`:** paridad escenarios UAT BRD → MDD §1; inyección determinista de escenarios faltantes (p. ej. límite IA, stop-loss).
+- **`mdd-journey-section4.util.ts`:** requisitos §4 para watchlists, strategies, credentials, `/dashboards/me`, `/tenants/:id/quota` y WebSocket si §2 lo describe.
+- **`mdd-ssot-repair.util.ts`:** orquestación pre-gate (plataforma + UAT + §4) en `mdd-prepare-output` y estimación.
+- **`platform-table-justify.util.ts`:** ancla tablas MCP/memoria en BRD §3, MDD §1 o Spec; auto-comentarios `[platform:*]`.
+- **Specs:** brd-mdd-uat, mdd-journey-section4, mdd-ssot-repair, platform-table-justify.
+
+### Changed
+
+- **Delivery gate / W4 / `collectConformanceGaps`:** blockers `domain-uat-regression` y `domain-section4-journey`.
+- **`DBGA_CORE_ENTITIES`:** incluye `strategies`.
+- **`domain-inventory.util.ts`:** aliases `strategy` / `estrategia`.
+
+### Fixed
+
+- **Regresión UAT:** MDD ya no pierde escenarios 3–4 tras regeneración cuando el BRD los mantiene.
+- **§4 sin contratos journey:** tablas §3 con endpoints CRUD y rutas especiales ausentes en contratos.
+- **`normalizeApiPathForCompare`:** `{id}` ya no produce doble barra (`/tenants//*/quota`).
+- **Gate tablas plataforma:** `mcp_plugins` / `conversation_memory` justificables por contexto MCP/memoria en corpus.
+
 ## [v1.6.1] — 2026-07-19
 
 > **MDD como SSOT — brechas críticas de dominio** — Entidades DBGA en §3, tablas plataforma, prefijo API unificado, decision log BRD, trazabilidad entidad→API e integraciones externas.
