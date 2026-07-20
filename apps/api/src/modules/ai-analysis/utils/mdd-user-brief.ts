@@ -5,6 +5,10 @@ import {
   MDD_MAX_PLAN_DIRECTIVE_CHARS,
   MDD_MAX_USER_BRIEF_FROM_ACCUMULATED_CHARS,
 } from "@theforge/shared-types";
+import {
+  minLengthForExplicitRequirements,
+  STACK_TECHNOLOGY_REGEX,
+} from "./user-declared-stack.util.js";
 
 /** Prefijos que suelen preceder al requisito real del usuario (se eliminan para obtener el brief). */
 const COMMAND_PREFIXES = [
@@ -65,7 +69,11 @@ export function getUserBrief(state: MDDStateType): string {
 /** Respuestas breves que no son requisitos (sí, ok, de acuerdo, etc.). */
 const TRIVIAL_REPLY = /^(?:Usuario:\s*)?(?:s[ií]|s[ií]\s*,\s*de\s*acuerdo|de\s*acuerdo|ok|vale|correcto|estoy\s+de\s+acuerdo|perfecto|acepto)[\s.]*$/i;
 
-const MIN_REQUIREMENTS_LENGTH = 50;
+const DEFAULT_MIN_REQUIREMENTS_LENGTH = 50;
+
+function meetsRequirementsMinLength(text: string, minLen: number): boolean {
+  return text.length >= minLen;
+}
 
 /**
  * Texto de requisitos o petición del usuario para inyectar al Arquitecto (§3 y §4).
@@ -75,10 +83,13 @@ const MIN_REQUIREMENTS_LENGTH = 50;
 export function getUserExplicitRequirements(state: MDDStateType): string {
   let combined = "";
   const accumulated = (state.userInputAccumulated ?? "").trim();
-  if (accumulated.length >= MIN_REQUIREMENTS_LENGTH) {
+  const accumulatedMinLen = minLengthForExplicitRequirements(accumulated);
+  if (accumulated.length >= accumulatedMinLen) {
     const blocks = accumulated.split(/\n\n---\n\n/).map((s) => s.trim()).filter(Boolean);
     const substantial = blocks.filter(
-      (b) => b.length >= MIN_REQUIREMENTS_LENGTH && !TRIVIAL_REPLY.test(b.replace(/^Usuario:\s*/i, "").trim()),
+      (b) =>
+        meetsRequirementsMinLength(b, minLengthForExplicitRequirements(b)) &&
+        !TRIVIAL_REPLY.test(b.replace(/^Usuario:\s*/i, "").trim()),
     );
     if (substantial.length > 0) {
       combined = substantial.join("\n\n");
@@ -86,13 +97,14 @@ export function getUserExplicitRequirements(state: MDDStateType): string {
   }
   if (!combined.length) {
     const dbga = (state.dbgaContent ?? "").trim();
-    if (dbga.length >= MIN_REQUIREMENTS_LENGTH && !dbga.startsWith("(Sin Benchmark")) {
+    if (dbga.length >= minLengthForExplicitRequirements(dbga) && !dbga.startsWith("(Sin Benchmark")) {
       const peticionMatch = dbga.match(/(?:Petición|Usuario|Respuesta del usuario)[:\s]*\n([\s\S]{1,1200})/i);
       combined = peticionMatch?.[1]?.trim() ? peticionMatch[1].trim() : dbga;
     }
   }
   const last = (state.lastUserMessage ?? "").trim();
-  if (last.length >= MIN_REQUIREMENTS_LENGTH && !TRIVIAL_REPLY.test(last)) {
+  const lastMinLen = minLengthForExplicitRequirements(last);
+  if (last.length >= lastMinLen && !TRIVIAL_REPLY.test(last)) {
     const lastNorm = last.replace(/^(Usuario|Petición):\s*/i, "").trim();
     const prefix = lastNorm.slice(0, Math.min(120, lastNorm.length));
     if (!combined.length) {
@@ -110,8 +122,11 @@ const MIN_SUBSTANTIVE_LENGTH = 25;
 const SYSTEM_QUESTION_PATTERN = /^(?:¿Ejecutar\s+este\s+plan|¿Puedes\s+detallar|¿Quieres\s+que\s+avancemos)/i;
 
 /** Indicios de requisito de diseño: entidades, modelo, diagrama, aplicaciones, roles, permisos, stack, arquitectura, despliegue. */
-const DESIGN_REQUIREMENT_REGEX =
-  /\b(aplicaciones?|diagrama\s*(er|entidad|relaci[oó]n)?|entidad|entidades|modelo\s+de\s+datos|roles?|permisos?|relaci[oó]n(es)?|tablas?|usuarios?|CREATE\s+TABLE|stack|arquitectura|frontend|backend|framework|tecnolog[ií]a|nestjs|react|vue|angular|node\.?js|postgresql|mysql|vite|webpack|kubernetes|kubernets|k8s|dokploy|coolify|despliegue|contenedores?|docker|secci[oó]n\s*2|§2|secci[oó]n\s*7|§7|denue|inegi|contratos?\s+de\s+api|endpoints?|documentaci[oó]n\s+(de\s+)?api|microservicio|consumo\s+del\s+microservicio|otras\s+aplicaciones|api\s+propia)\b/i;
+const DESIGN_REQUIREMENT_REGEX = new RegExp(
+  STACK_TECHNOLOGY_REGEX.source +
+    "|\\b(aplicaciones?|diagrama\\s*(er|entidad|relaci[oó]n)?|entidad|entidades|modelo\\s+de\\s+datos|roles?|permisos?|relaci[oó]n(es)?|tablas?|usuarios?|CREATE\\s+TABLE|denue|inegi|contratos?\\s+de\\s+api|endpoints?|documentaci[oó]n\\s+(de\\s+)?api|microservicio|consumo\\s+del\\s+microservicio|otras\\s+aplicaciones|api\\s+propia|secci[oó]n\\s*7|§7)\\b",
+  "i",
+);
 
 /**
  * Ultimo mensaje sustancial del usuario (directiva al confirmar un plan): prioridad diseño > ultimo bloque > lastUserMessage.

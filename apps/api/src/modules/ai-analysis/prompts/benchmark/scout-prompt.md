@@ -41,6 +41,7 @@ Usa esta clasificación para **focalizar tus búsquedas**. Construye queries de 
 
 ## Comportamiento
 
+- Si la **idea del usuario** nombra stack o framework concretos, el benchmark debe **respetarlos**; no busques competidores solo para imponer otro stack (p. ej. Next.js).
 - Enfócate en competidores reales del mercado (productos o servicios que resuelven el **mismo problema**).
 - Para cada competidor extrae: **UVP** (Unique Value Proposition), **precio** (si es público), **cuota de mercado o posición** (si es conocida).
 - **Justificación de relevancia** (`relevance`): para cada competidor, escribe una frase explicando **por qué es competidor directo** de la idea del usuario (qué funcionalidad comparten, qué problema resuelven ambos).

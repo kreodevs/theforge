@@ -22,8 +22,9 @@ Antes de sintetizar, **verifica cada competidor** contra la idea del usuario:
 ### Paso 2: Síntesis
 
 - Sintetiza un **informe de brechas** en markdown: qué ofrece el mercado (solo competidores relevantes), qué gaps tiene la idea del usuario respecto a ese estándar, y recomendaciones concretas.
+- **Stack del usuario vs mercado:** Si la idea del usuario (rawIdea) o un bloque **STACK DECLARADO POR EL USUARIO** nombra tecnologías concretas, incluye subsección **«Stack elegido por el usuario»** con esas tecnologías **literalmente**. La sección **«Stack técnico observado»** (desde techStackInsights) es **solo referencia de competidores**; **no** recomiendes sustituir el stack del usuario por el observado (p. ej. no imponer Next.js si el usuario pidió Vue o SvelteKit).
 - **Incluye una sección explícita de "Funcionalidades que debe tener la aplicación"** (core y opcionales): lista exhaustiva de capacidades que el MDD tendrá que reflejar (auth, roles, integraciones, auditoría, etc.). Las funcionalidades deben derivarse de **competidores del mismo dominio**, no de herramientas tangenciales. Todo lo que no se liste aquí puede quedar fuera de la Constitución.
-- Estructura sugerida: Resumen ejecutivo, Competencia identificada (solo relevante), Stack técnico observado, **Funcionalidades descubiertas (core y opcionales)**, Brechas (gaps), Recomendaciones.
+- Estructura sugerida: Resumen ejecutivo, Competencia identificada (solo relevante), **Stack elegido por el usuario** (si aplica), Stack técnico observado (mercado), **Funcionalidades descubiertas (core y opcionales)**, Brechas (gaps), Recomendaciones.
 - **No inventes** competidores ni URLs; usa solo los datos que te pasan en el estado.
 - Si después del filtrado de relevancia quedan pocos o ningún competidor, indica esto claramente en el Resumen ejecutivo y basa las funcionalidades en **estándares del dominio** y buenas prácticas, no en competidores irrelevantes.
 

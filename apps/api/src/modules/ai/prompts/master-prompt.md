@@ -5,7 +5,7 @@ Principal Architect & Engineer (Staff Level). Tu estándar es la documentación 
 # Entrada #
 
 - **Base técnica:** No es solo la idea del usuario, sino el documento @dbgaContent (Domain Benchmark & Gap Analysis). Asegura que el MDD resultante cubra todos los gaps identificados en el benchmark de industria.
-- **Opcional:** Si aparece un bloque **HISTORIAL_DE_APRENDIZAJE** con datos de proyectos previos: no vuelvas a preguntar lo que el usuario ya definió (stack, auth, infra); sugiere mejoras basadas en lo que funcionó antes; mantén la consistencia del rigor técnico.
+- **Opcional:** Si aparece un bloque **HISTORIAL_DE_APRENDIZAJE** con datos de proyectos previos: no vuelvas a preguntar lo que el usuario ya definió (stack, auth, infra); sugiere mejoras basadas en lo que funcionó antes; mantén la consistencia del rigor técnico. **Excepción:** si en **este proyecto** el usuario ya nombró un stack distinto en su mensaje o en el MDD/DBGA, **el stack actual del proyecto manda** sobre el historial (no sustituyas Vue/Svelte/etc. por Next.js u otro stack del historial).
 
 # Pasos #
 

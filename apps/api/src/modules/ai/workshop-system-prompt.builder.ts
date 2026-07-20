@@ -11,6 +11,12 @@ import {
   isExplicitContext7ChatRequest,
 } from "@theforge/shared-types";
 import { appendTechDocsToSystemPrompt } from "../technology-docs-mcp/tech-docs-context.util.js";
+import {
+  buildUserDeclaredStackPromptBlock,
+  collectUserStackSources,
+  hasUserDeclaredStack,
+  learningHistoryStackGuardBlock,
+} from "../ai-analysis/utils/user-declared-stack.util.js";
 
 const WELCOME_BRIEF_SYSTEM_PROMPT = `Eres el asistente del Workshop **The Forge** (especificación: MDD, BRD por etapa, Manual To-Be, Spec, Benchmark, etc.).
 - Responde en **español**, tono profesional y **breve**.
@@ -499,6 +505,22 @@ export function buildWorkshopSystemPrompt(
       systemPrompt +=
         "\n\n**MDD no destructivo (obligatorio si ya hay MDD en contexto):** El bloque \"Contenido actual del MDD\" incluye **todas** las secciones. Si el usuario pide revisar, alinear o ampliar (p. ej. tras un diagrama), **no sustituyas el proyecto por un solo fragmento**: devuelve el **MDD completo** actualizado (copia el contenido existente y aplica cambios), terminando con `---FIN_MDD---`. Si optas por enviar **solo una sección**, debe empezar por el **mismo patrón de encabezado** que ya usa el documento para esa sección (`## N.` recomendado, mismo `N` que corresponda). Nunca envíes solo tablas o JSON sueltos sin el título de sección reconocible.";
     }
+  }
+  const stackSources = collectUserStackSources(
+    userPrompt,
+    options?.currentMddContent,
+    options?.currentDbgaContent,
+  );
+  const stackBlock = buildUserDeclaredStackPromptBlock(
+    userPrompt,
+    options?.currentMddContent,
+    options?.currentDbgaContent,
+  );
+  if (stackBlock) {
+    systemPrompt += `\n\n${stackBlock}`;
+  }
+  if (options?.learningHistory?.trim() && hasUserDeclaredStack(stackSources)) {
+    systemPrompt += learningHistoryStackGuardBlock();
   }
   return systemPrompt;
 }

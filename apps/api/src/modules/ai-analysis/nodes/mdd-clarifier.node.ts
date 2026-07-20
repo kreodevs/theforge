@@ -5,7 +5,8 @@ import type { MDDStateType } from "../state/index.js";
 import { getMddTemplatePlaceholder } from "../state/mdd-structured.schema.js";
 import { mergeMddStructured } from "../utils/mdd-merge-structured.js";
 import { getMddDraftSummary, extractAlreadyDocumentedTopics, extractIdentifiedInfraFromText, logMddNodeOutput } from "../utils/mdd-sanitize.js";
-import { getUserBrief } from "../utils/mdd-user-brief.js";
+import { getUserBrief, getUserExplicitRequirements } from "../utils/mdd-user-brief.js";
+import { buildUserDeclaredStackPromptBlock } from "../utils/user-declared-stack.util.js";
 import { extractFirstJsonObject, parseJsonOrThrow } from "../utils/parse-json.js";
 import { clarifierComplexityAppendix } from "../utils/mdd-complexity-rigor.js";
 import { domainInventoryPromptBlock } from "../utils/mdd-domain-prompt.util.js";
@@ -120,6 +121,15 @@ export function createMddClarifierNode(llm: BaseChatModel) {
           ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Revisa y modifica el borrador existente del MDD según el objetivo. Preserva el contenido completo de todas las secciones (1-7) y solo aplica los cambios necesarios para cumplir el objetivo.\n\n---\n\n`
           : "";
       let prompt = `${CLARIFIER_MDD_PROMPT}${clarifierComplexityAppendix(state.mddComplexity)}\n\n---\n${briefBlock}**DBGA (entrada):**\n${state.dbgaContent}`;
+      const stackBlock = buildUserDeclaredStackPromptBlock(
+        state.userInputAccumulated,
+        state.lastUserMessage,
+        brief,
+        state.dbgaContent?.slice(0, 1500),
+      );
+      if (stackBlock) {
+        prompt += `\n\n---\n${stackBlock}`;
+      }
       const inventoryBlock = domainInventoryPromptBlock(state);
       if (inventoryBlock) {
         prompt += inventoryBlock;

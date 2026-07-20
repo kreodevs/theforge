@@ -2,6 +2,7 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { HumanMessage } from "@langchain/core/messages";
 import { SYNTHESIS_PROMPT } from "../prompts/load-prompts.js";
 import type { DBGAStateType } from "../state/index.js";
+import { buildUserDeclaredStackPromptBlock } from "../utils/user-declared-stack.util.js";
 
 /** Creates the Synthesis (Gap Analysis) node. */
 export function createSynthesisNode(llm: BaseChatModel) {
@@ -21,7 +22,8 @@ export function createSynthesisNode(llm: BaseChatModel) {
     ]
       .filter(Boolean)
       .join("\n");
-    const prompt = `${SYNTHESIS_PROMPT}\n\n---\n${context}`;
+    const stackBlock = buildUserDeclaredStackPromptBlock(state.rawIdea);
+    const prompt = `${SYNTHESIS_PROMPT}\n\n---\n${context}${stackBlock ? `\n\n---\n${stackBlock}` : ""}`;
     const response = await llm.invoke([new HumanMessage(prompt)]);
     const gapAnalysis = typeof response.content === "string" ? response.content.trim() : "";
     return {
