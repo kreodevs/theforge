@@ -598,5 +598,6 @@ Fase 6 (legacy/MCP)
 | `sql-repair.ts` (7 exports SQL + `sqlBlockContainsProseArtifact` interno) | ✅ |
 | `section-merge.ts` (merge/preserve/dedupe §1–§7, validateMddStructure) | ✅ |
 | `mermaid-fences.ts` + `brace.util.ts` | ✅ |
-| `persist-pipeline.ts`, `cross-consistency.ts`, … | pendiente |
-| Barrel `mdd-sanitize.ts` &lt; 200 L | pendiente |
+| `persist-pipeline.ts` + `persist-format.util.ts` | ✅ |
+| `cross-consistency.ts`, … | pendiente |
+| Barrel `mdd-sanitize.ts` &lt; 200 L | ✅ (~75 L; re-exports) |
