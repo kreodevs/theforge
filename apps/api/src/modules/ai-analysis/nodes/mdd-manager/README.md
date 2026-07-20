@@ -9,8 +9,8 @@ Extracción modular de `../mdd-manager.node.ts` — nodo LangGraph Manager del p
 | `manager-heuristics.ts` | `inferSectionsFromMessage`, `looksLike*` | Heurísticos de mensaje (sin LLM) |
 | `manager-plan.ts` | `buildMddPlan`, `expandSectionsToRun`, `generateMddPlanWithLLM` | Planner–Executor: goals por paso |
 | `manager-llm-turn.ts` | `runManagerLlmTurn` | Structured output + búsqueda memoria + guardrails reply |
+| `manager-state-handlers.ts` | `runDeterministicManagerHandlers` | Routing determinista (score, plan approval, regen, refinamiento) |
+| `manager-delegate.ts` | `handleManagerDelegateOutcome` | Post-LLM: reply interrupt o plan → executor/clarifier |
 | `manager-types.ts` | `MddManagerToolDeps` | Tipos compartidos (evita ciclos) |
 
-El entrypoint estable sigue siendo `../mdd-manager.node.ts` (`createMddManagerNode`, re-export de `expandSectionsToRun`).
-
-**Pendiente (Fase 2):** `manager-state-handlers.ts`, `manager-delegate.ts`, fachada `< 150 L`.
+El entrypoint estable sigue siendo `../mdd-manager.node.ts` (`createMddManagerNode`, ~60 L fachada; re-export de `expandSectionsToRun`).
