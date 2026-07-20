@@ -2,6 +2,21 @@
 export * from "./mdd-sanitize/internal.js";
 export * from "./mdd-sanitize/cross-consistency.js";
 export {
+  CANONICAL_HEADINGS,
+  collapseDuplicateMainTitle,
+  forceStripBrokenPrefix,
+  normalizeMddEnglishSubheadings,
+  sanitizeContextKeyValueAndObject,
+  sanitizeContextSection,
+  sanitizeSeguridadIntegracionRawJson,
+  stripBrokenMetadataDocumentBlock,
+  stripInstructionAndFeedbackBlocks,
+  stripMeshDirectivesFromDraft,
+  stripUserResponsesAndConversationHistory,
+  unbulletAndJoinForJson,
+  unescapeLiteralNewlines,
+} from "./mdd-sanitize/draft-normalize.js";
+export {
   ensureContratosSection,
   formatContratosBody,
   normalizeContratosTableSummary,

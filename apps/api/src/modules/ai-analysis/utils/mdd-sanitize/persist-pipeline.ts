@@ -52,6 +52,19 @@ import {
   repairNestedJsonFencesInDraft,
 } from "./contratos-format.js";
 import {
+  CANONICAL_HEADINGS,
+  collapseDuplicateMainTitle,
+  forceStripBrokenPrefix,
+  normalizeMddEnglishSubheadings,
+  sanitizeContextSection,
+  sanitizeSeguridadIntegracionRawJson,
+  stripBrokenMetadataDocumentBlock,
+  stripInstructionAndFeedbackBlocks,
+  stripMeshDirectivesFromDraft,
+  stripUserResponsesAndConversationHistory,
+  unescapeLiteralNewlines,
+} from "./draft-normalize.js";
+import {
   alignInfraNodeVersionWithSection2,
   applyDeterministicCrossConsistencyFixes,
   ensureSecurityLockoutInSection6,
@@ -63,23 +76,12 @@ import {
   ensureSection2SqlFormattedInSection,
   ensureTechnicalMetadataAtEndOfSection2,
   fixSection6BulletedJsonToMarkdown,
-  forceStripBrokenPrefix,
   convertSection2JsonBodyToMarkdown,
-  collapseDuplicateMainTitle,
-  stripBrokenMetadataDocumentBlock,
-  stripInstructionAndFeedbackBlocks,
-  stripMeshDirectivesFromDraft,
   stripNotaPendienteHeadingWhenManifestComplete,
-  stripUserResponsesAndConversationHistory,
-  sanitizeContextSection,
-  sanitizeSeguridadIntegracionRawJson,
   replaceAwsProseWithGenericWhenInfraNotAws,
-  normalizeMddEnglishSubheadings,
-  unescapeLiteralNewlines,
   unwrapSection2SqlBlockContainingJson,
   ensureTechnicalMetadataBlockInDraft,
   mddExcludesWebUiSurface,
-  CANONICAL_HEADINGS,
 } from "./internal.js";
 
 function repairDisplacedJsonBracesInContratosSection(draft: string): string {
