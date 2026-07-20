@@ -4,7 +4,6 @@ import type { Estimation, Project, Stage } from "@theforge/database";
 import { getRequestUserId, getRequestUserRole } from "../../common/request-user.store.js";
 import { isAdminOrAbove } from "../../common/roles.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
-import { DiscoveryService } from "../ai/discovery.service.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
 import { GraphMemoryService } from "../ai-analysis/graph-memory/graph-memory.service.js";
 import type { IOrchestratorProjectsPort } from "./projects-service.port.js";
