@@ -67,6 +67,8 @@ import {
   sanitizeLlmResponse,
   validateStructuralForTab,
 } from "./workshop-document-turn.util.js";
+import { buildSessionChatGenerateOptions } from "./session-chat-llm-options.util.js";
+import { parseWorkshopAssistantResponse } from "./session-chat-response-parse.util.js";
 import {
   buildDocumentRefinePrompt,
   buildLlmCurrentDocOptions,
@@ -747,27 +749,15 @@ export class SessionsService {
 
     let response: string;
     try {
-      response = await this.ai.generateResponse(llmUserPrompt, llmHistory, {
-        currentMddContent: options?.currentMddContent,
-        currentDbgaContent: options?.currentDbgaContent,
-        currentUxUiGuideContent: options?.currentUxUiGuideContent,
-        currentPhase0SummaryContent: options?.currentPhase0SummaryContent,
-        currentBlueprintContent: options?.currentBlueprintContent,
-        currentSpecContent: options?.currentSpecContent,
-        currentBrdContent: options?.currentBrdContent,
-        activeTab: options?.activeTab,
-        intent: intentRoute.intent,
-        learningHistory: learningHistory || undefined,
-        systemPrompt: options?.systemPrompt,
-        complexityInterviewContext: options?.complexityInterviewContext,
-        projectTypeForUxGuide: options?.projectTypeForUxGuide,
-        uxGuideAdditionalDocs: options?.uxGuideAdditionalDocs,
-        uxGuideDesignRef: options?.uxGuideDesignRef,
-        uxGuideDesignRefPromptBlock: options?.uxGuideDesignRefPromptBlock,
-        uxGuideDesignRefEffectiveSlug: options?.uxGuideDesignRefEffectiveSlug,
-        uxGuideDesignRefMode: options?.uxGuideDesignRefMode,
-        userMessageImages: userTurn.imagesForLlm,
-      });
+      response = await this.ai.generateResponse(
+        llmUserPrompt,
+        llmHistory,
+        buildSessionChatGenerateOptions(options, {
+          intent: intentRoute.intent,
+          learningHistory: learningHistory || undefined,
+          userMessageImages: userTurn.imagesForLlm,
+        }),
+      );
     } catch (err) {
       console.error("[Chat] ai.generateResponse error:", err);
       throw err;
@@ -783,160 +773,43 @@ export class SessionsService {
         "La IA no generó texto (respuesta vacía o bloqueada). Intenta de nuevo o reformula el mensaje.",
       );
     }
-    // RFC-001: Dual Output solo en edición explícita del MDD
-    let dualMdd: { markdown: string; ast: unknown; chatPart: string } | null = null;
-    if (intentRoute.action === "edit_document" && activeTab === "mdd") {
-      try {
-        dualMdd = this.parser.tryParseDualOutput(safeResponse);
-      } catch {
-        dualMdd = null;
-      }
-    }
-    let mddSplit = dualMdd
-      ? { mddPart: dualMdd.markdown, chatPart: dualMdd.chatPart }
-      : this.parser.splitMddAndChat(safeResponse);
-    const uxSplit = this.parser.splitUxUiGuideAndChat(safeResponse);
-    let dbgaSplit = this.parser.splitDbgaAndChat(safeResponse);
-    let phase0Split = this.parser.splitPhase0AndChat(safeResponse);
-    let specSplit = this.parser.splitDocAndChat(safeResponse, "SPEC");
-    let brdSplit = this.parser.splitDocAndChat(safeResponse, "BRD");
-    let blueSplit = this.parser.splitDocAndChat(safeResponse, "BLUEPRINT");
-    let apiSplit = this.parser.splitDocAndChat(safeResponse, "API");
-    let flowsSplit = this.parser.splitDocAndChat(safeResponse, "FLOWS");
-    let tasksSplit = this.parser.splitDocAndChat(safeResponse, "TASKS");
-    let infraSplit = this.parser.splitDocAndChat(safeResponse, "INFRA");
-    let archSplit = this.parser.splitDocAndChat(safeResponse, "ARCH");
-    let useCasesSplit = this.parser.splitDocAndChat(safeResponse, "USECASES");
-    let storiesSplit = this.parser.splitDocAndChat(safeResponse, "STORIES");
-
-    let hasMdd = mddSplit !== null;
-    let hasUx = uxSplit !== null;
-    let hasDbga = dbgaSplit !== null;
-    let hasSpec = specSplit !== null;
-    let hasBrd = brdSplit !== null;
-    let hasPhase0 = phase0Split !== null;
-    let hasBlue = blueSplit !== null;
-    let hasApi = apiSplit !== null;
-    let hasFlows = flowsSplit !== null;
-    let hasTasks = tasksSplit !== null;
-    let hasInfra = infraSplit !== null;
-    let hasArch = archSplit !== null;
-    let hasUseCases = useCasesSplit !== null;
-    let hasStories = storiesSplit !== null;
-
-    let uxDocPart: string | undefined = hasUx ? uxSplit!.docPart : undefined;
-    let dbgaDocPart: string | undefined = hasDbga ? dbgaSplit!.docPart : undefined;
-    let phase0DocPart: string | undefined = hasPhase0 ? phase0Split!.docPart : undefined;
-
-    let rawChat = safeResponse;
-    if (hasMdd) rawChat = mddSplit!.chatPart;
-    else if (hasUx) rawChat = uxSplit!.chatPart;
-    else if (hasDbga) rawChat = dbgaSplit!.chatPart;
-    else if (hasPhase0) rawChat = phase0Split!.chatPart;
-    else if (hasSpec) rawChat = specSplit!.chatPart;
-    else if (hasBrd) rawChat = brdSplit!.chatPart;
-    else if (hasBlue) rawChat = blueSplit!.chatPart;
-    else if (hasApi) rawChat = apiSplit!.chatPart;
-    else if (hasFlows) rawChat = flowsSplit!.chatPart;
-    else if (hasTasks) rawChat = tasksSplit!.chatPart;
-    else if (hasInfra) rawChat = infraSplit!.chatPart;
-    else if (hasArch) rawChat = archSplit!.chatPart;
-    else if (hasUseCases) rawChat = useCasesSplit!.chatPart;
-    else if (hasStories) rawChat = storiesSplit!.chatPart;
-
-    // Fallback: tab ux-ui-guide sin delimitador ---FIN_UX_UI---
-    const isUxTab = (options?.activeTab ?? "mdd").trim() === "ux-ui-guide";
-    const looksLikeUxGuide =
-      safeResponse.length > 200 &&
-      (/#\s*Guía\s*UX\/UI/i.test(safeResponse) ||
-       /^#?\s*Guía\s*UX\/UI/im.test(safeResponse) ||
-       // YAML frontmatter (---\nname: ... o name: ...)
-       /^---\s*\n/i.test(safeResponse.trim()) ||
-       /^name:\s*["']?[A-Z]/i.test(safeResponse.trim()) ||
-       // Design token patterns
-       /colors:\s*\n/i.test(safeResponse) ||
-       /typography:\s*\n/i.test(safeResponse) ||
-       /components:\s*\n/i.test(safeResponse));
-    if (isUxTab && !hasUx && looksLikeUxGuide) {
-      hasUx = true;
-      const trimmed = safeResponse.trim();
-      const docStartMatch = trimmed.match(/#\s*Guía\s*UX\/UI/i);
-      const yamlStartMatch = trimmed.match(/^---\s*\n/);
-      const yamlInlineStart =
-        !docStartMatch &&
-        !yamlStartMatch &&
-        /^name:\s*["']?[A-Z]/i.test(trimmed);
-      const docStartIdx = docStartMatch?.index ?? 0;
-      const hasIntro = docStartIdx > 0 && trimmed.slice(0, docStartIdx).trim().length > 0;
-      let docSection: string;
-      let chatParts: string[] = [];
-
-      if (docStartMatch) {
-        // Has # Guía UX/UI heading — doc starts there
-        docSection = docStartIdx > 0 ? trimmed.slice(docStartIdx) : trimmed;
-        if (hasIntro) chatParts.push(trimmed.slice(0, docStartIdx).trim());
-        const hrMatch = docSection.match(/\n\s*[-*_]{3,}\s*\n/);
-        if (hrMatch && hrMatch.index != null) {
-          uxDocPart = docSection.slice(0, hrMatch.index).trim();
-          const afterHr = docSection.slice(hrMatch.index + hrMatch[0].length).trim();
-          if (afterHr.length > 0) chatParts.push(afterHr);
-        } else {
-          uxDocPart = docSection.trim();
-        }
-      } else if (yamlStartMatch || yamlInlineStart) {
-        // YAML frontmatter: TODO EL RESPONSE es el documento.
-        // NO buscar separador (---) porque el --- de cierre del YAML se confunde.
-        // El chat se reemplaza por mensaje por defecto.
-        uxDocPart = trimmed;
-      } else {
-        uxDocPart = trimmed;
-      }
-      rawChat = chatParts.length > 0 ? chatParts.join("\n\n") : "Guía UX/UI generada. Revisa el panel del documento.";
-      console.log("[Chat] fallback (mejorado): uxUiGuideContent length:", uxDocPart?.length ?? 0, "chat length:", rawChat.length, "match type:", docStartMatch ? "h1" : yamlStartMatch ? "yaml" : yamlInlineStart ? "yaml-inline" : "other");
-    }
-
-    // Fallback genérico para tabs de documento (architecture, use-cases, etc.) sin ---FIN_TAG---
-    {
-      const fbTab = (options?.activeTab ?? "mdd").trim();
-      const fbSplit = this.parser.detectDocFallback(safeResponse, fbTab);
-      if (fbSplit) {
-        // Set the correct split variable based on tab
-        switch (fbTab) {
-          case "spec": specSplit = fbSplit; hasSpec = true; break;
-          case "blueprint": blueSplit = fbSplit; hasBlue = true; break;
-          case "api-contracts": apiSplit = fbSplit; hasApi = true; break;
-          case "logic-flows": flowsSplit = fbSplit; hasFlows = true; break;
-          case "tasks": tasksSplit = fbSplit; hasTasks = true; break;
-          case "infra": infraSplit = fbSplit; hasInfra = true; break;
-          case "architecture": archSplit = fbSplit; hasArch = true; break;
-          case "use-cases": useCasesSplit = fbSplit; hasUseCases = true; break;
-          case "user-stories": storiesSplit = fbSplit; hasStories = true; break;
-          case "benchmark": dbgaSplit = fbSplit; hasDbga = true; dbgaDocPart = fbSplit.docPart; break;
-          case "brd": brdSplit = fbSplit; hasBrd = true; break;
-          case "phase0": phase0Split = fbSplit; hasPhase0 = true; phase0DocPart = fbSplit.docPart; break;
-          case "mdd": mddSplit = { mddPart: fbSplit.docPart, chatPart: fbSplit.chatPart }; hasMdd = true; break;
-        }
-        // Only apply fallback if no higher-priority document was found
-        if (!hasUx) {
-          let fbFound = false;
-          if (hasMdd) { rawChat = mddSplit!.chatPart; fbFound = true; }
-          else if (hasDbga && dbgaSplit) { rawChat = dbgaSplit.chatPart; fbFound = true; }
-          else if (hasSpec) { rawChat = specSplit!.chatPart; fbFound = true; }
-          else if (hasBrd) { rawChat = brdSplit!.chatPart; fbFound = true; }
-          else if (hasBlue) { rawChat = blueSplit!.chatPart; fbFound = true; }
-          else if (hasApi) { rawChat = apiSplit!.chatPart; fbFound = true; }
-          else if (hasFlows) { rawChat = flowsSplit!.chatPart; fbFound = true; }
-          else if (hasTasks) { rawChat = tasksSplit!.chatPart; fbFound = true; }
-          else if (hasInfra) { rawChat = infraSplit!.chatPart; fbFound = true; }
-          else if (hasArch) { rawChat = archSplit!.chatPart; fbFound = true; }
-          else if (hasUseCases) { rawChat = useCasesSplit!.chatPart; fbFound = true; }
-          else if (hasStories) { rawChat = storiesSplit!.chatPart; fbFound = true; }
-          if (fbFound) {
-            console.log("[Chat] fallback genérico detectado para tab:", fbTab);
-          }
-        }
-      }
-    }
+    const parsed = parseWorkshopAssistantResponse(safeResponse, this.parser, {
+      activeTab,
+      intentAction: intentRoute.action,
+      mode: "sync",
+    });
+    let {
+      dualMdd,
+      mddSplit,
+      specSplit,
+      brdSplit,
+      blueSplit,
+      apiSplit,
+      flowsSplit,
+      tasksSplit,
+      infraSplit,
+      archSplit,
+      useCasesSplit,
+      storiesSplit,
+      hasMdd,
+      hasUx,
+      hasDbga,
+      hasSpec,
+      hasBrd,
+      hasPhase0,
+      hasBlue,
+      hasApi,
+      hasFlows,
+      hasTasks,
+      hasInfra,
+      hasArch,
+      hasUseCases,
+      hasStories,
+      uxDocPart,
+      dbgaDocPart,
+      phase0DocPart,
+      rawChat,
+    } = parsed;
 
     const effectiveUserMessage = llmUserPrompt.trim() || userMessage.trim();
     const heuristicsUserMsg = this.userMessageForDocHeuristics(userMessage, llmUserPrompt);
@@ -1400,27 +1273,15 @@ export class SessionsService {
     });
     let stream: AsyncIterable<string>;
     try {
-      stream = await this.ai.generateResponseStream(llmUserPrompt, llmHistory, {
-        currentMddContent: options?.currentMddContent,
-        currentDbgaContent: options?.currentDbgaContent,
-        currentUxUiGuideContent: options?.currentUxUiGuideContent,
-        currentPhase0SummaryContent: options?.currentPhase0SummaryContent,
-        currentBlueprintContent: options?.currentBlueprintContent,
-        currentSpecContent: options?.currentSpecContent,
-        currentBrdContent: options?.currentBrdContent,
-        activeTab: options?.activeTab,
-        intent: intentRoute.intent,
-        learningHistory: learningHistory || undefined,
-        systemPrompt: options?.systemPrompt,
-        complexityInterviewContext: options?.complexityInterviewContext,
-        projectTypeForUxGuide: options?.projectTypeForUxGuide,
-        uxGuideAdditionalDocs: options?.uxGuideAdditionalDocs,
-        uxGuideDesignRef: options?.uxGuideDesignRef,
-        uxGuideDesignRefPromptBlock: options?.uxGuideDesignRefPromptBlock,
-        uxGuideDesignRefEffectiveSlug: options?.uxGuideDesignRefEffectiveSlug,
-        uxGuideDesignRefMode: options?.uxGuideDesignRefMode,
-        userMessageImages: userTurn.imagesForLlm,
-      });
+      stream = await this.ai.generateResponseStream(
+        llmUserPrompt,
+        llmHistory,
+        buildSessionChatGenerateOptions(options, {
+          intent: intentRoute.intent,
+          learningHistory: learningHistory || undefined,
+          userMessageImages: userTurn.imagesForLlm,
+        }),
+      );
     } catch (err) {
       if (err instanceof ModelsUnavailableError) {
         llmWarn("ChatStream", "ModelsUnavailableError", {
@@ -1473,154 +1334,43 @@ export class SessionsService {
       );
     }
 
-    let dualMdd: { markdown: string; chatPart: string } | null = null;
-    if (intentRoute.action === "edit_document" && activeTab === "mdd") {
-      try {
-        const dual = this.parser.tryParseDualOutput(safeResponse);
-        if (dual) dualMdd = { markdown: dual.markdown, chatPart: dual.chatPart };
-      } catch {
-        dualMdd = null;
-      }
-    }
-
-    let mddSplit = dualMdd
-      ? { mddPart: dualMdd.markdown, chatPart: dualMdd.chatPart }
-      : this.parser.splitMddAndChat(safeResponse);
-    const uxSplit = this.parser.splitUxUiGuideAndChat(safeResponse);
-    let dbgaSplit = this.parser.splitDbgaAndChat(safeResponse);
-    let phase0Split = this.parser.splitPhase0AndChat(safeResponse);
-    let specSplit = this.parser.splitDocAndChat(safeResponse, "SPEC");
-    let brdSplit = this.parser.splitDocAndChat(safeResponse, "BRD");
-    let blueSplit = this.parser.splitDocAndChat(safeResponse, "BLUEPRINT");
-    let apiSplit = this.parser.splitDocAndChat(safeResponse, "API");
-    let flowsSplit = this.parser.splitDocAndChat(safeResponse, "FLOWS");
-    let tasksSplit = this.parser.splitDocAndChat(safeResponse, "TASKS");
-    let infraSplit = this.parser.splitDocAndChat(safeResponse, "INFRA");
-    let archSplit = this.parser.splitDocAndChat(safeResponse, "ARCH");
-    let useCasesSplit = this.parser.splitDocAndChat(safeResponse, "USECASES");
-    let storiesSplit = this.parser.splitDocAndChat(safeResponse, "STORIES");
-
-    let hasMdd = mddSplit !== null;
-    let hasUx = uxSplit !== null;
-    let hasDbga = dbgaSplit !== null;
-    let hasSpec = specSplit !== null;
-    let hasBrd = brdSplit !== null;
-    let hasPhase0 = phase0Split !== null;
-    let hasBlue = blueSplit !== null;
-    let hasApi = apiSplit !== null;
-    let hasFlows = flowsSplit !== null;
-    let hasTasks = tasksSplit !== null;
-    let hasInfra = infraSplit !== null;
-    let hasArch = archSplit !== null;
-    let hasUseCases = useCasesSplit !== null;
-    let hasStories = storiesSplit !== null;
-
-    let uxDocPart: string | undefined = hasUx ? uxSplit!.docPart : undefined;
-    let dbgaDocPart: string | undefined = hasDbga ? dbgaSplit!.docPart : undefined;
-    let phase0DocPart: string | undefined = hasPhase0 ? phase0Split!.docPart : undefined;
-
-    let rawChat = safeResponse;
-    if (hasMdd) rawChat = mddSplit!.chatPart;
-    else if (hasUx) rawChat = uxSplit!.chatPart;
-    else if (hasDbga) rawChat = dbgaSplit!.chatPart;
-    else if (hasPhase0) rawChat = phase0Split!.chatPart;
-    else if (hasSpec) rawChat = specSplit!.chatPart;
-    else if (hasBrd) rawChat = brdSplit!.chatPart;
-    else if (hasBlue) rawChat = blueSplit!.chatPart;
-    else if (hasApi) rawChat = apiSplit!.chatPart;
-    else if (hasFlows) rawChat = flowsSplit!.chatPart;
-    else if (hasTasks) rawChat = tasksSplit!.chatPart;
-    else if (hasInfra) rawChat = infraSplit!.chatPart;
-    else if (hasArch) rawChat = archSplit!.chatPart;
-    else if (hasUseCases) rawChat = useCasesSplit!.chatPart;
-    else if (hasStories) rawChat = storiesSplit!.chatPart;
-
-    const isUxTab = (options?.activeTab ?? "mdd").trim() === "ux-ui-guide";
-    const looksLikeUxGuide =
-      safeResponse.length > 200 &&
-      (/#\s*Guía\s*UX\/UI/i.test(safeResponse) ||
-       /^#?\s*Guía\s*UX\/UI/im.test(safeResponse) ||
-       // YAML frontmatter (---\nname: ... o name: ...)
-       /^---\s*\n/i.test(safeResponse.trim()) ||
-       /^name:\s*["']?[A-Z]/i.test(safeResponse.trim()) ||
-       // Design token patterns
-       /colors:\s*\n/i.test(safeResponse) ||
-       /typography:\s*\n/i.test(safeResponse) ||
-       /components:\s*\n/i.test(safeResponse));
-    if (isUxTab && !hasUx && looksLikeUxGuide) {
-      hasUx = true;
-      const trimmed = safeResponse.trim();
-      const docStartMatch = trimmed.match(/#\s*Guía\s*UX\/UI/i);
-      const yamlStartMatch = trimmed.match(/^---\s*\n/);
-      const yamlInlineStart =
-        !docStartMatch &&
-        !yamlStartMatch &&
-        /^name:\s*["']?[A-Z]/i.test(trimmed);
-      const docStartIdx = docStartMatch?.index ?? 0;
-      const hasIntro = docStartIdx > 0 && trimmed.slice(0, docStartIdx).trim().length > 0;
-      let docSection: string;
-      let chatParts: string[] = [];
-
-      if (docStartMatch) {
-        docSection = docStartIdx > 0 ? trimmed.slice(docStartIdx) : trimmed;
-        if (hasIntro) chatParts.push(trimmed.slice(0, docStartIdx).trim());
-        const hrMatch = docSection.match(/\n\s*[-*_]{3,}\s*\n/);
-        if (hrMatch && hrMatch.index != null) {
-          uxDocPart = docSection.slice(0, hrMatch.index).trim();
-          const afterHr = docSection.slice(hrMatch.index + hrMatch[0].length).trim();
-          if (afterHr.length > 0) chatParts.push(afterHr);
-        } else {
-          uxDocPart = docSection.trim();
-        }
-      } else if (yamlStartMatch || yamlInlineStart) {
-        // YAML frontmatter: TODO EL RESPONSE es el documento.
-        // NO buscar separador porque el --- de cierre del YAML se confunde.
-        uxDocPart = trimmed;
-      } else {
-        uxDocPart = trimmed;
-      }
-      rawChat = chatParts.length > 0 ? chatParts.join("\n\n") : "Guía UX/UI generada. Revisa el panel del documento.";
-      console.log("[ChatStream] fallback (mejorado): uxUiGuideContent length:", uxDocPart?.length ?? 0, "chat length:", rawChat.length, "match type:", docStartMatch ? "h1" : yamlStartMatch ? "yaml" : yamlInlineStart ? "yaml-inline" : "other");
-    }
-
-    // Fallback genérico para tabs de documento (architecture, use-cases, etc.) sin ---FIN_TAG---
-    {
-      const fbTab = (options?.activeTab ?? "mdd").trim();
-      const fbSplit = this.parser.detectDocFallback(safeResponse, fbTab);
-      if (fbSplit) {
-        switch (fbTab) {
-          case "spec": specSplit = fbSplit; hasSpec = true; break;
-          case "blueprint": blueSplit = fbSplit; hasBlue = true; break;
-          case "api-contracts": apiSplit = fbSplit; hasApi = true; break;
-          case "logic-flows": flowsSplit = fbSplit; hasFlows = true; break;
-          case "tasks": tasksSplit = fbSplit; hasTasks = true; break;
-          case "infra": infraSplit = fbSplit; hasInfra = true; break;
-          case "architecture": archSplit = fbSplit; hasArch = true; break;
-          case "use-cases": useCasesSplit = fbSplit; hasUseCases = true; break;
-          case "user-stories": storiesSplit = fbSplit; hasStories = true; break;
-          case "benchmark": dbgaSplit = fbSplit; hasDbga = true; dbgaDocPart = fbSplit.docPart; break;
-          case "brd": brdSplit = fbSplit; hasBrd = true; break;
-          case "phase0": phase0Split = fbSplit; hasPhase0 = true; phase0DocPart = fbSplit.docPart; break;
-        }
-        if (!hasMdd && !hasUx) {
-          let fbFound = false;
-          if (hasDbga && dbgaSplit) { rawChat = dbgaSplit.chatPart; fbFound = true; }
-          else if (hasSpec) { rawChat = specSplit!.chatPart; fbFound = true; }
-          else if (hasBrd) { rawChat = brdSplit!.chatPart; fbFound = true; }
-          else if (hasBlue) { rawChat = blueSplit!.chatPart; fbFound = true; }
-          else if (hasApi) { rawChat = apiSplit!.chatPart; fbFound = true; }
-          else if (hasFlows) { rawChat = flowsSplit!.chatPart; fbFound = true; }
-          else if (hasTasks) { rawChat = tasksSplit!.chatPart; fbFound = true; }
-          else if (hasInfra) { rawChat = infraSplit!.chatPart; fbFound = true; }
-          else if (hasArch) { rawChat = archSplit!.chatPart; fbFound = true; }
-          else if (hasUseCases) { rawChat = useCasesSplit!.chatPart; fbFound = true; }
-          else if (hasStories) { rawChat = storiesSplit!.chatPart; fbFound = true; }
-          if (fbFound) {
-            console.log("[ChatStream] fallback genérico detectado para tab:", fbTab);
-          }
-        }
-      }
-    }
+    const parsed = parseWorkshopAssistantResponse(safeResponse, this.parser, {
+      activeTab,
+      intentAction: intentRoute.action,
+      mode: "stream",
+    });
+    let {
+      dualMdd,
+      mddSplit,
+      specSplit,
+      brdSplit,
+      blueSplit,
+      apiSplit,
+      flowsSplit,
+      tasksSplit,
+      infraSplit,
+      archSplit,
+      useCasesSplit,
+      storiesSplit,
+      hasMdd,
+      hasUx,
+      hasDbga,
+      hasSpec,
+      hasBrd,
+      hasPhase0,
+      hasBlue,
+      hasApi,
+      hasFlows,
+      hasTasks,
+      hasInfra,
+      hasArch,
+      hasUseCases,
+      hasStories,
+      uxDocPart,
+      dbgaDocPart,
+      phase0DocPart,
+      rawChat,
+    } = parsed;
 
     const effectiveUserMessage = llmUserPrompt.trim() || userMessage.trim();
     const heuristicsUserMsg = this.userMessageForDocHeuristics(userMessage, llmUserPrompt);

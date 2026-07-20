@@ -620,3 +620,16 @@ Fase 6 (legacy/MCP)
 | `manager-delegate.ts` | ✅ |
 | `manager-types.ts` | ✅ |
 | `mdd-manager.node.ts` &lt; 150 L (fachada) | ✅ (~60 L) |
+
+### Fase 3 — Capa chat API
+
+| Ítem | Estado |
+|------|--------|
+| `workshop-system-prompt.builder.ts` (`buildWorkshopSystemPrompt`, `appendUxGuideStitchPolicy`) | ✅ |
+| `ai.service.ts` delega sync/stream al builder | ✅ (~1 620 L, −~470 L) |
+| `workshop-system-prompt.builder.spec.ts` | ✅ 3 tests |
+| `session-chat-llm-options.util.ts` | ✅ |
+| `session-chat-response-parse.util.ts` | ✅ |
+| `sessions.service.ts` usa utils compartidos en `chat` / `chatStream` | ✅ (~2 385 L, −~250 L post-parse) |
+| `runChatTurn` unificado (runner completo) | ⏳ pendiente |
+| `sessions.chat.contract.spec.ts` | ✅ 3 tests (sin regresión) |
