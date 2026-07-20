@@ -7,6 +7,9 @@ import { ProjectsModule } from "../projects/projects.module.js";
 import { TheForgeModule } from "../theforge/theforge.module.js";
 import { LegacyFlowController } from "./legacy-flow.controller.js";
 import { ChangeInterviewController } from "./change-interview.controller.js";
+import { LegacyDeliverablesOrchestratorService } from "./legacy-deliverables-orchestrator.service.js";
+import { LegacyMddGenerationService } from "./legacy-mdd-generation.service.js";
+import { LegacyStageContextService } from "./legacy-stage-context.service.js";
 import { LegacyCoordinatorService } from "./legacy-coordinator.service.js";
 import { LegacyReviewerService } from "./legacy-reviewer.service.js";
 import { ChangeInterviewService } from "./change-interview.service.js";
@@ -28,6 +31,9 @@ import { LegacyDeliverablesQueueService } from "./legacy-deliverables-queue.serv
   controllers: [LegacyFlowController, ChangeInterviewController],
   providers: [
     LegacyCoordinatorService,
+    LegacyStageContextService,
+    LegacyMddGenerationService,
+    LegacyDeliverablesOrchestratorService,
     LegacyDeliverablesQueueService,
     LegacyReviewerService,
     ChangeInterviewService,

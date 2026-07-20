@@ -823,3 +823,15 @@ Próximo: ver incrementos 5m-2 y 5m-3.
 | `workshopStore.ts` — **~50 L** (solo composición + re-exports) | ✅ |
 
 **Fase 5a completada:** store descompuesto en 7 slices + helpers; API pública de `useWorkshopStore` sin cambios.
+
+### Fase 6 — Legacy y MCP (incremento 6-1)
+
+| Ítem | Estado |
+|------|--------|
+| `legacy-coordinator.types.ts` + `legacy-coordinator.util.ts` | ✅ |
+| `legacy-stage-context.service.ts` | ✅ |
+| `legacy-mdd-generation.service.ts` — `generateMdd` | ✅ |
+| `legacy-deliverables-orchestrator.service.ts` — `generateDeliverables` | ✅ |
+| `legacy-coordinator.service.ts` — **~680 L** (−~1 630 vs pre-6) | ✅ |
+
+Próximo: `mcp-server/index.ts` → tools/, split `agent-governance.util.ts`.
