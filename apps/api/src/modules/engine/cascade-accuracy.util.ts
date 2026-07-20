@@ -398,6 +398,7 @@ export function domainDeliveryGateFindings(input: {
   brdMarkdown?: string | null;
   dbgaMarkdown?: string | null;
   mddMarkdown: string;
+  specMarkdown?: string | null;
 }): { blockers: string[]; warnings: string[] } {
   const blockers: string[] = [];
   const warnings: string[] = [];
@@ -438,6 +439,7 @@ export function domainDeliveryGateFindings(input: {
     brdMarkdown: input.brdMarkdown,
     dbgaMarkdown: input.dbgaMarkdown,
     mddMarkdown: input.mddMarkdown,
+    specMarkdown: input.specMarkdown,
     inventory,
   });
   for (const gap of invConf.gaps) {

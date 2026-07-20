@@ -5,11 +5,13 @@
 import {
   AUTH_ENTITY_FAMILY,
   DBGA_CORE_ENTITIES,
+  PLATFORM_ORPHAN_TABLES,
   type BrdCapability,
   type CrudMatrixRow,
   type DomainInventory,
   type ProcessInventoryItem,
 } from "@theforge/shared-types";
+import { isPlatformTableJustified } from "./platform-table-justify.util.js";
 import { stableCrudUserStoryId, stableJourneyUserStoryId } from "@theforge/shared-types";
 
 const AUTH_CAPABILITY_RE =
@@ -295,7 +297,18 @@ export function buildDomainInventory(input: {
     input.mddMarkdown,
   );
   const dbgaCanonical = extractDbgaCanonicalEntities(input.dbgaMarkdown ?? "");
-  const suggestedEntities = [...new Set([...suggestedFromProse, ...dbgaCanonical])].sort();
+  const suggestedRaw = [...new Set([...suggestedFromProse, ...dbgaCanonical])];
+  const suggestedEntities = suggestedRaw
+    .filter(
+      (e) =>
+        !PLATFORM_ORPHAN_TABLES.has(e) ||
+        isPlatformTableJustified(e, {
+          brdMarkdown: input.brdMarkdown,
+          dbgaMarkdown: input.dbgaMarkdown,
+          mddMarkdown: input.mddMarkdown,
+        }),
+    )
+    .sort();
   const mddEntities = input.mddEntities ?? [];
   const crudMatrix = buildCrudMatrix(mddEntities, suggestedEntities, capabilities);
   const processes = buildProcessInventory(capabilities);

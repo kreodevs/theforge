@@ -20,6 +20,7 @@ export type ValidateMddForDeliveryOptions = {
   /** BRD stage content — enables domain auth-skew / entity coverage blockers. */
   brdMarkdown?: string | null;
   dbgaMarkdown?: string | null;
+  specMarkdown?: string | null;
 };
 
 /** Heurística alineada con reconcileUiUxDesignIntent: columnas id,name,status repetidas. */
@@ -116,6 +117,7 @@ export function validateMddForDelivery(
       brdMarkdown: options.brdMarkdown,
       dbgaMarkdown: options.dbgaMarkdown,
       mddMarkdown: trimmed,
+      specMarkdown: options.specMarkdown,
     });
     blockers.push(...domain.blockers);
     warnings.push(...domain.warnings);

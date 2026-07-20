@@ -46,6 +46,8 @@ import {
   applyDeliveryGateToSemaphoreStatus,
   validateMddForDelivery,
 } from "../utils/mdd-delivery-gate.util.js";
+import { annotateJustifiedPlatformTablesInMdd } from "../../engine/platform-table-justify.util.js";
+import { rebuildDomainInventoryPreferringBrd } from "../../engine/domain-inventory-persist.util.js";
 import {
   checkApiVsMdd,
   checkBlueprintVsMdd,
@@ -817,6 +819,7 @@ export class EstimationService {
 
     // Cargar documentos de etapa + proyecto para métrica integral
     let documents: PlanningDocumentFields = {};
+    let dbgaContent: string | null | undefined;
     const sid = stageId?.trim();
     if (sid) {
       const stage = await this.prisma.stage.findUnique({
@@ -836,6 +839,7 @@ export class EstimationService {
         where: { id: projectId.trim() },
         select: {
           specContent: true,
+          dbgaContent: true,
           architectureContent: true,
           useCasesContent: true,
           userStoriesContent: true,
@@ -847,6 +851,7 @@ export class EstimationService {
         },
       });
       if (projectRec) {
+        dbgaContent = (projectRec as { dbgaContent?: string | null }).dbgaContent;
         documents = {
           ...documents,
           mddContent: content || undefined,
@@ -887,7 +892,22 @@ export class EstimationService {
       stageId: stageId ?? null,
       documents,
     });
-    const deliveryGate = validateMddForDelivery(content);
+    const inventory = rebuildDomainInventoryPreferringBrd({
+      brdMarkdown: documents.brdContent,
+      dbgaMarkdown: dbgaContent,
+      mddMarkdown: content,
+    });
+    const gateMarkdown = annotateJustifiedPlatformTablesInMdd(content, {
+      brdMarkdown: documents.brdContent,
+      dbgaMarkdown: dbgaContent,
+      specMarkdown: documents.specContent,
+      inventory,
+    }).markdown;
+    const deliveryGate = validateMddForDelivery(gateMarkdown, {
+      brdMarkdown: documents.brdContent,
+      dbgaMarkdown: dbgaContent,
+      specMarkdown: documents.specContent,
+    });
     let status = applyDeliveryGateToSemaphoreStatus(metrics.status, deliveryGate);
 
     let conformanceSummary: ConformanceSummary | undefined;

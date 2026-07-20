@@ -145,6 +145,7 @@ export type PrepareMddForOutputOptions = {
   /** BRD/DBGA for domain fidelity blockers inside validateMddForDelivery. */
   brdMarkdown?: string | null;
   dbgaMarkdown?: string | null;
+  specMarkdown?: string | null;
   /** Borrador pre-regen / Clarificador para restaurar §1–§2 si el pipeline los omitió. */
   baselineDraft?: string | null;
 };
@@ -229,9 +230,35 @@ export async function prepareMddForOutput(
     }
   }
   finalMarkdown = prepareMddMarkdownForPersist(finalMarkdown);
+  try {
+    const { rebuildDomainInventoryPreferringBrd } = await import(
+      "../../engine/domain-inventory-persist.util.js"
+    );
+    const { annotateJustifiedPlatformTablesInMdd } = await import(
+      "../../engine/platform-table-justify.util.js"
+    );
+    const inventory =
+      options?.brdMarkdown?.trim() || options?.dbgaMarkdown?.trim()
+        ? rebuildDomainInventoryPreferringBrd({
+            brdMarkdown: options.brdMarkdown,
+            dbgaMarkdown: options.dbgaMarkdown,
+            mddMarkdown: finalMarkdown,
+          })
+        : undefined;
+    finalMarkdown = annotateJustifiedPlatformTablesInMdd(finalMarkdown, {
+      brdMarkdown: options?.brdMarkdown,
+      dbgaMarkdown: options?.dbgaMarkdown,
+      inventory,
+    }).markdown;
+  } catch (err) {
+    console.warn(
+      `[MDD:DeliveryGate] platform table annotate skipped: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
   const deliveryGate = validateMddForDelivery(finalMarkdown, {
     brdMarkdown: options?.brdMarkdown,
     dbgaMarkdown: options?.dbgaMarkdown,
+    specMarkdown: options?.specMarkdown,
   });
   if (options?.deliveryGateRef) {
     options.deliveryGateRef.current = deliveryGate;

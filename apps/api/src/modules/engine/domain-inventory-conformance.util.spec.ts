@@ -33,6 +33,27 @@ describe("domain-inventory-conformance.util", () => {
     assert.ok(missing.includes("users"));
   });
 
+  it("does not flag platform tables when BRD mentions MCP/agente", () => {
+    const mdd = `
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE mcp_plugins (id UUID PRIMARY KEY);
+CREATE TABLE conversation_memory (id UUID PRIMARY KEY);
+\`\`\`
+`;
+    const brd = `
+## 3. Capacidades
+### Integración MCP y agente IA
+Orquestación de herramientas MCP con memoria del contexto conversacional.
+`;
+    const orphans = checkPlatformTablesOutsideBrd({
+      brdMarkdown: brd,
+      dbgaMarkdown: DBGA,
+      mddMarkdown: mdd,
+    });
+    assert.deepEqual(orphans, []);
+  });
+
   it("flags platform tables without BRD/DBGA justification", () => {
     const mdd = `
 ## 3. Modelo de Datos

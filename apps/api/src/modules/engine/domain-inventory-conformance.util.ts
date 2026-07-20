@@ -5,43 +5,21 @@
 import {
   AUTH_ENTITY_FAMILY,
   DBGA_CORE_ENTITIES,
-  PLATFORM_ORPHAN_TABLES,
   type DomainInventory,
 } from "@theforge/shared-types";
 import { extractEntities } from "./conformance.service.js";
 import { extractSectionByNumber } from "./mdd-markdown-parser.js";
 import { extractDbgaCanonicalEntities } from "./domain-inventory.util.js";
+import {
+  isPlatformTableJustified,
+  listUnjustifiedPlatformTables,
+} from "./platform-table-justify.util.js";
 
 export type DomainInventoryConformanceReport = {
   missingDbgaCoreInMdd: string[];
   platformTablesWithoutJustification: string[];
   gaps: string[];
 };
-
-function brdOrDbgaMentionsEntity(
-  entity: string,
-  brdMarkdown?: string | null,
-  dbgaMarkdown?: string | null,
-): boolean {
-  const slug = entity.replace(/_/g, "[\\s_-]*");
-  const re = new RegExp(`\\b${slug}\\b|create\\s+table\\s+${entity}`, "i");
-  const corpus = `${brdMarkdown ?? ""}\n${dbgaMarkdown ?? ""}`;
-  return re.test(corpus);
-}
-
-function brdOrDbgaMentionsPlatformConcept(
-  table: string,
-  brdMarkdown?: string | null,
-  dbgaMarkdown?: string | null,
-): boolean {
-  const aliases: Record<string, RegExp> = {
-    messages: /\b(mensajes?|messages?|chat\s+message)\b/i,
-    mcp_plugins: /\b(mcp[_\s-]?plugins?|plugins?\s+mcp|herramientas?\s+mcp)\b/i,
-    conversation_memory: /\b(conversation[_\s-]?memory|memoria\s+de\s+conversaci[oó]n|memoria\s+contextual)\b/i,
-  };
-  const re = aliases[table] ?? new RegExp(`\\b${table.replace(/_/g, "[\\s_-]*")}\\b`, "i");
-  return re.test(`${brdMarkdown ?? ""}\n${dbgaMarkdown ?? ""}`);
-}
 
 /** Entidades núcleo DBGA ausentes en MDD §3. */
 export function checkMissingDbgaCoreEntitiesInMdd(params: {
@@ -58,28 +36,22 @@ export function checkMissingDbgaCoreEntitiesInMdd(params: {
   return [...required].filter((e) => !mddEntities.has(e));
 }
 
-/** Tablas plataforma en §3 sin ancla en BRD/DBGA — deben eliminarse o justificarse en Fuera de alcance. */
+/** Tablas plataforma en §3 sin ancla en BRD/DBGA/MDD §1 — deben eliminarse o documentarse. */
 export function checkPlatformTablesOutsideBrd(params: {
   brdMarkdown?: string | null;
   dbgaMarkdown?: string | null;
   mddMarkdown: string;
+  specMarkdown?: string | null;
+  inventory?: DomainInventory | null;
 }): string[] {
-  const section3 = extractSectionByNumber(params.mddMarkdown ?? "", 3) || params.mddMarkdown || "";
-  const mddEntities = extractEntities(section3);
-  const orphans: string[] = [];
-  for (const table of PLATFORM_ORPHAN_TABLES) {
-    if (!mddEntities.has(table)) continue;
-    if (brdOrDbgaMentionsPlatformConcept(table, params.brdMarkdown, params.dbgaMarkdown)) continue;
-    if (brdOrDbgaMentionsEntity(table, params.brdMarkdown, params.dbgaMarkdown)) continue;
-    orphans.push(table);
-  }
-  return orphans;
+  return listUnjustifiedPlatformTables(params);
 }
 
 export function collectDomainInventoryConformanceGaps(params: {
   brdMarkdown?: string | null;
   dbgaMarkdown?: string | null;
   mddMarkdown: string;
+  specMarkdown?: string | null;
   inventory?: DomainInventory | null;
 }): DomainInventoryConformanceReport {
   const missingDbgaCoreInMdd = checkMissingDbgaCoreEntitiesInMdd({
@@ -116,3 +88,6 @@ export function collectDomainInventoryConformanceGaps(params: {
 export function formatDomainInventoryConformanceGaps(report: DomainInventoryConformanceReport, limit = 12): string[] {
   return report.gaps.slice(0, limit);
 }
+
+// Re-export for tests
+export { isPlatformTableJustified };
