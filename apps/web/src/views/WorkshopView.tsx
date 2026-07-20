@@ -15,7 +15,6 @@ import {
   GitBranch,
   Server,
   Target,
-  Palette,
   Trash2,
   Save,
   X,
@@ -115,6 +114,12 @@ import {
 import { replaceYamlFrontMatter } from "../components/DesignMdPreview";
 import WorkshopHelpModal from "../components/WorkshopHelpModal";
 import { WorkshopMetricsColumnInner } from "./WorkshopMetricsColumnInner";
+import {
+  getWorkshopDocToolbarActiveViewMode,
+  workshopDocSourceTogglePresentation,
+  type WorkshopComplexityTier,
+} from "../utils/workshopDocToolbar";
+import { WorkshopDocToolbarHint } from "./workshop/WorkshopDocToolbarHint";
 import LegacyMcpDebugPanel from "../components/LegacyMcpDebugPanel/LegacyMcpDebugPanel";
 import { BrdStagePanel } from "../components/BrdStagePanel";
 import { AgentGovernancePanel } from "../components/AgentGovernancePanel";
@@ -185,7 +190,6 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { AdrsPanel } from "../components/AdrsPanel";
 import { useAutoSaveContent } from "../hooks/useAutoSaveContent";
 import { WorkshopDocTextarea } from "../components/WorkshopDocTextarea";
-import type { LucideIcon } from "lucide-react";
 import {
   Button,
   Tooltip,
@@ -216,111 +220,6 @@ function clampLgChatPanelWidthPx(value: number): number {
   return Math.min(
     LG_CHAT_PANEL_WIDTH_MAX_PX,
     Math.max(LG_CHAT_PANEL_WIDTH_MIN_PX, Math.round(value)),
-  );
-}
-
-type WorkshopComplexityTier = "LOW" | "MEDIUM" | "HIGH";
-
-type WorkshopDocToolbarViewModes = {
-  mddViewMode: "preview" | "source";
-  mddInicialViewMode: "preview" | "source";
-  specViewMode: "preview" | "source";
-  architectureViewMode: "preview" | "source";
-  useCasesViewMode: "preview" | "source";
-  userStoriesViewMode: "preview" | "source";
-  uxUiGuideViewMode: "design" | "preview" | "source";
-  aemViewMode: "preview" | "source";
-  blueprintViewMode: "preview" | "source";
-  apiContractsViewMode: "preview" | "source";
-  logicFlowsViewMode: "preview" | "source";
-  brdDocViewMode: "preview" | "source";
-  infraViewMode: "preview" | "source";
-  agentGovernanceViewMode: "preview" | "source";
-  tasksViewMode: "preview" | "source";
-};
-
-function getWorkshopDocToolbarActiveViewMode(
-  centralPanel: string,
-  modes: WorkshopDocToolbarViewModes,
-): string {
-  if (centralPanel === "mdd") return modes.mddViewMode;
-  if (centralPanel === "mdd-inicial") return modes.mddInicialViewMode;
-  if (centralPanel === "spec") return modes.specViewMode;
-  if (centralPanel === "architecture") return modes.architectureViewMode;
-  if (centralPanel === "use-cases") return modes.useCasesViewMode;
-  if (centralPanel === "user-stories") return modes.userStoriesViewMode;
-  if (centralPanel === "ux-ui-guide") return modes.uxUiGuideViewMode;
-  if (centralPanel === "aem") return modes.aemViewMode;
-  if (centralPanel === "blueprint") return modes.blueprintViewMode;
-  if (centralPanel === "api-contracts") return modes.apiContractsViewMode;
-  if (centralPanel === "logic-flows") return modes.logicFlowsViewMode;
-  if (centralPanel === "brd") return modes.brdDocViewMode;
-  if (centralPanel === "agent-governance") return modes.agentGovernanceViewMode;
-  if (centralPanel === "tasks") return modes.tasksViewMode;
-  return modes.infraViewMode;
-}
-
-/** Icon + tooltip for preview/source (and UX guide design) toggle on the doc toolbar. */
-function workshopDocSourceTogglePresentation(
-  centralPanel: string,
-  activeViewMode: string,
-): { Icon: LucideIcon; tooltip: string } {
-  if (centralPanel === "ux-ui-guide") {
-    if (activeViewMode === "preview") return { Icon: Pencil, tooltip: "Ver markdown" };
-    if (activeViewMode === "design") return { Icon: Palette, tooltip: "Ver UI Kit y tokens" };
-    return { Icon: FileText, tooltip: "Ver documento DESIGN.md" };
-  }
-  if (activeViewMode === "preview") return { Icon: Pencil, tooltip: "Editar" };
-  return { Icon: FileText, tooltip: "Ver previsualización" };
-}
-
-/**
- * Explains document tab order. HIGH complexity: summary only — full flow opens from the toolbar modal.
- */
-function WorkshopDocToolbarHint({
-  tier,
-  isLegacyProject: _isLegacyProject,
-}: {
-  tier: WorkshopComplexityTier;
-  isLegacyProject: boolean;
-}) {
-  const fullText =
-    tier === "LOW"
-      ? "Complejidad baja: Spec → H.U. → Tasks (MDD / Blueprint / API ocultos). Paso 0 opcional."
-      : tier === "MEDIUM"
-        ? _isLegacyProject
-          ? "Complejidad media (legacy): MDD Inicial opcional (Ariadne); MDD de cambio + Spec → API → Design System → Tasks."
-          : "Complejidad media (producto nuevo): sin MDD en barra — insumo Paso 0 / Spec. Entregables: Spec → API → Design System → Tasks."
-        : _isLegacyProject
-          ? "Legacy: MDD Inicial opcional (Ariadne → doc. de partida); luego Modificación + MDD de cambio y entregables. Cada etapa del taller = una modificación con doc actualizada vía Ariadne."
-          : "Orden: Paso 0 → BRD → To-Be → MDD → Spec → Arq. → Casos → H.U. → Blueprint → Design System → API → Flujos → Tasks → Infra";
-
-  const summaryLine =
-    tier === "LOW"
-      ? fullText
-      : tier === "MEDIUM"
-        ? _isLegacyProject
-          ? "Complejidad media (legacy): doc. de partida opcional con Ariadne; luego MDD de cambio y entregables (Spec → API → UX/UI → Tasks)."
-          : "Complejidad media (producto nuevo): insumo Paso 0 / Spec; entregables Spec → API → Design System → Tasks (sin MDD en barra hasta avanzar el flujo)."
-        : _isLegacyProject
-          ? "Complejidad alta (legacy): Ariadne para doc. de partida, Modificación por etapa y documentación actualizada con el taller."
-          : "Complejidad alta (producto nuevo): recorre Paso 0, BRD, To-Be, MDD y entregables hasta Infra en el orden sugerido.";
-
-  if (tier !== "HIGH") {
-    return (
-      <p
-        className="min-w-0 flex-1 text-xs leading-relaxed text-[var(--foreground-subtle)] sm:max-w-[min(100%,52rem)] lg:line-clamp-1"
-        title={fullText}
-      >
-        {fullText}
-      </p>
-    );
-  }
-
-  return (
-    <div className="min-w-0 flex-1 sm:max-w-[min(100%,52rem)]" title={summaryLine}>
-      <p className="text-xs font-medium leading-snug text-[var(--foreground)] lg:line-clamp-1">{summaryLine}</p>
-    </div>
   );
 }
 
@@ -5533,6 +5432,7 @@ export default function WorkshopView({
                 logicFlowsViewMode,
                 brdDocViewMode,
                 infraViewMode,
+                agentGovernanceViewMode,
                 tasksViewMode,
               },
               benchmarkPhaseTab,

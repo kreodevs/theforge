@@ -99,6 +99,7 @@ import {
   isWorkshopConnectionError,
   SSOT_PATTERNS_RESTORED_NOTICE,
 } from "../utils/workshopSyncStatus";
+import { pickDefaultStageId } from "./workshop/helpers/pick-default-stage";
 
 function workshopScopeProjectId(get: () => WorkshopState): string {
   return (get().projectId ?? get().project?.id ?? "").trim();
@@ -851,15 +852,6 @@ function legacyCodebaseDocFromStages(stages: WorkshopStage[], activeStageId: str
     (activeStageId ? stages.find((s) => s.id === activeStageId) : null) ??
     (pickDefaultStageId(stages) ? stages.find((s) => s.id === pickDefaultStageId(stages)) : null);
   return (stage?.legacyChangeState?.codebaseDoc ?? "").trim();
-}
-
-function pickDefaultStageId(stages: WorkshopStage[]): string | null {
-  if (!stages.length) return null;
-  const active = stages
-    .filter((s) => s.workflowStatus === "ACTIVE")
-    .sort((a, b) => a.ordinal - b.ordinal);
-  if (active.length > 0) return active[0]!.id;
-  return [...stages].sort((a, b) => a.ordinal - b.ordinal)[0]!.id;
 }
 
 /** Campos planos del proyecto alineados con la etapa en foco (MDD / semáforo / estimación). */

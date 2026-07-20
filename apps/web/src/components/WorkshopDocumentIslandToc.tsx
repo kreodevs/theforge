@@ -1,27 +1,16 @@
 import { lazy, Suspense, type RefObject } from "react";
+import {
+  getWorkshopDocToolbarActiveViewMode,
+  type WorkshopDocToolbarViewModes,
+} from "../utils/workshopDocToolbar";
+
+export type { WorkshopDocToolbarViewModes } from "../utils/workshopDocToolbar";
 
 const DynamicIslandTOC = lazy(() =>
   import("@/components/ui/dynamic-island-toc").then((mod) => ({
     default: mod.DynamicIslandTOC,
   })),
 );
-
-export type WorkshopDocToolbarViewModes = {
-  mddViewMode: "preview" | "source";
-  mddInicialViewMode: "preview" | "source";
-  specViewMode: "preview" | "source";
-  architectureViewMode: "preview" | "source";
-  useCasesViewMode: "preview" | "source";
-  userStoriesViewMode: "preview" | "source";
-  uxUiGuideViewMode: "design" | "preview" | "source";
-  aemViewMode: "preview" | "source";
-  blueprintViewMode: "preview" | "source";
-  apiContractsViewMode: "preview" | "source";
-  logicFlowsViewMode: "preview" | "source";
-  brdDocViewMode: "preview" | "source";
-  infraViewMode: "preview" | "source";
-  tasksViewMode: "preview" | "source";
-};
 
 const MARKDOWN_PREVIEW_SELECTOR =
   ".markdown-preview h1, .markdown-preview h2, .markdown-preview h3, .markdown-preview h4, .markdown-preview [data-toc]";
@@ -33,26 +22,6 @@ const NON_MARKDOWN_PANELS = new Set([
   "agent-pending-changes",
   "agent-session-log",
 ]);
-
-function getWorkshopDocToolbarActiveViewMode(
-  centralPanel: string,
-  modes: WorkshopDocToolbarViewModes,
-): string {
-  if (centralPanel === "mdd") return modes.mddViewMode;
-  if (centralPanel === "mdd-inicial") return modes.mddInicialViewMode;
-  if (centralPanel === "spec") return modes.specViewMode;
-  if (centralPanel === "architecture") return modes.architectureViewMode;
-  if (centralPanel === "use-cases") return modes.useCasesViewMode;
-  if (centralPanel === "user-stories") return modes.userStoriesViewMode;
-  if (centralPanel === "ux-ui-guide") return modes.uxUiGuideViewMode;
-  if (centralPanel === "aem") return modes.aemViewMode;
-  if (centralPanel === "blueprint") return modes.blueprintViewMode;
-  if (centralPanel === "api-contracts") return modes.apiContractsViewMode;
-  if (centralPanel === "logic-flows") return modes.logicFlowsViewMode;
-  if (centralPanel === "brd") return modes.brdDocViewMode;
-  if (centralPanel === "tasks") return modes.tasksViewMode;
-  return modes.infraViewMode;
-}
 
 export function isWorkshopMarkdownPreviewActive(
   centralPanel: string,

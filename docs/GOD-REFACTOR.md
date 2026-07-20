@@ -459,7 +459,14 @@ Refactor incremental completado. `projects.service.ts` pasó de **~3 809 L →
 
 ---
 
-### Fase 5 — Workshop frontend (4–6 semanas)
+### Fase 5 — Workshop frontend (4–6 semanas) — en curso
+
+**Incremento 1 (2026-07-19):**
+
+- **5b paso 1:** `WorkshopDocToolbarHint` → `views/workshop/`; utilidades `getWorkshopDocToolbarActiveViewMode` + `workshopDocSourceTogglePresentation` → `utils/workshopDocToolbar.ts` (consolidado con `WorkshopDocumentIslandToc`; añade `agentGovernanceViewMode` faltante).
+- **5a helpers:** `pickDefaultStageId` → `store/workshop/helpers/pick-default-stage.ts`.
+- **Tests:** `workshopDocToolbar.spec.ts`, `pick-default-stage.spec.ts` (7 tests).
+- **Líneas:** `WorkshopView.tsx` 5 917 → **~5 816 L**; `workshopStore.ts` 5 319 → **~5 310 L**.
 
 #### 5a. `workshopStore` — slices Zustand
 
@@ -543,8 +550,8 @@ Fase 6 (legacy/MCP)
 
 | Métrica | Actual (2026-07-19) | Objetivo |
 |---------|---------------------|----------|
-| `WorkshopView.tsx` | 5 917 L | < 800 L |
-| `workshopStore.ts` | 5 319 L | < 600 L (compose + helpers fuera) |
+| `WorkshopView.tsx` | 5 917 → **~5 816 L** | < 800 L |
+| `workshopStore.ts` | 5 319 → **~5 310 L** | < 600 L (compose + helpers fuera) |
 | `mdd-sanitize.ts` | 6 065 L | < 200 L (barrel) |
 | `createMddManagerNode` | 1 007 L | < 150 L |
 | `projects.service.ts` | 3 809 L → **~420 L** | < 1 500 L ✅ |
@@ -640,3 +647,12 @@ Fase 6 (legacy/MCP)
 | `sessions.service.ts` — `prepareSessionChatTurn`, `completeSessionChatTurn`, slim `chat`/`chatStream` | ✅ (~1 650 L) |
 | `runChatTurn` unificado (setup LLM + stream buffer en runner) | ✅ |
 | `sessions.chat.contract.spec.ts` | ✅ 3 tests (sin regresión) |
+
+### Fase 5 — Workshop frontend (incremento 1)
+
+| Ítem | Estado |
+|------|--------|
+| `utils/workshopDocToolbar.ts` + spec | ✅ |
+| `views/workshop/WorkshopDocToolbarHint.tsx` | ✅ |
+| `store/workshop/helpers/pick-default-stage.ts` + spec | ✅ |
+| `WorkshopDocumentIslandToc` deduplicado | ✅ |
