@@ -16,14 +16,12 @@ import {
   cloneProjectBodySchema,
   getAllowedStageTransitions,
   type DeliverableKind,
-  type ComplexityPending,
   type CreateProjectDto,
   type UpdateProjectDto,
 } from "@theforge/shared-types";
 
 import {
   loadAccessibleProjectWithStages,
-  projectWhereForOwner,
 } from "./project-access.util.js";
 import { ProjectMddPersistService } from "./project-mdd-persist.service.js";
 import { DeliverablesCascadeService } from "./deliverables-cascade.service.js";
@@ -34,7 +32,7 @@ import { ProjectDeliverableGateService } from "./project-deliverable-gate.servic
 import { ProjectConformanceService } from "./project-conformance.service.js";
 import { ProjectBrdService } from "./project-brd.service.js";
 import { ProjectUpdateService } from "./project-update.service.js";
-import { pickMddFromStages } from "./constitution-markdown.util.js";
+import { ProjectComplexityService } from "./project-complexity.service.js";
 import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
 import { resolveStageDeliverables } from "./stage-deliverables.util.js";
 import type { ProjectDeliverableSource } from "@theforge/shared-types";
@@ -66,11 +64,6 @@ function toApiProject<P extends { stages: StageWithEst[] } & Record<string, unkn
 @Injectable()
 export class ProjectsService implements IOrchestratorProjectsPort {
   private readonly logger = new Logger(ProjectsService.name);
-
-  /** Scope de proyecto autenticado (AsyncLocalStorage). Solo owner. */
-  private projectWhereForUser(projectId: string) {
-    return projectWhereForOwner(projectId);
-  }
 
   /**
    * Verifica que el usuario tenga acceso al proyecto:
@@ -105,6 +98,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly projectBrd: ProjectBrdService,
     @Inject(forwardRef(() => ProjectUpdateService))
     private readonly projectUpdate: ProjectUpdateService,
+    @Inject(forwardRef(() => ProjectComplexityService))
+    private readonly projectComplexity: ProjectComplexityService,
   ) {}
 
   async listDocumentSnapshots(
@@ -429,131 +424,22 @@ export class ProjectsService implements IOrchestratorProjectsPort {
   }
 
   async generateBenchmark(projectId: string, userIdea: string, urls?: string[]) {
-    await this.assertProjectAccess(projectId);
-    const resolvedUrls = resolveUrls(urls, userIdea);
-    let scrapedContext: string | undefined;
-    if (resolvedUrls.length > 0) {
-      console.log("[generateBenchmark] URLs a scrapear:", resolvedUrls.length, resolvedUrls);
-      const pages = await this.scraper.scrapeUrls(resolvedUrls);
-      const ok = pages.filter((p) => p.markdown.trim().length > 0);
-      const failed = pages.filter((p) => p.error || !p.markdown.trim());
-      if (failed.length > 0) {
-        console.warn("[generateBenchmark] URLs sin contenido o error:", failed.map((p) => ({ url: p.url, error: p.error })));
-      }
-      scrapedContext = ok.map((p) => `## Referencia: ${p.url}\n\n${p.markdown}`).join("\n\n");
-      console.log("[generateBenchmark] Scraped context:", scrapedContext?.length ?? 0, "chars,", ok.length, "páginas OK");
-    } else {
-      console.log("[generateBenchmark] Sin URLs en idea/body; no se hace scraping.");
-    }
-    const dbgaContent = await this.discovery.generateBenchmark(userIdea, scrapedContext);
-    const trimmed = dbgaContent.trim();
-    let proposal: ComplexityPending;
-    try {
-      proposal = await this.discovery.inferComplexityProposal(userIdea, trimmed);
-    } catch {
-      proposal = {
-        level: ComplexityLevel.HIGH,
-        planSummary: "Constitución SDD completa.",
-        reason: "Inferencia no disponible; se propone HIGH por defecto.",
-      };
-    }
-    return this.update(projectId, {
-      dbgaContent: cleanDocumentContent(trimmed),
-      complexityPending: proposal,
-    });
+    return this.projectComplexity.generateBenchmark(projectId, userIdea, urls);
   }
 
-  /**
-   * Re-infiere `complexityPending` (HITL) desde DBGA / MDD / Spec ya existentes, sin re-ejecutar el stream DBGA.
-   * Útil para proyectos existentes que quieren re-valorar el nivel según el alcance documentado.
-   */
   async reassessComplexity(projectId: string, options?: { note?: string }) {
-    const project = await this.assertProjectAccess(projectId);
-
-    const dbga = (project.dbgaContent ?? "").trim();
-    const mdd = pickMddFromStages(project.stages).trim();
-    const spec = (project.specContent ?? "").trim();
-    const phase0 = (project.phase0SummaryContent ?? "").trim();
-
-    const chunks: string[] = [];
-    if (dbga.length > 0) chunks.push(dbga);
-    if (mdd.length > 0) chunks.push(mdd);
-    if (spec.length > 0) chunks.push(spec);
-    if (phase0.length > 0 && chunks.join("").length < 400) chunks.push(phase0);
-
-    const context = chunks.join("\n\n---\n\n").slice(0, 24_000);
-    if (context.trim().length < 80) {
-      throw new BadRequestException(
-        "No hay suficiente contexto (DBGA y/o MDD de etapa, Spec). En legacy asegúrate de tener MDD de cambio; en producto nuevo, Paso 0 o MDD.",
-      );
-    }
-
-    const note = options?.note?.trim();
-    const idea =
-      note && note.length > 0
-        ? note.slice(0, 6000)
-        : `Re-valoración de complejidad del proyecto «${project.name}» según el alcance actual documentado.`;
-
-    let proposal: ComplexityPending;
-    try {
-      proposal = await this.discovery.inferComplexityProposal(idea, context);
-    } catch {
-      proposal = {
-        level: ComplexityLevel.HIGH,
-        planSummary: "Constitución SDD completa.",
-        reason: "Inferencia no disponible; se propone HIGH por defecto.",
-      };
-    }
-    return this.update(projectId, { complexityPending: proposal });
+    return this.projectComplexity.reassessComplexity(projectId, options);
   }
 
-  /** Aplica la propuesta pendiente a `complexity` y limpia HITL (tras confirmación explícita del usuario). */
   async confirmComplexityProposal(projectId: string) {
-    const row = await this.prisma.project.findFirst({ where: this.projectWhereForUser(projectId) });
-    if (!row) throw new NotFoundException("Project not found");
-    const raw = row.complexityPending;
-    if (raw == null || typeof raw !== "object" || !("level" in raw)) {
-      throw new BadRequestException("No hay propuesta de complejidad pendiente de confirmar.");
-    }
-    const level = (raw as { level: string }).level as ComplexityLevel;
-    return this.update(projectId, {
-      complexity: level,
-      clearComplexityPending: true,
-    });
+    return this.projectComplexity.confirmComplexityProposal(projectId);
   }
 
-  /**
-   * Interpreta mensajes cortos del chat del Workshop para confirmar o rechazar la propuesta HITL.
-   * @returns si se aplicó confirmación o rechazo (y el proyecto debió refrescarse).
-   */
   tryConfirmComplexityFromChatMessage(projectId: string, message: string): Promise<{
     confirmed: boolean;
     rejected: boolean;
   }> {
-    return this._tryConfirmComplexityFromChatMessage(projectId, message);
-  }
-
-  private async _tryConfirmComplexityFromChatMessage(
-    projectId: string,
-    message: string,
-  ): Promise<{ confirmed: boolean; rejected: boolean }> {
-    const row = await this.prisma.project.findFirst({ where: this.projectWhereForUser(projectId) });
-    if (!row?.complexityPending) return { confirmed: false, rejected: false };
-    const t = message.trim().toLowerCase();
-    const confirm =
-      /^(sí|si|de acuerdo|ok|confirmo|adelante|vale|correcto)\b/.test(t) ||
-      /ejecuta este plan|acepto el plan|aplica el plan|sí,?\s*ejecuta|confirmar plan/.test(t);
-    const reject =
-      /^(no|mejor|prefiero|cancelar)\b/.test(t) || /rechazo|no quiero|otro nivel/.test(t);
-    if (confirm && !reject) {
-      await this.confirmComplexityProposal(projectId);
-      return { confirmed: true, rejected: false };
-    }
-    if (reject) {
-      await this.update(projectId, { clearComplexityPending: true });
-      return { confirmed: false, rejected: true };
-    }
-    return { confirmed: false, rejected: false };
+    return this.projectComplexity.tryConfirmComplexityFromChatMessage(projectId, message);
   }
 
   /**
