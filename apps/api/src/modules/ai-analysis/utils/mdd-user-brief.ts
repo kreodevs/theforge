@@ -69,8 +69,6 @@ export function getUserBrief(state: MDDStateType): string {
 /** Respuestas breves que no son requisitos (sí, ok, de acuerdo, etc.). */
 const TRIVIAL_REPLY = /^(?:Usuario:\s*)?(?:s[ií]|s[ií]\s*,\s*de\s*acuerdo|de\s*acuerdo|ok|vale|correcto|estoy\s+de\s+acuerdo|perfecto|acepto)[\s.]*$/i;
 
-const DEFAULT_MIN_REQUIREMENTS_LENGTH = 50;
-
 function meetsRequirementsMinLength(text: string, minLen: number): boolean {
   return text.length >= minLen;
 }

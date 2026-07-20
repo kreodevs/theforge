@@ -5,7 +5,7 @@ import type { MDDStateType } from "../state/index.js";
 import { getMddTemplatePlaceholder } from "../state/mdd-structured.schema.js";
 import { mergeMddStructured } from "../utils/mdd-merge-structured.js";
 import { getMddDraftSummary, extractAlreadyDocumentedTopics, extractIdentifiedInfraFromText, logMddNodeOutput } from "../utils/mdd-sanitize.js";
-import { getUserBrief, getUserExplicitRequirements } from "../utils/mdd-user-brief.js";
+import { getUserBrief } from "../utils/mdd-user-brief.js";
 import { buildUserDeclaredStackPromptBlock } from "../utils/user-declared-stack.util.js";
 import { extractFirstJsonObject, parseJsonOrThrow } from "../utils/parse-json.js";
 import { clarifierComplexityAppendix } from "../utils/mdd-complexity-rigor.js";
