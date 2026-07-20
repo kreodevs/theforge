@@ -16,7 +16,10 @@ DTOs e interfaces compartidas (Zod).
 - **`project.ts`:** `updateProjectSchema` incluye `uxGuideDesignRef` (biblioteca visual Design System).
 - **`document-layout.ts`:** mapa spec-kit ↔ `docs/sdd/` para gobernanza (MDD, Paso 0, Spec, Arq., casos, H.U., Blueprint, Design System, Pantallas, API, Flujos, Tasks, Infra, ADRs) + suplemento Workshop (BRD, AEM, Handoff Spec).
 - **`ui-screens-export.ts`:** split `---UI_PROJECT_JSON---`, preview formateado (`formatPantallasMarkdownForPreview`) y export limpio de `pantallas.md`.
-- **`spec-kit-bundle.ts`:** `buildSpecKitBundleFiles` — export layout compatible con github/spec-kit.
+- **`spec-kit-bundle.ts`:** `buildSpecKitBundleFiles` — export layout compatible con github/spec-kit; tasks vía `resolveTasksForConsume` (SSOT `tasksJson` + fallback markdown).
+- **`us-id-registry.ts`:** IDs estables `US-CRUD-*` / `US-JRN-*` (sin re-numerar por orden CrudMatrix).
+- **`tasks-resolve.ts`:** `resolveTasksForConsume`, `hasValidTasksJson` — SSOT tasks para Workshop/spec-kit/MCP.
+- **`deliverable-bundle.ts`:** `buildDeliverableBundleVersion` — versión atómica US+pantallas+API+tasks.
 - **`tasks-parse.ts`:** parseo spec-kit de `tasks.md` (`[P]`, rutas, checkpoints); `getNextOpenTask` para MCP.
 - **`sdd-analyze.ts`:** tipos del reporte `GET /projects/:id/analyze`.
 - **`mermaid.ts`:** normalización/reparación de diagramas (erDiagram PK/FK, **erDiagram BRD con viñetas/`###` dentro del fence**, fences partidos, cabeceras duplicadas, `subgraph ID["…"]`, secuencia sin cabecera, flechas/participantes, `resolveMermaidBlockForRender` para preview); `assessMermaidFixStrategy` prioriza reparación local si `validateMermaid` pasa tras el fix. Consumido por `normalizeMermaidInDocument`, `MarkdownMermaid` y `MddViewer`.

@@ -26,6 +26,18 @@ describe("spec-kit-bundle", () => {
     assert.ok(uiProject?.content.includes('"version":"1.0.0"') || uiProject?.content.includes('"version": "1.0.0"'));
   });
 
+  it("buildSpecKitBundleFiles exporta tasks-json.json cuando hay tasksJson", () => {
+    const files = buildSpecKitBundleFiles({
+      projectName: "Demo",
+      mddContent: "# MDD",
+      tasksContent: "- [ ] T-001 legacy",
+      tasksJson: { version: "2.0", tasks: [{ id: "T-001", title: "SSOT" }] },
+    });
+    const jsonFile = files.find((f) => f.path.endsWith("tasks-json.json"));
+    assert.ok(jsonFile);
+    assert.match(jsonFile!.content, /T-001/);
+  });
+
   it("buildSpecKitBundleFiles crea layout spec-kit", () => {
     const files = buildSpecKitBundleFiles({
       projectName: "Taskify",

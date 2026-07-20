@@ -88,8 +88,11 @@ export function buildUiScreensMarkdown(
     lines.push("");
   }
 
+  const v1Plan = plan.filter((p) => p.v1InScope !== false);
+  const outOfScopePlan = plan.filter((p) => p.v1InScope === false);
+
   const byRole = new Map<string, PantallaPlanItem[]>();
-  for (const item of plan) {
+  for (const item of v1Plan) {
     const role = item.role ?? "General";
     const bucket = byRole.get(role) ?? [];
     bucket.push(item);
@@ -121,13 +124,19 @@ export function buildUiScreensMarkdown(
   lines.push("- **Responsive:** sm 640 / md 768 / lg 1024 / xl 1280; tablas → cards/stack bajo md.");
   lines.push("");
 
-  const outOfScope = plan.filter(
-    (p) => !p.primaryApi && !p.restEndpoint && p.source === "entity",
-  );
-  if (outOfScope.length > 0) {
+  const outOfScope = [
+    ...outOfScopePlan,
+    ...plan.filter(
+      (p) => p.v1InScope !== false && !p.primaryApi && !p.restEndpoint && p.source === "entity",
+    ),
+  ];
+  const outUnique = [...new Map(outOfScope.map((p) => [p.name, p])).values()];
+  if (outUnique.length > 0) {
     lines.push("## Fuera de alcance v1");
     lines.push("");
-    for (const item of outOfScope.slice(0, 12)) {
+    lines.push("> Pantallas sin API v1: no generar ruta en MVP salvo que se añada contrato + task Frontend.");
+    lines.push("");
+    for (const item of outUnique.slice(0, 12)) {
       lines.push(`- CRUD admin \`${item.name}\` — sin endpoint en api-contracts v1`);
     }
     lines.push("");

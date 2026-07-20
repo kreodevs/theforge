@@ -27,6 +27,7 @@ import { runTasksPreflightStrict } from "./tasks-preflight.util.js";
 import { buildHeuristicTasksPlan, type HeuristicTasksPlanInput } from "./tasks-heuristic-plan.util.js";
 import { buildSlimTasksPlannerContext } from "./tasks-planner-context.util.js";
 import { mergeTasksPlanWithCoverageFloor } from "./tasks-plan-merge.util.js";
+import { partitionTasksPlanByJourney } from "./tasks-journey-partition.util.js";
 import { extractHttpEndpointsFromMarkdown } from "../ui-mcp/api-contract-endpoints.util.js";
 import { extractPantallaRoutes } from "./tasks-generation-structure.util.js";
 import {
@@ -230,19 +231,61 @@ export class TasksGenerationPipelineService {
     return parts.join("");
   }
 
-  /** Redacta tasks.md desde el plan; lotes si hay muchos ítems (evita truncado por max_tokens). */
+  /** Redacta tasks.md desde el plan; lotes por journey o por tamaño (evita truncado). */
   private async runRedactor(
     plan: TasksGenerationPlan,
     input: TasksPipelineInput,
     gapsFeedback?: string | null,
   ): Promise<string> {
+    const journeyPartitions =
+      (input.inventory?.processes?.length ?? 0) > 0
+        ? partitionTasksPlanByJourney(plan, input.inventory)
+        : null;
+
+    if (journeyPartitions && journeyPartitions.length > 1) {
+      this.logger.log(
+        `[Tasks pipeline] redactor por journey: ${journeyPartitions.length} fases`,
+      );
+      const parts: string[] = [];
+      for (let ji = 0; ji < journeyPartitions.length; ji++) {
+        const partition = journeyPartitions[ji]!;
+        const slicePlan: TasksGenerationPlan = {
+          sections: plan.sections,
+          items: partition.items,
+        };
+        const batchFeedback =
+          ji === 0
+            ? gapsFeedback
+            : [
+                gapsFeedback?.trim(),
+                `Fase journey ${ji + 1}/${journeyPartitions.length}: «${partition.label}». ` +
+                  `Cubre US: ${partition.storyRefs.join(", ") || "núcleo"}.`,
+              ]
+                .filter(Boolean)
+                .join("\n\n");
+        const chunk = await this.redactorSlice(slicePlan, input, batchFeedback, ji === 0);
+        parts.push(chunk);
+      }
+      return parts.filter(Boolean).join("\n\n");
+    }
+
+    return this.redactorSlice(plan, input, gapsFeedback, true);
+  }
+
+  private async redactorSlice(
+    plan: TasksGenerationPlan,
+    input: TasksPipelineInput,
+    gapsFeedback?: string | null,
+    isFirstChunk = true,
+  ): Promise<string> {
     const planJson = JSON.stringify(plan, null, 2);
     if (plan.items.length <= TASKS_REDACTOR_BATCH_SIZE) {
-      return this.ai.generateTasks(input.mddMarkdown, input.blueprintMarkdown ?? null, {
+      const chunk = await this.ai.generateTasks(input.mddMarkdown, input.blueprintMarkdown ?? null, {
         ...input.taskOpts,
         tasksPlanJson: planJson,
         gapsFeedback,
       });
+      return isFirstChunk ? chunk.trim() : chunk.trim().replace(/^#\s*Tasks\s*\n+/im, "").trim();
     }
 
     this.logger.log(
@@ -271,7 +314,7 @@ export class TasksGenerationPipelineService {
         gapsFeedback: batchFeedback,
       });
       const trimmed = chunk.trim();
-      if (offset === 0) {
+      if (offset === 0 && isFirstChunk) {
         parts.push(trimmed);
       } else {
         parts.push(trimmed.replace(/^#\s*Tasks\s*\n+/im, "").trim());

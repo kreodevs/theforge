@@ -108,16 +108,20 @@ export async function persistStageAndProjectDeliverables(
     }
   }
 
-  // Auto-parse tasks v2 into structured JSON
+  // Auto-parse tasks v2 into structured JSON (SSOT); fallback leaves tasksContent as markdown source
   if (typeof picked.tasksContent === "string" && picked.tasksContent.trim().length > 0) {
     try {
       const parsed = parseTasksV2(picked.tasksContent);
       if (parsed.tasks.length > 0) {
         stageData.tasksJson = parsed as unknown as Prisma.InputJsonValue;
         projectData.tasksJson = parsed as unknown as Prisma.InputJsonValue;
+      } else if (parsed.errors.length > 0) {
+        stageData.tasksJson = Prisma.JsonNull;
+        projectData.tasksJson = Prisma.JsonNull;
       }
     } catch {
-      // Silently ignore parse errors; tasksJson remains untouched
+      stageData.tasksJson = Prisma.JsonNull;
+      projectData.tasksJson = Prisma.JsonNull;
     }
   }
 

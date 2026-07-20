@@ -17,6 +17,7 @@ import {
   getNextOpenTask,
   parseIntegrationHandoff,
   parseTasksMarkdown,
+  readStageDeliverableSnapshot,
   sectionToIssueLabel,
   specHasPendingClarificationSection,
   specKitFeatureDir,
@@ -69,6 +70,7 @@ import {
   synthesizeExportGovernanceScaffold,
 } from "./handoff-export.util.js";
 import { parseTasksV2 } from "../engine/task-v2/tasks-parser-v2.js";
+import { resolveProjectTasksSsot, type ProjectTasksSsot } from "./tasks-ssot-resolve.util.js";
 
 type ProjectWithStages = Project & {
   stages: Array<Stage & { estimation?: unknown }>;
@@ -176,6 +178,11 @@ export class SddIntegrationService {
     const deliverables = stage
       ? resolveStageDeliverables(project, stage, "analyze").deliverables
       : project;
+    const tasksSsot = resolveProjectTasksSsot({
+      tasksContent: deliverables.tasksContent ?? project.tasksContent,
+      tasksJson: project.tasksJson,
+      stageTasksJson: stage?.tasksJson,
+    });
     const spec = deliverables.specContent ?? project.specContent;
     const acceptanceLines = (spec ?? "")
       .split("\n")
@@ -187,7 +194,8 @@ export class SddIntegrationService {
       mddContent: mdd,
       specContent: spec,
       blueprintContent: deliverables.blueprintContent ?? project.blueprintContent,
-      tasksContent: deliverables.tasksContent ?? project.tasksContent,
+      tasksContent: tasksSsot.markdown ?? deliverables.tasksContent ?? project.tasksContent,
+      tasksJson: stage?.tasksJson ?? project.tasksJson,
       apiContractsContent: deliverables.apiContractsContent ?? project.apiContractsContent,
       logicFlowsContent: deliverables.logicFlowsContent ?? project.logicFlowsContent,
       infraContent: deliverables.infraContent ?? project.infraContent,
@@ -832,18 +840,35 @@ export class SddIntegrationService {
     featureDir: string;
     openCount: number;
     task: ReturnType<typeof getNextOpenTask>;
+    tasksSource: ProjectTasksSsot["source"];
+    hasTasksJson: boolean;
+    taskCount: number;
+    deliverableBundleVersion: string | null;
   } & NextTaskDocumentLayout> {
     const project = await this.loadProject(projectId);
     const stage = pickPrimaryStage(project.stages);
-    const tasksMd = project.tasksContent ?? "";
+    const deliverables = stage
+      ? resolveStageDeliverables(project, stage, "analyze").deliverables
+      : project;
+    const tasksSsot = resolveProjectTasksSsot({
+      tasksContent: deliverables.tasksContent ?? project.tasksContent,
+      tasksJson: project.tasksJson,
+      stageTasksJson: stage?.tasksJson,
+    });
+    const tasksMd = tasksSsot.markdown ?? "";
     const { task, openCount } = this.getNextImplementationTask(tasksMd);
     const featureDir = specKitFeatureDir(stage?.ordinal ?? 1, project.name);
     const governancePresent = !!(project.agentGovernanceContent?.trim());
+    const snapshot = readStageDeliverableSnapshot(stage?.deliverableSnapshot);
     return {
       projectId: project.id,
       projectName: project.name,
       openCount,
       task,
+      tasksSource: tasksSsot.source,
+      hasTasksJson: tasksSsot.hasTasksJson,
+      taskCount: tasksSsot.taskCount,
+      deliverableBundleVersion: snapshot?.bundleVersion ?? null,
       ...buildNextTaskDocumentLayout(featureDir, governancePresent),
       implementHint:
         "Lee IMPLEMENT.md → .specify/memory/constitution.md → tasks en specs/NNN-slug/tasks.md",

@@ -13,6 +13,7 @@ import {
   inferAuthEndpoints,
   matchEndpointsForEntity,
 } from "./api-contract-endpoints.util.js";
+import { resolvePantallaV1InScope } from "./ui-screens-v1-scope.util.js";
 import {
   extractRolesFromMdd,
   inferPageComponentName,
@@ -118,6 +119,8 @@ export interface PantallaPlanItem extends ListScreensEntity {
   primaryApi?: string;
   userStoryId?: string;
   implementationMode?: "pull-registry" | "prototype-iframe";
+  /** true = incluida en tabla v1; false → sección «Fuera de alcance v1». */
+  v1InScope?: boolean;
 }
 
 const STORY_HEADER =
@@ -430,6 +433,9 @@ export function buildPantallasPlan(
           ? formatEndpointList(inferAuthEndpoints(endpoints), 2)
           : undefined;
 
+    // Política v1: pantalla CRUD sin API ni HU → no generar (evita zombie screens)
+    if (!primaryApi && linked.length === 0) continue;
+
     const routeFromMatrix = screenHintByEntity.get(entityName.toLowerCase());
     const route =
       uiHint === "chat"
@@ -587,5 +593,35 @@ export function buildPantallasPlan(
     }
   }
 
-  return plan;
+  return finalizePantallaPlan(plan);
+}
+
+/** Dedup routes and assign v1InScope (API+US or hu-only journey). */
+export function finalizePantallaPlan(plan: PantallaPlanItem[]): PantallaPlanItem[] {
+  const seenRoutes = new Map<string, number>();
+  const result: PantallaPlanItem[] = [];
+
+  for (const item of plan) {
+    const scoped = {
+      ...item,
+      v1InScope: resolvePantallaV1InScope(item),
+    };
+    const route = scoped.route?.replace(/\/+$/, "");
+    if (route) {
+      const prevIdx = seenRoutes.get(route);
+      if (prevIdx != null) {
+        const prev = result[prevIdx]!;
+        const keepNew =
+          scoped.v1InScope &&
+          !prev.v1InScope &&
+          Boolean(scoped.primaryApi);
+        if (!keepNew) continue;
+        result[prevIdx] = scoped;
+        continue;
+      }
+      seenRoutes.set(route, result.length);
+    }
+    result.push(scoped);
+  }
+  return result;
 }

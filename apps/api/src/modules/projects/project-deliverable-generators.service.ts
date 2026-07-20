@@ -581,6 +581,20 @@ export class ProjectDeliverableGeneratorsService {
   this.notifyPluginAfterDocumentPersist("tasks", projectId, updated.tasksContent ?? tasksContent);
   await this.persistTasksQualitySnapshot(stage?.id, snapshot);
 
+  if (stage?.id) {
+    const freshStage = pickPrimaryStage(updated.stages ?? []) ?? stage;
+    await this.estimationRecalc.recalcAndUpsert(freshStage.id, {
+      mddContent: freshStage.mddContent ?? mdd,
+      infraContent: updated.infraContent ?? project.infraContent ?? null,
+      status: freshStage.status,
+      consolidatedTaskCount: quality.taskCount,
+    }).catch((e) =>
+      this.logger.warn(
+        `[Tasks] post-consolidation recalc: ${e instanceof Error ? e.message : String(e)}`,
+      ),
+    );
+  }
+
   if (isBrownfieldCapable(theforgeId)) {
     void this.planValidation.validateProjectChangePlan(projectId).catch((e) =>
       this.logger.warn(

@@ -1,4 +1,9 @@
 import { summarizeAgentGovernanceField } from "../mcp-governance.util.js";
+import {
+  enrichStagesWithBundleMeta,
+  pickPrimaryStageFromApi,
+  resolveTasksSsotFromProjectApi,
+} from "../mcp-ssot.util.js";
 import type { McpApiClient, McpHandler, McpTool } from "../mcp-tool.types.js";
 import { PROJECT_GROUP_TOOLS } from "../project-group-tools.js";
 import { PROJECT_STAGE_TOOLS } from "../project-stage-tools.js";
@@ -129,7 +134,11 @@ export function createProjectHandlers(api: McpApiClient): Record<string, McpHand
   },
   async get_project_deliverables(args) {
     const projectId = args.projectId as string;
-    const project = await apiGet(`/projects/${projectId}`) as Record<string, unknown>;
+    const [project, stagesPayload] = await Promise.all([
+      apiGet(`/projects/${projectId}`) as Promise<Record<string, unknown>>,
+      apiGet(`/projects/${projectId}/stages`).catch(() => ({ stages: [] })),
+    ]);
+    const stages = (stagesPayload as { stages?: unknown[] }).stages ?? [];
     const docFields: { key: string; label: string }[] = [
       { key: "specContent", label: "Spec" },
       { key: "architectureContent", label: "Architecture" },
@@ -167,8 +176,9 @@ export function createProjectHandlers(api: McpApiClient): Record<string, McpHand
       projectId,
       projectName: project.name ?? null,
       deliverables,
+      tasksSsot: resolveTasksSsotFromProjectApi(project, pickPrimaryStageFromApi(stages)),
       totalDocs: Object.values(deliverables).filter((d) => d.exists).length,
-      note: "Los documentos de stage (BRD, To-Be, As-Is, MDD) están en get_project_stages, no en este tool.",
+      note: "Los documentos de stage (BRD, To-Be, As-Is, MDD) están en get_project_stages. tasksSsot refleja tasksJson v2 + fallback.",
     });
   },
   async get_project_stages(args) {
@@ -178,6 +188,9 @@ export function createProjectHandlers(api: McpApiClient): Record<string, McpHand
       apiGet(`/projects/${projectId}`).catch(() => null),
     ]);
     const result = stagesResult as Record<string, unknown>;
+    if (Array.isArray(result.stages)) {
+      result.stages = enrichStagesWithBundleMeta(result.stages);
+    }
     // Attach project document summary so agents see what cascade docs exist
     if (projectResult && typeof projectResult === "object") {
       const p = projectResult as Record<string, unknown>;

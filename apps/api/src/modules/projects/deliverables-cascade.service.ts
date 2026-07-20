@@ -21,6 +21,14 @@ import {
 import { buildApiRetryFeedback } from "../engine/api-conformance-repair.util.js";
 import { computeCascadeAccuracy } from "../engine/cascade-accuracy.util.js";
 import {
+  buildCrossArtifactTraceReport,
+  formatCrossArtifactTraceGaps,
+} from "../engine/cross-artifact-trace.util.js";
+import {
+  checkModelCardinalityAlignment,
+  formatModelCardinalityGaps,
+} from "../engine/model-cardinality.util.js";
+import {
   collectSddPrecisionGaps,
   formatPrecisionGapsFeedback,
   precisionGapsForPostPassRetry,
@@ -33,8 +41,14 @@ import { buildConstitutionMarkdown } from "./constitution-markdown.util.js";
 import { buildExistingConformanceGapsMap } from "./deliverables-cascade-gaps.util.js";
 import { syncDomainInventoryForStage } from "./sync-domain-inventory-stage.util.js";
 import { persistStageDeliverableSnapshotFromProject } from "./stage-deliverable-snapshot.util.js";
+import {
+  persistDeliverableBundleAtomic,
+  pickDeliverableBundleFields,
+} from "./deliverable-bundle-persist.util.js";
 import { pickPrimaryStage } from "./stage-helpers.js";
 import { ProjectsService } from "./projects.service.js";
+import { resolveDomainInventory } from "../engine/domain-inventory-persist.util.js";
+import type { DomainInventory } from "@theforge/shared-types";
 
 export type DeliverablesCascadeProgress = {
   step: string;
@@ -136,6 +150,21 @@ export class DeliverablesCascadeService {
           }
           reportProgress(step);
         }),
+      );
+    }
+
+    const projectAfterWaves = await this.projects.findOne(projectId);
+    const stageAfterWaves = pickPrimaryStage(projectAfterWaves.stages ?? []);
+    if (stageAfterWaves?.id) {
+      await persistDeliverableBundleAtomic(
+        this.prisma,
+        stageAfterWaves.id,
+        projectId,
+        pickDeliverableBundleFields(projectAfterWaves),
+      ).catch((err) =>
+        this.logger.warn(
+          `[Cascade] bundle atomic persist: ${err instanceof Error ? err.message : String(err)}`,
+        ),
       );
     }
 
@@ -249,12 +278,36 @@ export class DeliverablesCascadeService {
       );
     }
 
-    const allGaps = [...precisionGaps, ...taskGaps];
+    const crossTrace = buildCrossArtifactTraceReport({
+      userStoriesMarkdown: project.userStoriesContent,
+      uiScreensMarkdown: project.uiScreensContent,
+      apiContractsMarkdown: project.apiContractsContent,
+      tasksMarkdown: project.tasksContent,
+    });
+    const crossGaps = formatCrossArtifactTraceGaps(crossTrace, 16);
+
+    const inventory = resolveDomainInventory({
+      persisted: stage?.domainInventory as DomainInventory | null | undefined,
+      brdMarkdown: stage?.brdContent,
+      dbgaMarkdown: project.dbgaContent,
+      mddMarkdown: mdd,
+    });
+
+    const cardinality = checkModelCardinalityAlignment({
+      mddMarkdown: mdd,
+      inventory,
+      tasksMarkdown: project.tasksContent,
+    });
+    const cardinalityGaps = formatModelCardinalityGaps(cardinality);
+
+    const allGaps = [...precisionGaps, ...taskGaps, ...crossGaps, ...cardinalityGaps];
     if (allGaps.length === 0) return;
 
     const feedback = formatPrecisionGapsFeedback(allGaps);
     const flags = precisionGapsForPostPassRetry(precisionGaps);
-    if (taskGaps.length > 0) flags.retryTasks = true;
+    if (taskGaps.length > 0 || crossGaps.length > 0 || cardinalityGaps.length > 0) {
+      flags.retryTasks = true;
+    }
 
     this.logger.warn(
       `[Cascade] Post-pase W4: ${allGaps.length} gap(s) (precision=${precisionGaps.length}, taskAccuracy=${accuracy.tasks.score}) — retry dirigido`,

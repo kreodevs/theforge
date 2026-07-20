@@ -9,6 +9,7 @@ import {
   normalizeApiPath,
   type HttpEndpointRef,
 } from "../ui-mcp/api-contract-endpoints.util.js";
+import { extractV1InScopePantallaRoutes } from "../ui-mcp/ui-screens-v1-scope.util.js";
 
 export type TasksCoverageChecklist = {
   contractEndpoints: HttpEndpointRef[];
@@ -144,7 +145,8 @@ export function buildTasksCoverageChecklist(params: {
     }
   }
 
-  const pantallaRoutes = uiMd.length > 0 ? extractPantallaRoutes(uiMd) : [];
+  const pantallaRoutes =
+    uiMd.length > 0 ? extractV1InScopePantallaRoutes(uiMd) : extractPantallaRoutes(uiMd);
   const missingRoutes: string[] = [];
   for (const route of pantallaRoutes) {
     if (!pantallaRouteCoveredInTasks(tasksMarkdown, route)) {

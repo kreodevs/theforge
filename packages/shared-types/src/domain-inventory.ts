@@ -22,6 +22,8 @@ export type CrudOp = z.infer<typeof crudOpsSchema>;
 
 export const crudMatrixRowSchema = z.object({
   entity: z.string().min(1),
+  /** Stable user-story id (US-CRUD-{ENTITY}); not renumbered on matrix sort. */
+  usId: z.string().optional(),
   ops: z.array(crudOpsSchema).default(["L", "R"]),
   actor: z.string().optional(),
   endpointHint: z.string().optional(),
@@ -34,6 +36,8 @@ export type CrudMatrixRow = z.infer<typeof crudMatrixRowSchema>;
 
 export const processInventoryItemSchema = z.object({
   id: z.string().min(1),
+  /** Stable journey user-story id (US-JRN-{PROCESS}). */
+  usId: z.string().optional(),
   name: z.string().min(1),
   trigger: z.string().optional(),
   steps: z.array(z.string()).default([]),

@@ -7,6 +7,7 @@ import { AIFactory } from "./ai.factory.js";
 import { getRequestUserId } from "../../common/request-user.store.js";
 import type { ChatImagePart } from "@theforge/shared-types";
 import type { AemMarketScope, DomainInventory } from "@theforge/shared-types";
+import { stableCrudUserStoryId, stableJourneyUserStoryId } from "@theforge/shared-types";
 import { buildWorkshopSystemPrompt } from "./workshop-system-prompt.builder.js";
 
 import { UX_UI_GUIDE_PROMPT } from "./prompts/ux-ui-guide-prompt.js";
@@ -187,24 +188,25 @@ function buildThinUserStoriesFromInventory(inventory: DomainInventory): string {
   const lines = [
     "# Historias de Usuario (thin — ProcessInventory / CrudMatrix)",
     "",
+    "> IDs estables: CRUD → `US-CRUD-*`, journeys → `US-JRN-*` (no re-numerar por orden de matriz).",
+    "",
   ];
-  let n = 1;
   for (const row of inventory.crudMatrix.filter((r) => r.mvp && !r.infraOnly).slice(0, 40)) {
-    lines.push(`## US-${String(n).padStart(3, "0")}: Gestionar ${row.entity}`);
+    const usId = row.usId ?? stableCrudUserStoryId(row.entity);
+    lines.push(`## Historia de usuario: [${usId}] Gestionar ${row.entity}`);
     lines.push(`**Como:** ${row.actor ?? "Usuario autenticado"}`);
     lines.push(`**Quiero:** operar ${row.ops.join("/")} sobre \`${row.entity}\``);
     lines.push(`**Para:** cubrir capacidad de dominio vinculada al inventario.`);
     if (row.screenHint) lines.push(`**Pantalla:** ${row.screenHint}`);
     lines.push("");
-    n += 1;
   }
   for (const p of inventory.processes.slice(0, 15)) {
-    lines.push(`## US-${String(n).padStart(3, "0")}: ${p.name}`);
+    const usId = p.usId ?? stableJourneyUserStoryId(p.id);
+    lines.push(`## Historia de usuario: [${usId}] ${p.name}`);
     lines.push(`**Como:** Usuario del sistema`);
     lines.push(`**Quiero:** completar el proceso «${p.name}»`);
     lines.push(`**Para:** satisfacer el trigger ${p.trigger ?? "user.request"}.`);
     lines.push("");
-    n += 1;
   }
   return lines.join("\n");
 }

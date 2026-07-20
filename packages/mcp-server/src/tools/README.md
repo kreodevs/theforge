@@ -13,7 +13,7 @@ Registro modular de herramientas MCP (Fase 6 — GOD-REFACTOR).
 | **integration.tools.ts** | Ariadne, merge, AEM, tasks/spec-kit, change log. |
 | **markdown.tools.ts** | Tablas y diagramas Mermaid (utilidades shared-types). |
 
-Infra compartida en el padre: `mcp-api-client.ts`, `mcp-client-context.ts`, `mcp-governance.util.ts`, `mcp-tool.types.ts`.
+Infra compartida en el padre: `mcp-api-client.ts`, `mcp-client-context.ts`, `mcp-governance.util.ts`, `mcp-ssot.util.ts` (SSOT tasks + `deliverableBundleVersion`), `mcp-tool.types.ts`.
 
 `project-group-tools.ts` y `project-stage-tools.ts` viven en `src/` (pre-Fase 6); sus handlers se fusionan en `buildMcpHandlers`.
 

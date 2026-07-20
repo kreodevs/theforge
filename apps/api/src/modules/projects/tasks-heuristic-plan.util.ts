@@ -9,11 +9,13 @@
  */
 
 import type { DomainInventory, TasksGenerationPlan, TasksPlanItem } from "@theforge/shared-types";
+import { stableJourneyUserStoryId } from "@theforge/shared-types";
 import { extractEntities } from "../engine/conformance.service.js";
 import { extractSectionByNumber } from "../engine/mdd-markdown-parser.js";
 import {
   extractHttpEndpointsFromMarkdown,
 } from "../ui-mcp/api-contract-endpoints.util.js";
+import { extractV1InScopePantallaRoutes } from "../ui-mcp/ui-screens-v1-scope.util.js";
 import { extractPantallaRoutes } from "./tasks-generation-structure.util.js";
 
 export type HeuristicTasksPlanInput = {
@@ -122,6 +124,21 @@ export function buildHeuristicTasksPlan(input: HeuristicTasksPlanInput): TasksGe
     }
   }
 
+  // --- Journey / process inventory → phased tasks por US-JRN ---
+  for (const proc of input.inventory?.processes ?? []) {
+    const usId = proc.usId ?? stableJourneyUserStoryId(proc.id);
+    items.push({
+      id: nextTaskId(counter),
+      title: `Journey: ${proc.name}`,
+      layer: "Backend",
+      mddRefs: proc.brdCapabilityIds.map((id) => `BRD ${id}`),
+      storyRefs: [usId],
+      upstreamRefs: [`journey:${proc.id}`],
+      dependsOn: items.length > 0 ? [items[items.length - 1]!.id] : [],
+      targetFilesHint: [`apps/api/src/modules/${proc.id.replace(/^proc-/, "")}/`],
+    });
+  }
+
   // --- Capabilidades del inventario → tasks por capacidad ---
   for (const cap of input.inventory?.capabilities.filter((c) => !c.isAuthRelated) ?? []) {
     if (items.some((i) => i.title.toLowerCase().includes(cap.title.toLowerCase().slice(0, 24)))) continue;
@@ -137,8 +154,12 @@ export function buildHeuristicTasksPlan(input: HeuristicTasksPlanInput): TasksGe
     });
   }
 
-  // --- Pantallas → tasks por ruta ---
-  const routes = filterPlannerRoutes(extractPantallaRoutes(input.uiScreensMarkdown ?? ""));
+  // --- Pantallas v1 con API → mínimo 1 task Frontend por ruta ---
+  const uiMd = input.uiScreensMarkdown ?? "";
+  const routes =
+    uiMd.trim().length > 0
+      ? extractV1InScopePantallaRoutes(uiMd)
+      : filterPlannerRoutes(extractPantallaRoutes(uiMd));
   if (routes.length > 0 || input.hasUxTeam) {
     sections.add("Frontend");
     for (const route of routes) {
@@ -151,6 +172,23 @@ export function buildHeuristicTasksPlan(input: HeuristicTasksPlanInput): TasksGe
         upstreamRefs: [`pantallas:${route}`],
         dependsOn: [],
         targetFilesHint: [`apps/web/src/views/`],
+      });
+    }
+  }
+
+  // --- T-002 Prisma: una task por entidad MDD §3 (cardinalidad modelo) ---
+  if (mddEntities.size > 0) {
+    for (const entity of [...mddEntities]) {
+      if (items.some((i) => i.upstreamRefs?.includes(`prisma:${entity}`))) continue;
+      items.push({
+        id: nextTaskId(counter),
+        title: `T-002 — Modelo Prisma ${entity} (MDD §3)`,
+        layer: "Backend",
+        mddRefs: [`§3 ${entity}`],
+        storyRefs: [],
+        upstreamRefs: [`prisma:${entity}`],
+        dependsOn: [],
+        targetFilesHint: [`packages/database/schema.prisma`],
       });
     }
   }

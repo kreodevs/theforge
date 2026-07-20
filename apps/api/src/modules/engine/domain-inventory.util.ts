@@ -9,6 +9,7 @@ import {
   type DomainInventory,
   type ProcessInventoryItem,
 } from "@theforge/shared-types";
+import { stableCrudUserStoryId, stableJourneyUserStoryId } from "@theforge/shared-types";
 
 const AUTH_CAPABILITY_RE =
   /\b(autenticaci[oó]n|autorizaci[oó]n|login|mfa|ldap|rbac|sso|sesiones?|credenciales)\b/i;
@@ -173,6 +174,7 @@ export function buildCrudMatrix(
     const isAuth = AUTH_ENTITY_FAMILY.has(e);
     rows.set(e, {
       entity: e,
+      usId: stableCrudUserStoryId(e),
       ops: infraOnly ? ["R"] : isAuth ? ["C", "R", "U", "L"] : ["C", "R", "U", "D", "L"],
       mvp,
       infraOnly,
@@ -206,6 +208,7 @@ export function buildProcessInventory(capabilities: BrdCapability[]): ProcessInv
     const steps = extractStepsFromBody(cap.body);
     return {
       id: `proc-${cap.id}`,
+      usId: stableJourneyUserStoryId(`proc-${cap.id}`),
       name: cap.title,
       trigger: inferTrigger(cap),
       steps: steps.length > 0 ? steps : [`Ejecutar capacidad: ${cap.title}`],

@@ -1,5 +1,10 @@
 import type { ProjectNextTaskResponse } from "@theforge/shared-types";
 import type { McpApiClient, McpHandler, McpTool } from "../mcp-tool.types.js";
+import {
+  enrichStagesWithBundleMeta,
+  pickPrimaryStageFromApi,
+  resolveTasksSsotFromProjectApi,
+} from "../mcp-ssot.util.js";
 
 export const INTEGRATION_TOOLS: McpTool[] = [
   {
@@ -204,8 +209,8 @@ export const INTEGRATION_TOOLS: McpTool[] = [
   {
     name: "get_next_implementation_task",
     description:
-      "Returns the next open task from project tasks.md (spec-kit format) plus document layout paths. " +
-      "Read IMPLEMENT.md → .specify/memory/constitution.md → tasks in specs/NNN-slug/tasks.md.",
+      "Returns the next open task (SSOT: tasksJson v2 with tasksContent fallback) plus layout paths. " +
+      "Includes tasksSource, hasTasksJson, deliverableBundleVersion when available.",
     inputSchema: {
       type: "object",
       properties: { projectId: { type: "string", description: "The Forge project ID" } },
@@ -215,9 +220,8 @@ export const INTEGRATION_TOOLS: McpTool[] = [
   {
     name: "get_tasks_json",
     description:
-      "Returns the structured v2 tasks JSON for a project (parsed from YAML front-matter tasks). " +
-      "Use this when you need programmatic task metadata: dependencies, target files, change type, verification. " +
-      "If tasksJson is empty, fall back to get_next_implementation_task or generate_tasks.",
+      "Returns structured tasks v2 (SSOT) via resolveTasksForConsume — prefers valid tasksJson, " +
+      "falls back to tasksContent metadata. Includes deliverableBundleVersion from stage snapshot.",
     inputSchema: {
       type: "object",
       properties: { projectId: { type: "string", description: "The Forge project ID" } },
@@ -371,21 +375,26 @@ export function createIntegrationHandlers(api: McpApiClient): Record<string, Mcp
   },
   async get_tasks_json(args) {
     const projectId = args.projectId as string;
-    const project = await apiGet(`/projects/${projectId}`) as Record<string, unknown>;
-    const tasksJson = project.tasksJson;
-    if (!tasksJson || (typeof tasksJson === "object" && Object.keys(tasksJson).length === 0)) {
+    const [project, stagesPayload] = await Promise.all([
+      apiGet(`/projects/${projectId}`) as Promise<Record<string, unknown>>,
+      apiGet(`/projects/${projectId}/stages`).catch(() => ({ stages: [] })),
+    ]);
+    const stages = (stagesPayload as { stages?: unknown[] }).stages ?? [];
+    const primary = pickPrimaryStageFromApi(stages);
+    const ssot = resolveTasksSsotFromProjectApi(project, primary);
+    if (!ssot.hasTasksJson && ssot.taskCount === 0) {
       return JSON.stringify({
         projectId,
-        hasTasksJson: false,
-        note: "No tasksJson v2 found. Use generate_tasks or get_next_implementation_task.",
-        tasksContentWordCount: typeof project.tasksContent === "string" ? project.tasksContent.trim().split(/\s+/).length : 0,
+        ...ssot,
+        note: "Sin tasksJson válido ni tasksContent parseable. Ejecuta generate_tasks o generate_deliverables.",
       });
     }
     return JSON.stringify({
       projectId,
-      hasTasksJson: true,
-      tasksJson,
-      note: "Structured tasks v2 with YAML front-matter. Use target_files for implementation.",
+      ...ssot,
+      note: ssot.hasTasksJson
+        ? "SSOT tasksJson v2. Para siguiente tarea abierta usa get_next_implementation_task."
+        : "Fallback tasksContent (sin JSON estructurado). Regenera tasks para poblar tasksJson.",
     });
   },
   };

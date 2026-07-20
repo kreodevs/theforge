@@ -149,8 +149,12 @@ interface GlobalMetadata {
 }
 
 function parseGlobalMetadata(lines: string[], startIdx: number): GlobalMetadata | null {
-  // Buscar bloque YAML tras ## Metadata o al inicio del doc
-  let i = startIdx;
+  const headerIdx = lines.findIndex(
+    (l, i) => i >= startIdx && /^##\s+Metadata\b/i.test(l.trim()),
+  );
+  if (headerIdx < 0) return null;
+
+  let i = headerIdx + 1;
   while (i < lines.length && lines[i].trim() !== "---") {
     i++;
   }
@@ -394,13 +398,17 @@ function extractDescription(body: string): string {
   return match ? match[1].trim() : "";
 }
 
-/** Strip YAML front-matter from raw markdown to avoid duplicating parsed fields. */
+/** Strip YAML front-matter from raw markdown (handles nested/consecutive --- blocks). */
 function stripFrontMatterFromRaw(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed.startsWith("---")) return trimmed;
-  const endIdx = trimmed.indexOf("\n---", 3);
-  if (endIdx === -1) return trimmed;
-  return trimmed.slice(endIdx + 4).trim();
+  let trimmed = raw.trim();
+  let guard = 0;
+  while (trimmed.startsWith("---") && guard < 8) {
+    guard += 1;
+    const endIdx = trimmed.indexOf("\n---", 3);
+    if (endIdx === -1) break;
+    trimmed = trimmed.slice(endIdx + 4).trim();
+  }
+  return trimmed;
 }
 
 // ---- Utilidades YAML simple ----

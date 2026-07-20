@@ -47,6 +47,7 @@ import {
   type TheforgeProjectJson,
 } from "@theforge/shared-types";
 import { pickPrimaryStage } from "./stage-helpers.js";
+import { resolveProjectTasksSsot } from "./tasks-ssot-resolve.util.js";
 
 type ProjectWithStages = Project & { stages: Stage[] };
 
@@ -410,13 +411,19 @@ export function buildSpecKitFilesForProject(
   const blueprint = blueprintSource?.trim()
     ? qualifyBlueprintPostMvpUiMentions(mdd ?? "", blueprintSource)
     : blueprintSource;
+  const tasksSsot = resolveProjectTasksSsot({
+    tasksContent: aligned.tasksContent ?? deliverables.tasksContent ?? project.tasksContent,
+    tasksJson: project.tasksJson,
+    stageTasksJson: primaryStage?.tasksJson,
+  });
   return buildSpecKitBundleFiles({
     projectName: project.name,
     featureOrdinal: primaryStage?.ordinal ?? 1,
     mddContent: mdd,
     specContent: deliverables.specContent ?? project.specContent,
     blueprintContent: blueprint,
-    tasksContent: aligned.tasksContent ?? deliverables.tasksContent ?? project.tasksContent,
+    tasksContent: tasksSsot.markdown ?? aligned.tasksContent ?? deliverables.tasksContent ?? project.tasksContent,
+    tasksJson: primaryStage?.tasksJson ?? project.tasksJson,
     apiContractsContent: deliverables.apiContractsContent ?? project.apiContractsContent,
     logicFlowsContent: deliverables.logicFlowsContent ?? project.logicFlowsContent,
     infraContent: infra,
