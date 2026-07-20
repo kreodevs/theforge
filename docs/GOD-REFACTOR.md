@@ -588,4 +588,11 @@ Fase 6 (legacy/MCP)
 | `workshopStore.actions.smoke.spec.ts` | ✅ 2 tests |
 | `workshop-store.contract.ts` | ✅ contrato de acciones |
 
-**PR-1 (siguiente):** Fase 1 — extracción de `jsonSectionToMarkdown` a `mdd-sanitize/json-section-to-markdown.ts` con re-export estable.
+**PR-1 (Fase 1 — en curso):** extracción modular de `mdd-sanitize.ts`.
+
+| Paso | Estado |
+|------|--------|
+| `json-section-to-markdown.ts` + re-export | ✅ |
+| `security-manifest.ts` (`fixSecurityManifestCoherence`) | pendiente |
+| `sql-repair.ts`, `section-merge.ts`, … | pendiente |
+| Barrel `mdd-sanitize.ts` &lt; 200 L | pendiente |
