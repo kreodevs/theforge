@@ -433,23 +433,29 @@ nodes/mdd-manager/
 
 ---
 
-### Fase 4 — `ProjectsService` (3–4 semanas, incremental)
+### Fase 4 — `ProjectsService` ✅ (2026-07-19)
 
-No reescribir de golpe. Continuar patrón de `tasks-generation-pipeline.service.ts`.
+Refactor incremental completado. `projects.service.ts` pasó de **~3 809 L → ~420 L** (fachada + CRUD ligero).
 
-| Extracción | Métodos origen | Nuevo servicio |
-|------------|----------------|----------------|
-| Persistencia MDD | `update` (bloque MDD), `persistMddFromBackgroundJob` | `project-mdd-persist.service.ts` |
-| Cascade | `generateDeliverablesCascade`, `runCascade*`, `runDeliverableWaveStep` | `deliverables-cascade.service.ts` |
-| Generadores thin | `generateBlueprint`, `generateApiContracts`, … | Delegar a `AiService` + `*ConformanceRepair` (ya parcial) |
-| Stage CRUD | `createStage`, `patchStage`, `transitionStage` | `project-stage.service.ts` |
-| UX Guide | `generateUxUiGuide`, `repairUxUiGuideYaml`, `composeUxGuideFromDesignRef` | `project-ux-guide.service.ts` |
+| Extracción | Servicio |
+|------------|----------|
+| Persistencia MDD | `project-mdd-persist.service.ts` |
+| Cascade | `deliverables-cascade.service.ts` |
+| Generadores | `project-deliverable-generators.service.ts` |
+| Stage CRUD + detalle | `project-stage.service.ts` |
+| UX Guide | `project-ux-guide.service.ts` |
+| Gates + semáforo | `project-deliverable-gate.service.ts` |
+| Conformance / audit | `project-conformance.service.ts` |
+| BRD greenfield | `project-brd.service.ts` |
+| PATCH / snapshots | `project-update.service.ts` |
+| Complejidad HITL | `project-complexity.service.ts` |
+| Phase 0 Deep Research | `project-phase0.service.ts` |
+| SDD post-regen | `project-sdd-reconcile.service.ts` |
+| Create / clone | `project-lifecycle.service.ts` |
 
-**Fachada:** `ProjectsService` conserva métodos públicos; inyecta servicios y delega.
+**Fachada:** `ProjectsService` conserva la API pública HTTP/MCP y `IOrchestratorProjectsPort` (`findOne`, `update`, `tryConfirmComplexityFromChatMessage`, `patchStage`).
 
-**Port:** actualizar `IOrchestratorProjectsPort` solo si el orchestrator necesita menos superficie — opcional, fase tardía.
-
-**Criterio de salida:** `projects.service.ts` < 1 500 L; specs de cascade y MDD persist.
+**Pendiente opcional:** deduplicar `toApiProject` en merge/notion-portability; specs de integración de fachada.
 
 ---
 
@@ -541,7 +547,7 @@ Fase 6 (legacy/MCP)
 | `workshopStore.ts` | 5 319 L | < 600 L (compose + helpers fuera) |
 | `mdd-sanitize.ts` | 6 065 L | < 200 L (barrel) |
 | `createMddManagerNode` | 1 007 L | < 150 L |
-| `projects.service.ts` | 3 809 L | < 1 500 L |
+| `projects.service.ts` | 3 809 L → **~420 L** | < 1 500 L ✅ |
 | `sessions.chat` + stream | ~1 300 L | < 400 L combinados (resto en runner) |
 | Duplicación prompt AI | ~2× ~200 L | 1 builder, 2 callers |
 | Contract tests Workshop | 0 | ≥ 2 |

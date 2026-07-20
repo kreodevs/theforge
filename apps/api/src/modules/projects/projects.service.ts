@@ -1,23 +1,15 @@
-import { Inject, Injectable, Logger, NotFoundException, forwardRef } from "@nestjs/common";
-import { ComplexityLevel, StageStatus } from "@theforge/database";
-import type { Estimation, Project, Stage } from "@theforge/database";
+import { Inject, Injectable, NotFoundException, forwardRef } from "@nestjs/common";
+import { PrismaService } from "../../prisma/prisma.service.js";
 import { getRequestUserId, getRequestUserRole } from "../../common/request-user.store.js";
 import { isAdminOrAbove } from "../../common/roles.js";
-import { PrismaService } from "../../prisma/prisma.service.js";
-import { TheForgeService } from "../theforge/theforge.service.js";
-import { GraphMemoryService } from "../ai-analysis/graph-memory/graph-memory.service.js";
 import type { IOrchestratorProjectsPort } from "./projects-service.port.js";
 import {
-  createProjectSchema,
-  cloneProjectBodySchema,
   type DeliverableKind,
   type CreateProjectDto,
   type UpdateProjectDto,
 } from "@theforge/shared-types";
 
-import {
-  loadAccessibleProjectWithStages,
-} from "./project-access.util.js";
+import { loadAccessibleProjectWithStages } from "./project-access.util.js";
 import { ProjectMddPersistService } from "./project-mdd-persist.service.js";
 import { DeliverablesCascadeService } from "./deliverables-cascade.service.js";
 import { ProjectStageService } from "./project-stage.service.js";
@@ -29,56 +21,16 @@ import { ProjectBrdService } from "./project-brd.service.js";
 import { ProjectUpdateService } from "./project-update.service.js";
 import { ProjectComplexityService } from "./project-complexity.service.js";
 import { ProjectPhase0Service } from "./project-phase0.service.js";
-import { flattenStageDeliverables, pickPrimaryStage } from "./stage-helpers.js";
-import type { ProjectDeliverableSource } from "@theforge/shared-types";
-import { DocumentationGapService } from "../documentation-gap/documentation-gap.service.js";
-import { PluginDocumentPipelineService } from "../../plugins/plugin-document-pipeline.service.js";
-import {
-  buildProjectCloneCreateInput,
-  resolveCloneProjectOptions,
-  type ProjectCloneSource,
-} from "./project-clone.util.js";
-import { ProjectGroupsService } from "../project-groups/project-groups.service.js";
-
+import { ProjectSddReconcileService } from "./project-sdd-reconcile.service.js";
+import { ProjectLifecycleService } from "./project-lifecycle.service.js";
+import { toApiProject } from "./project-api.util.js";
 import { toApiProjectListItem } from "./project-list-item.util.js";
-
-type StageWithEst = Stage & { estimation: Estimation | null };
-
-function toApiProject<P extends { stages: StageWithEst[] } & Record<string, unknown>>(project: P) {
-  const flat = flattenStageDeliverables(project.stages, project as ProjectDeliverableSource);
-  const group = project.group as { name: string } | undefined;
-  const { group: _g, ...rest } = project;
-  return {
-    ...rest,
-    ...flat,
-    groupId: project.groupId as string,
-    groupName: group?.name,
-  };
-}
 
 @Injectable()
 export class ProjectsService implements IOrchestratorProjectsPort {
-  private readonly logger = new Logger(ProjectsService.name);
-
-  /**
-   * Verifica que el usuario tenga acceso al proyecto:
-   * - PRIVATE: solo owner
-   * - SHARED: cualquier usuario autenticado
-   * Retorna el proyecto si hay acceso, o lanza NotFoundException.
-   */
-  private async assertProjectAccess(projectId: string): Promise<Project & { stages: StageWithEst[] }> {
-    return loadAccessibleProjectWithStages(this.prisma, projectId);
-  }
-
   constructor(
     private readonly prisma: PrismaService,
-    private readonly theforge: TheForgeService,
-    private readonly graphMemory: GraphMemoryService,
-    private readonly pluginPipeline: PluginDocumentPipelineService,
     private readonly mddPersist: ProjectMddPersistService,
-    @Inject(forwardRef(() => DocumentationGapService))
-    private readonly documentationGap: DocumentationGapService,
-    private readonly projectGroups: ProjectGroupsService,
     @Inject(forwardRef(() => DeliverablesCascadeService))
     private readonly deliverablesCascade: DeliverablesCascadeService,
     private readonly projectStage: ProjectStageService,
@@ -95,6 +47,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly projectComplexity: ProjectComplexityService,
     @Inject(forwardRef(() => ProjectPhase0Service))
     private readonly projectPhase0: ProjectPhase0Service,
+    private readonly projectSddReconcile: ProjectSddReconcileService,
+    private readonly projectLifecycle: ProjectLifecycleService,
   ) {}
 
   async listDocumentSnapshots(
@@ -109,113 +63,11 @@ export class ProjectsService implements IOrchestratorProjectsPort {
   }
 
   async create(data: CreateProjectDto) {
-    const parsed = createProjectSchema.parse(data);
-    const isLegacy = parsed.projectType === "LEGACY";
-    const userId = getRequestUserId();
-    const defaultGroupId = await this.projectGroups.getDefaultGroupId();
-    let groupId = defaultGroupId;
-    if (parsed.groupId) {
-      const targetGroup = await this.prisma.projectGroup.findUnique({
-        where: { id: parsed.groupId },
-        select: { id: true },
-      });
-      if (!targetGroup) throw new NotFoundException("Grupo no encontrado");
-      groupId = parsed.groupId;
-    }
-    const created = await this.prisma.project.create({
-      data: {
-        userId,
-        groupId,
-        name: parsed.name,
-        visibility: parsed.visibility ?? "PRIVATE",
-        hasUxTeam: parsed.hasUxTeam ?? false,
-        complexity: parsed.complexity as ComplexityLevel,
-        projectType: parsed.projectType,
-        // requireBrdTobeGate eliminado
-        theforgeProjectId: parsed.theforgeProjectId ?? undefined,
-        stages: {
-          create: {
-            ordinal: 1,
-            key: "main",
-            name: "Etapa principal",
-            workflowStatus: StageStatus.ACTIVE,
-            isLegacy,
-            theforgeProjectId: parsed.theforgeProjectId ?? null,
-          },
-        },
-      },
-      include: {
-        stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } },
-        group: { select: { name: true } },
-      },
-    });
-
-    const apiProject = toApiProject(created);
-
-    void this.pluginPipeline.runOnProjectCreate({
-      projectId: created.id,
-      projectName: created.name,
-      userId,
-      timestamp: new Date(),
-    });
-
-    if (isLegacy && parsed.theforgeProjectId?.trim()) {
-      const stage = created.stages[0];
-      this.theforge.scheduleAriadneBrownfieldWire(
-        {
-          ariadneSourceId: parsed.theforgeProjectId.trim(),
-          workshopProjectId: created.id,
-          workshopStageId: stage?.id ?? "",
-        },
-        "Projects",
-      );
-    }
-
-    return apiProject;
+    return this.projectLifecycle.create(data);
   }
 
-  /**
-   * Deep-clones project documents and all stages into a new project owned by the current user.
-   * Does not copy sessions, chat, favorites, integration links, webhooks, or suite lineage.
-   */
   async cloneProject(sourceId: string, body: unknown) {
-    const parsed = cloneProjectBodySchema.parse(body ?? {});
-    const source = (await this.assertProjectAccess(sourceId)) as ProjectCloneSource;
-    const userId = getRequestUserId();
-    const options = resolveCloneProjectOptions(source, parsed);
-
-    const created = await this.prisma.project.create({
-      data: buildProjectCloneCreateInput(source, { userId, ...options }),
-      include: {
-        stages: { orderBy: { ordinal: "asc" }, include: { estimation: true } },
-        group: { select: { name: true } },
-      },
-    });
-
-    if (source.projectType === "LEGACY") {
-      const sortedStages = [...created.stages].sort((a, b) => a.ordinal - b.ordinal);
-      for (const stage of sortedStages) {
-        const parentStage =
-          stage.ordinal > 1
-            ? sortedStages.find((candidate) => candidate.ordinal === stage.ordinal - 1)
-            : undefined;
-        this.graphMemory
-          .syncLegacyStage({
-            stageId: stage.id,
-            projectId: created.id,
-            ordinal: stage.ordinal,
-            name: stage.name ?? "",
-            parentStageId: parentStage?.id,
-            theforgeProjectId: source.theforgeProjectId ?? undefined,
-          })
-          .catch(() => {});
-      }
-    }
-
-    return {
-      ...toApiProject(created),
-      clonedFromProjectId: sourceId,
-    };
+    return this.projectLifecycle.cloneProject(sourceId, body);
   }
 
   async findAll() {
@@ -223,10 +75,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     const rows = await this.prisma.project.findMany({
       where: {
         archivedAt: null,
-        OR: [
-          { userId },
-          { visibility: "SHARED" },
-        ],
+        OR: [{ userId }, { visibility: "SHARED" }],
       },
       orderBy: { createdAt: "desc" },
       select: {
@@ -277,8 +126,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
 
   async toggleFavorite(projectId: string) {
     const userId = getRequestUserId();
-    // Verificar acceso al proyecto (todos los proyectos visibles para el usuario)
-    await this.assertProjectAccess(projectId);
+    await loadAccessibleProjectWithStages(this.prisma, projectId);
     const existing = await this.prisma.favoriteProject.findUnique({
       where: { userId_projectId: { userId, projectId } },
     });
@@ -293,8 +141,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
   }
 
   async findOne(id: string) {
-    const project = await this.assertProjectAccess(id);
-    // add sessions separately (not included in assertProjectAccess)
+    const project = await loadAccessibleProjectWithStages(this.prisma, id);
     const withSessions = await this.prisma.project.findFirst({
       where: { id },
       include: { sessions: true },
@@ -317,7 +164,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
   }
 
   async remove(id: string) {
-    const project = await this.assertProjectAccess(id);
+    const project = await loadAccessibleProjectWithStages(this.prisma, id);
     const userId = getRequestUserId();
     const isOwner = project.userId === userId;
     if (!isOwner && !isAdminOrAbove(getRequestUserRole())) {
@@ -332,7 +179,6 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     return { deleted: id };
   }
 
-  /** Una sola etapa ACTIVE por proyecto: demueve las demás ACTIVE a SUPERSEDED. */
   async activateStageExclusive(projectId: string, stageId: string): Promise<void> {
     return this.projectStage.activateStageExclusive(projectId, stageId);
   }
@@ -380,21 +226,14 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     return this.projectComplexity.tryConfirmComplexityFromChatMessage(projectId, message);
   }
 
-  /**
-   * Guía UX/UI generada por LLM (mismo criterio que legacy, sin Relic).
-   */
   async generateUxUiGuide(projectId: string) {
     return this.uxGuide.generateUxUiGuide(projectId);
   }
 
-  /**
-   * Design System determinista desde biblioteca (DESIGN.md importado o catálogo builtin).
-   */
   async composeUxGuideFromDesignRef(projectId: string) {
     return this.uxGuide.composeUxGuideFromDesignRef(projectId);
   }
 
-  /** Repara/regenera solo el YAML frontmatter de la Guía UX/UI. */
   async repairUxUiGuideYaml(projectId: string): Promise<string> {
     return this.uxGuide.repairUxUiGuideYaml(projectId);
   }
@@ -544,10 +383,6 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     return this.deliverableGenerators.generateInfra(projectId, gapsFeedback);
   }
 
-  /**
-   * Orquestación multi-ola de entregables.
-   * @param onProgress — opcional (p. ej. BullMQ `job.updateProgress`).
-   */
   async generateDeliverablesCascade(
     projectId: string,
     onProgress?: (p: {
@@ -561,37 +396,12 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     return this.deliverablesCascade.generateDeliverablesCascade(projectId, onProgress, options);
   }
 
-  /** Tras cascada o regeneración individual: detecta conflictos SDD y los expone como gaps HITL. */
   async runPostRegenSddConflictSurfacing(projectId: string): Promise<void> {
-    const project = await this.findOne(projectId);
-    const activeStage = pickPrimaryStage(project.stages ?? []);
-    if (!activeStage?.id) return;
-    const summary = await this.documentationGap.detectAndSurfaceSddConflicts(
-      projectId,
-      activeStage.id,
-    );
-    if (summary.conflictsDetected > 0) {
-      this.logger.debug(
-        `[SDD surfacing] projectId=${projectId} conflicts=${summary.conflictsDetected} created=${summary.gapsCreated} duplicates=${summary.duplicates}`,
-      );
-    }
+    return this.projectSddReconcile.runPostRegenSddConflictSurfacing(projectId);
   }
 
-  /** @deprecated Usar `runPostRegenSddConflictSurfacing`. Solo reconciliación explícita vía approve gap. */
   async runPostRegenSddAutoReconcile(projectId: string): Promise<void> {
-    const project = await this.findOne(projectId);
-    const activeStage = pickPrimaryStage(project.stages ?? []);
-    if (!activeStage?.id) return;
-    const summary = await this.documentationGap.autoReconcileSddConflicts(projectId, activeStage.id);
-    if (!summary.clean && summary.remainingConflicts.length > 0) {
-      this.logger.warn(
-        `[SDD auto-reconcile] projectId=${projectId} retries=${summary.retries} remaining=${summary.remainingConflicts.length}`,
-      );
-    } else if (summary.deterministicPasses > 0 || summary.reconcilePasses > 0) {
-      this.logger.debug(
-        `[SDD auto-reconcile] projectId=${projectId} deterministic=${summary.deterministicPasses} reconcile=${summary.reconcilePasses}`,
-      );
-    }
+    return this.projectSddReconcile.runPostRegenSddAutoReconcile(projectId);
   }
 
   async phase0DeepResearch(
@@ -601,12 +411,6 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     return this.projectPhase0.phase0DeepResearch(projectId, options);
   }
 
-
-  /**
-   * Persistencia MDD desde job en background (cola theforge-mdd).
-   * - Borradores (`finalize: false`): sin delivery gate — el MDD puede estar incompleto.
-   * - Final (`finalize: true`): pipeline completo (gate + semáforo + estimación).
-   */
   async persistMddFromBackgroundJob(
     projectId: string,
     rawMarkdown: string,
