@@ -94,48 +94,22 @@ export {
   stripTrailingDuplicateMddSections,
   validateMddStructure,
 } from "./mdd-sanitize/section-merge.js";
+import { findBalancedBrace, findBalancedBraceRespectingStrings } from "./mdd-sanitize/brace.util.js";
+import {
+  fixDoubleMermaidFences,
+  fixSection2UnclosedSqlAndGluedMermaid,
+  repairMermaidBlocksInSectionBody,
+  stripMermaidFences,
+  unescapeMermaidLiteralNewlines,
+} from "./mdd-sanitize/mermaid-fences.js";
 
-/** Encuentra el índice del cierre de llave que equilibra la llave abierta en start. */
-function findBalancedBrace(str: string, start: number): number {
-  let depth = 0;
-  for (let i = start; i < str.length; i++) {
-    if (str[i] === "{") depth++;
-    else if (str[i] === "}") {
-      depth--;
-      if (depth === 0) return i;
-    }
-  }
-  return -1;
-}
-
-/** Como findBalancedBrace pero ignora { } que estén dentro de strings con comillas dobles (para JSON con erDiagram). */
-function findBalancedBraceRespectingStrings(str: string, start: number): number {
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-  for (let i = start; i < str.length; i++) {
-    const c = str[i]!;
-    if (escape) {
-      escape = false;
-      continue;
-    }
-    if (inString) {
-      if (c === "\\") escape = true;
-      else if (c === '"') inString = false;
-      continue;
-    }
-    if (c === '"') {
-      inString = true;
-      continue;
-    }
-    if (c === "{") depth++;
-    else if (c === "}") {
-      depth--;
-      if (depth === 0) return i;
-    }
-  }
-  return -1;
-}
+export { findBalancedBrace, findBalancedBraceRespectingStrings } from "./mdd-sanitize/brace.util.js";
+export {
+  fixDoubleMermaidFences,
+  fixSection2UnclosedSqlAndGluedMermaid,
+  stripMermaidFences,
+  unescapeMermaidLiteralNewlines,
+} from "./mdd-sanitize/mermaid-fences.js";
 
 /** Patrones para detectar en el documento qué infra/orquestación/despliegue está identificada (genérico). */
 const INFRA_TERM_PATTERNS: Array<{ pattern: RegExp; key: string }> = [
@@ -2246,23 +2220,6 @@ export function applyDeterministicCrossConsistencyFixes(draft: string): string {
  * Corrige en la sección 2: (1) SQL no cerrado con ``` antes de ### Diagrama o ```mermaid;
  * (2) encabezado pegado "### Diagrama entidad-relaciónmermaid" → cierre sql + título + apertura ```mermaid.
  */
-function fixSection2UnclosedSqlAndGluedMermaid(draft: string): string {
-  const modeloHeading = "## 3. Modelo de Datos";
-  const modeloIdx = draft.indexOf(modeloHeading);
-  if (modeloIdx === -1) return draft;
-  const sectionStart = modeloIdx + modeloHeading.length;
-  const rest = draft.slice(sectionStart);
-  const nextH2 = rest.search(/\n##\s+/);
-  const body = nextH2 !== -1 ? rest.slice(0, nextH2) : rest;
-  let newBody = body
-    .replace(/\);\s*###\s*Diagrama entidad-relaciónmermaid/gi, ");\n```\n\n### Diagrama entidad-relación\n\n```mermaid")
-    .replace(/\);\s*###\s*Diagrama\b/gi, ");\n```\n\n### Diagrama")
-    .replace(/\);\s*```mermaid/gi, ");\n```\n\n```mermaid")
-    .replace(/###\s*Diagrama entidad-relaciónmermaid/gi, "### Diagrama entidad-relación\n\n```mermaid");
-  if (newBody === body) return draft;
-  const afterSection = nextH2 !== -1 ? rest.slice(nextH2) : "";
-  return draft.slice(0, sectionStart) + newBody + afterSection;
-}
 
 /**
  * Asegura que el bloque ```sql de la sección 2 esté cerrado con ``` antes de ```mermaid, ```TechnicalMetadata o ###.
@@ -2395,7 +2352,6 @@ function fixSecuritySectionBullets(sectionBody: string): string {
     .trim();
 }
 
-/** Línea H2 de §6 (con o sin número; admite título pegado sin espacio tras Seguridad). */
 /** Colapsa `--- --- ---` en la misma línea o consecutivos; normaliza `--`/`-` sueltos como separadores. */
 function collapseInlineHorizontalRules(draft: string): string {
   let out = draft.replace(/(?:^|\n)\s*---(?:\s+---\s*)+(?=\s*(?:\n|$))/g, "\n---\n");
@@ -2454,8 +2410,6 @@ function stripStrayParenBeforeH2(draft: string): string {
     .replace(/\n\s*\)\s*\n+(---\s*\n)(\s*##\s+7\.)/g, "\n$1$2")
     .replace(/\n\s*\)\s*\n+(?=\s*##\s+)/g, "\n");
 }
-
-/** Despega subtítulo del H2 (ej. `## 6. SeguridadGestión…:` o `## 6. Seguridad. Autenticación:` → H2 + ###). */
 
 /**
  * Si el cuerpo de la sección Integración tiene un manifest JSON con stack no vacío y sin "pending",
@@ -3262,15 +3216,6 @@ export function stripMeshDirectivesFromDraft(draft: string): string {
  * Quita del contenido de un diagrama Mermaid cualquier fence sobrante (```mermaid o ```).
  * Así al envolver con ```mermaid\n...\n``` nunca queda doble apertura/cierre.
  */
-export function stripMermaidFences(content: string): string {
-  if (!content || typeof content !== "string") return "";
-  let s = content.trim();
-  // Quitar uno o más ```mermaid (o ```) al inicio
-  s = s.replace(/^(\s*```(?:mermaid)?\s*)+/i, "").trim();
-  // Quitar uno o más ``` al final
-  s = s.replace(/(\s*```\s*)+$/g, "").trim();
-  return s;
-}
 
 /**
  * Dado un objeto parseado con SQL/DiagramaER/TechnicalMetadata, devuelve el markdown canónico de la sección 2.
@@ -3429,115 +3374,6 @@ function ensureTechnicalMetadataAtEndOfSection2(draft: string): string {
 /**
  * Dentro de ```mermaid, si el contenido es JSON (o "## 2. Modelo...") lo reemplaza por erDiagram o por diagramaER extraído.
  */
-function stripJsonFromMermaidBlocks(body: string): string {
-  return body.replace(/```mermaid\s*([\s\S]*?)```/gi, (_match, inner) => {
-    const t = inner.trim();
-    if (!t || /^erDiagram\b/i.test(t)) return _match;
-    if (t.startsWith("##") || t.startsWith("{") || /"sqlPostgreSQL"\s*:/i.test(t)) {
-      try {
-        const firstBrace = t.indexOf("{");
-        if (firstBrace !== -1) {
-          const braceEnd = findBalancedBraceRespectingStrings(t, firstBrace);
-          if (braceEnd !== -1) {
-            const obj = JSON.parse(t.slice(firstBrace, braceEnd + 1)) as Record<string, unknown>;
-            // erDiagram como string (clave "erDiagram") o diagramaER como array
-            const erStr = (obj.erDiagram ?? obj.diagramaER ?? obj.diagrama_er) as string | string[] | undefined;
-            if (typeof erStr === "string" && erStr.trim().length > 0 && /erDiagram|{\s*string\s+id/i.test(erStr)) {
-              return "```mermaid\n" + erStr.trim() + "\n```";
-            }
-            const diagramaArr = erStr as string[] | undefined;
-            if (Array.isArray(diagramaArr) && diagramaArr.length > 0) {
-              const joined = diagramaArr.map((s) => (typeof s === "string" ? s : String(s)).trim()).filter(Boolean).join("\n");
-              if (/erDiagram|{\s*string\s+id/i.test(joined)) return "```mermaid\n" + joined + "\n```";
-            }
-          }
-        }
-      } catch {
-        // fall through to placeholder
-      }
-      return "```mermaid\nerDiagram\n  \n```";
-    }
-    return _match;
-  });
-}
-
-/**
- * Dentro de bloques ```mermaid con erDiagram: relaciones : "id" con el nombre de FK correcto.
- * Anotaciones PK/FK: un solo marcador por línea (PK si es PK+FK); ver repairErDiagramPkFkCommas.
- */
-function sanitizeErDiagramInMermaidBlocks(body: string): string {
-  return body.replace(/```mermaid\s*([\s\S]*?)```/gi, (_match, inner) => {
-    let content = inner.trim();
-    if (!/erDiagram/i.test(content)) return _match;
-    // Relaciones: etiquetar con la columna FK real (user_id, application_id, role_id)
-    content = content.replace(
-      /(users\s*\|\|--o\{\s*sessions\s*:\s*)"id"/gi,
-      '$1"user_id"'
-    );
-    content = content.replace(
-      /(applications\s*\|\|--o\{\s*roles\s*:\s*)"id"/gi,
-      '$1"application_id"'
-    );
-    content = content.replace(
-      /(users\s*\|\|--o\{\s*user_application_roles\s*:\s*)"id"/gi,
-      '$1"user_id"'
-    );
-    content = content.replace(
-      /(roles\s*\|\|--o\{\s*user_application_roles\s*:\s*)"id"/gi,
-      '$1"role_id"'
-    );
-    content = content.replace(/(\|\|--o\{\s*sessions\s*:\s*)"id"/gi, '$1"user_id"');
-    content = content.replace(/(\|\|--o\{\s*roles\s*:\s*)"id"/gi, '$1"application_id"');
-    return "```mermaid\n" + content + "\n```";
-  });
-}
-
-/**
- * En la sección 3: deja solo la primera ### Diagrama, primer ```mermaid y primer ```TechnicalMetadata.
- * Colapsa bloques TechnicalMetadata duplicados consecutivos y trunca tras el primero.
- */
-function deduplicateSection3DiagramAndMetadata(body: string): string {
-  let out = body.replace(
-    /(```TechnicalMetadata\s*[\s\S]*?```)\s*(?:\s*```TechnicalMetadata\s*[\s\S]*?```\s*)+/gi,
-    "$1\n\n"
-  );
-  const techMetaRe = /```TechnicalMetadata\s*[\s\S]*?```/gi;
-  const firstTech = techMetaRe.exec(out);
-  if (!firstTech) return out;
-  const cutEnd = firstTech.index + firstTech[0].length;
-  const rest = out.slice(cutEnd).replace(/^\s*\n+/, "").trim();
-  if (!rest) return out;
-  if (/```TechnicalMetadata|###\s*Diagrama\s+entidad-relación|```mermaid/i.test(rest)) {
-    return out.slice(0, cutEnd).trim();
-  }
-  return out;
-}
-
-/**
- * Corrige doble fence en bloques Mermaid: ```mermaid\n```mermaid → ```mermaid; ```\n``` → ```.
- * Evita "Syntax error in text" en Mermaid cuando el LLM o el pipeline generó apertura/cierre duplicados.
- */
-export function fixDoubleMermaidFences(draft: string): string {
-  if (!draft || typeof draft !== "string") return draft;
-  let out = draft;
-  // Doble apertura: ```mermaid seguido de ```mermaid en la siguiente línea
-  out = out.replace(/```mermaid\s*\n+\s*```mermaid/gi, "```mermaid");
-  // Doble cierre: ```\n``` al final de un bloque (deja solo un ```)
-  out = out.replace(/\n```\s*\n+\s*```\s*(\n|$)/g, "\n```$1");
-  return out;
-}
-
-/**
- * Dentro de cada bloque ```mermaid...``` reemplaza literales \n (backslash-n) por newline real.
- * El LLM a veces devuelve diagramaEr con \\n en el string; así Mermaid puede parsear el diagrama.
- */
-export function unescapeMermaidLiteralNewlines(draft: string): string {
-  if (!draft || typeof draft !== "string") return draft;
-  return draft.replace(/```mermaid\s*([\s\S]*?)```/gi, (_match, inner) => {
-    const unescaped = inner.replace(/\\n/g, "\n").replace(/\\r/g, "\r").replace(/\\t/g, "\t");
-    return "```mermaid\n" + unescaped + "\n```";
-  });
-}
 
 /**
  * Estandariza el formato del MDD: títulos canónicos, SQL en bloque ```sql, evita líneas sueltas como "3".
@@ -3604,9 +3440,7 @@ export function normalizeMddFormat(draft: string): string {
     let trimmedBody = body.replace(/^\s*\n+/, "").trim();
     // Quitar línea suelta "3" dentro del cuerpo por si no la pilló el replace global
     trimmedBody = trimmedBody.replace(/\n\s*\d+\s*\n/g, "\n").trim();
-    trimmedBody = stripJsonFromMermaidBlocks(trimmedBody);
-    trimmedBody = sanitizeErDiagramInMermaidBlocks(trimmedBody);
-    trimmedBody = deduplicateSection3DiagramAndMetadata(trimmedBody);
+    trimmedBody = repairMermaidBlocksInSectionBody(trimmedBody);
 
     const fromJson = convertSection2JsonBodyToMarkdown(trimmedBody);
     if (fromJson) {
