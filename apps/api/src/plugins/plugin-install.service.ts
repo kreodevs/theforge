@@ -163,7 +163,51 @@ export class PluginInstallService {
       );
     }
 
-    return this.installFromBuffer(Buffer.from(await res.arrayBuffer()));
+    const result = await this.installFromBuffer(
+      Buffer.from(await res.arrayBuffer()),
+    );
+
+    if (result.reloaded) {
+      await this.tryRegisterPluginLicense(result.pluginId, key, portalUrl);
+    } else {
+      this.logger.warn(
+        `Plugin ${result.pluginId} instalado pero no cargado; registerLicense omitido hasta recargar`,
+      );
+    }
+
+    return {
+      ...result,
+      message: result.reloaded
+        ? "Plugin instalado, cargado y licencia registrada (si el plugin lo soporta)"
+        : result.message,
+    };
+  }
+
+  private async tryRegisterPluginLicense(
+    pluginId: string,
+    licenseKey: string,
+    licensePortalUrl: string,
+  ): Promise<void> {
+    const plugin = this.pluginLoader.getPlugin(pluginId);
+    if (!plugin?.registerLicense) {
+      this.logger.debug(
+        `Plugin ${pluginId} no implementa registerLicense(); licencia no propagada al plugin`,
+      );
+      return;
+    }
+
+    try {
+      await plugin.registerLicense({
+        licenseKey,
+        licensePortalUrl,
+        source: "portal",
+      });
+      this.logger.log(`Licencia registrada en plugin ${pluginId}`);
+    } catch (err) {
+      this.logger.warn(
+        `registerLicense falló para ${pluginId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   async installFromUrl(downloadUrl: string): Promise<PluginInstallResult> {

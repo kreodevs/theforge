@@ -1,6 +1,6 @@
 # Plugins comerciales — empaquetado e instalación
 
-The Forge permite **extender el Workshop** con funcionalidades comerciales (por ejemplo **EVD — Executive Visual Deck**) sin modificar el código del core. Cada plugin es un paquete independiente que el servidor carga en runtime.
+The Forge permite **extender el Workshop** con plugins comerciales o propios sin modificar el código del core. Cada plugin es un paquete independiente que el servidor carga en runtime.
 
 > **En una frase:** el autor del plugin genera un archivo **`.tfplugin`** (ZIP + manifest); un administrador lo instala desde **Ajustes → Plugins** — sin consola ni `git clone` en producción.
 
@@ -10,8 +10,8 @@ The Forge permite **extender el Workshop** con funcionalidades comerciales (por 
 
 | Rol | Qué te interesa |
 |-----|-----------------|
-| **Administrador de The Forge** | Instalar EVD u otros plugins desde la UI o con licencia |
-| **Desarrollador de plugin** (p. ej. equipo EVD) | Empaquetar el plugin según las reglas del manifest |
+| **Administrador de The Forge** | Instalar plugins desde la UI y configurar lo que cada uno pida |
+| **Desarrollador de plugin** | Empaquetar el plugin según las reglas del manifest |
 | **DevOps / Dokploy** | Volumen persistente y reinicio del worker tras instalar |
 
 ---
@@ -209,34 +209,36 @@ Si falta información (id, versión, artifacts), pregúntame antes de empaquetar
 
 ## Tutorial: instalar un plugin (administrador)
 
-### Opción A — Subir archivo
+### Paso 1 — Subir el paquete
 
 1. Entrá a **Ajustes → Plugins**.
-2. En **Instalación de plugins**, pulsá **Subir .tfplugin**.
-3. Elegí el archivo (p. ej. `com.kreodevs.evd@2.1.0.tfplugin`).
-4. Esperá confirmación. El plugin debe aparecer como **cargado** (icono verde).
-5. Si el plugin expone ajustes (licencia, modelo de imagen…), configurálos en la misma pantalla.
+2. Pulsá **Subir .tfplugin** y elegí el archivo (p. ej. `com.empresa.mi-plugin@1.0.0.tfplugin`).
+3. Esperá confirmación. El plugin debe aparecer en la lista como **cargado** (icono verde).
+4. Si queda **en disco, no cargado**, pulsá **Recargar** o revisá los logs del API.
 
-### Opción B — Clave de licencia (EVD y comerciales)
+### Paso 2 — Configurar (solo si el plugin lo pide)
 
-1. **Ajustes → Plugins**.
-2. En **Instalar con licencia**, indicá el id del plugin (ej. `com.kreodevs.evd`).
-3. Pegá la clave de licencia (`tk_…`).
-4. Pulsá **Instalar**. El core descarga el ZIP del portal y lo instala.
+Cada plugin declara sus ajustes con `getSettingsPanels()`. Tras cargarse, los paneles aparecen en **Ajustes por plugin** debajo de la instalación:
+
+- **Licencia** — campo tipo contraseña si el plugin comercial lo requiere.
+- **Modelos, calidad, etc.** — lo que declare el plugin en sus campos.
+
+No hay formulario de licencia global: solo ves los campos que el plugin instalado expone.
 
 ### Verificar
 
 | Dónde | Qué comprobar |
 |-------|----------------|
-| Ajustes → Plugins | Plugin en lista **instalado** y **cargado** |
-| Workshop | Sidebar con el artifact del plugin (p. ej. EVD) |
+| Ajustes → Plugins | Plugin **instalado** y **cargado** |
+| Ajustes por plugin | Paneles del plugin (licencia, etc.) |
+| Workshop | Sidebar con artifacts del plugin |
 | API | `GET /api/plugins/health` — id en `pluginIds` |
 
 ### Desinstalar o actualizar
 
 - **Quitar:** botón **Quitar** junto al plugin (solo admin).
 - **Actualizar:** subí un `.tfplugin` con versión mayor; reemplaza la instalación anterior.
-- **Recargar:** botón **Recargar** si el plugin está en disco pero no cargado.
+- **Recargar:** si está en disco pero no cargado.
 
 ---
 

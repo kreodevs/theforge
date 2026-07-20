@@ -177,17 +177,25 @@ export function PluginSettingsSection() {
   const [panels, setPanels] = useState<PluginSettingsPanelDefinition[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const reloadPanels = useCallback(() => {
+    setLoading(true);
     void fetchPluginSettingsPanels()
       .then(setPanels)
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    reloadPanels();
+  }, [reloadPanels]);
+
   if (loading) {
     return (
-      <div className="flex items-center gap-2 text-sm text-[var(--foreground-muted)]">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Buscando plugins…
+      <div className="space-y-6">
+        <PluginInstallSection onChanged={reloadPanels} />
+        <div className="flex items-center gap-2 text-sm text-[var(--foreground-muted)]">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Buscando plugins…
+        </div>
       </div>
     );
   }
@@ -195,16 +203,16 @@ export function PluginSettingsSection() {
   if (panels.length === 0) {
     return (
       <div className="space-y-6">
-        <PluginInstallSection />
+        <PluginInstallSection onChanged={reloadPanels} />
         <Card className="border-[var(--border)] bg-[var(--card)]">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Puzzle className="h-5 w-5 text-[var(--primary)]" />
-            Plugins
+            Ajustes por plugin
           </CardTitle>
           <CardDescription>
-            No hay plugins con ajustes instalados. Los paneles de configuración de plugins
-            comerciales (p. ej. EVD) aparecen aquí cuando el plugin está cargado en el servidor.
+            Tras instalar y cargar un plugin, sus paneles de configuración (licencia, modelos,
+            preferencias, etc.) aparecen aquí. Cada plugin declara los campos que necesita.
           </CardDescription>
         </CardHeader>
         </Card>
@@ -214,7 +222,7 @@ export function PluginSettingsSection() {
 
   return (
     <div className="space-y-6">
-      <PluginInstallSection />
+      <PluginInstallSection onChanged={reloadPanels} />
       {panels.map((panel) => (
         <PluginSettingsPanelCard key={`${panel.pluginId}:${panel.id}`} panel={panel} />
       ))}

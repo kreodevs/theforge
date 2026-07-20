@@ -9,6 +9,7 @@ import type {
   PluginArtifactContext,
   PluginArtifactResult,
   PluginArtifactTypeDeclaration,
+  PluginLicenseRegistration,
   PluginSettingsPanelDefinition,
 } from "@theforge/shared-types";
 
@@ -234,5 +235,16 @@ export interface ITheForgePlugin {
   onUserSettingsSaved?(
     settings: Record<string, unknown>,
     context: { userId: string },
+  ): Promise<void> | void;
+
+  /**
+   * Registra licencia comercial en el plugin (p. ej. tras install desde portal).
+   * Opcional — plugins sin licencia no lo implementan.
+   * El core lo invoca tras `installFromLicensePortal` si el plugin está cargado.
+   *
+   * @optional
+   */
+  registerLicense?(
+    registration: PluginLicenseRegistration,
   ): Promise<void> | void;
 }

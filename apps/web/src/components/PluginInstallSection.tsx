@@ -14,7 +14,6 @@ import {
   clearPluginArtifactsCache,
   fetchInstalledPlugins,
   installPluginFromFile,
-  installPluginFromLicense,
   reloadPlugins,
   uninstallPlugin,
 } from "@/utils/pluginApi";
@@ -25,15 +24,19 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  Input,
 } from "@/components/ui";
 
 function canManagePlugins(role: string | undefined): boolean {
   return role === "admin" || role === "super_admin";
 }
 
+type PluginInstallSectionProps = {
+  /** Tras instalar, desinstalar o recargar — p. ej. refrescar paneles de ajustes. */
+  onChanged?: () => void;
+};
+
 /** Instalación y estado de plugins (.tfplugin) — solo administradores gestionan. */
-export function PluginInstallSection() {
+export function PluginInstallSection({ onChanged }: PluginInstallSectionProps) {
   const role = getStoredUser()?.role;
   const isManager = canManagePlugins(role);
 
@@ -42,8 +45,6 @@ export function PluginInstallSection() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [licenseKey, setLicenseKey] = useState("");
-  const [pluginId, setPluginId] = useState("com.kreodevs.evd");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -67,34 +68,26 @@ export function PluginInstallSection() {
     window.setTimeout(() => setSuccess(""), 4000);
   };
 
+  const notifyChanged = () => {
+    clearPluginArtifactsCache();
+    onChanged?.();
+  };
+
   const handleFile = async (file: File | undefined) => {
     if (!file || !isManager) return;
     setBusy(true);
     setError("");
     try {
       const result = await installPluginFromFile(file);
-      clearPluginArtifactsCache();
       await refresh();
-      flashSuccess(`${result.name} v${result.version} instalado`);
+      notifyChanged();
+      flashSuccess(
+        result.reloaded
+          ? `${result.name} v${result.version} instalado. Revisa los ajustes del plugin si requiere licencia u otra configuración.`
+          : `${result.name} v${result.version} instalado en disco. Pulsa Recargar si no aparece cargado.`,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al instalar");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleLicenseInstall = async () => {
-    if (!isManager || !licenseKey.trim()) return;
-    setBusy(true);
-    setError("");
-    try {
-      const result = await installPluginFromLicense(licenseKey.trim(), pluginId.trim() || undefined);
-      clearPluginArtifactsCache();
-      await refresh();
-      flashSuccess(`${result.name} instalado desde licencia`);
-      setLicenseKey("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error con la licencia");
     } finally {
       setBusy(false);
     }
@@ -106,8 +99,8 @@ export function PluginInstallSection() {
     setError("");
     try {
       await reloadPlugins();
-      clearPluginArtifactsCache();
       await refresh();
+      notifyChanged();
       flashSuccess("Plugins recargados");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al recargar");
@@ -123,8 +116,8 @@ export function PluginInstallSection() {
     setError("");
     try {
       await uninstallPlugin(id);
-      clearPluginArtifactsCache();
       await refresh();
+      notifyChanged();
       flashSuccess("Plugin desinstalado");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al desinstalar");
@@ -141,8 +134,8 @@ export function PluginInstallSection() {
           Instalación de plugins
         </CardTitle>
         <CardDescription>
-          Paquetes <code className="text-xs">.tfplugin</code> (ZIP + manifest). Core{" "}
-          {status?.coreVersion ?? "…"} — directorio{" "}
+          Sube paquetes <code className="text-xs">.tfplugin</code> (ZIP + manifest). Core{" "}
+          {status?.coreVersion ?? "…"} —{" "}
           <span className="font-mono text-xs">{status?.pluginsDirectory ?? "…"}</span>
         </CardDescription>
       </CardHeader>
@@ -157,8 +150,8 @@ export function PluginInstallSection() {
         {status ? (
           <div className="rounded-md border border-[var(--border)] bg-[var(--muted)]/30 p-3 text-sm">
             <p>
-              <strong>{status.health.loaded}</strong> plugin(s) cargado(s) ·{" "}
-              <strong>{status.installed.length}</strong> instalado(s) en disco ·{" "}
+              <strong>{status.health.loaded}</strong> cargado(s) ·{" "}
+              <strong>{status.installed.length}</strong> en disco ·{" "}
               <strong>{status.health.artifactCount}</strong> artifact(s)
             </p>
           </div>
@@ -202,66 +195,39 @@ export function PluginInstallSection() {
           </ul>
         ) : (
           <p className="text-sm text-[var(--foreground-muted)]">
-            No hay plugins instalados en el servidor. Sube un paquete .tfplugin o activa con licencia
-            (p. ej. EVD).
+            No hay plugins instalados. Sube un paquete <code className="text-xs">.tfplugin</code>.
+            Si el plugin requiere licencia u otros datos, aparecerán los ajustes correspondientes
+            debajo una vez cargado.
           </p>
         )}
 
         {isManager ? (
-          <div className="space-y-4 border-t border-[var(--border)] pt-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <input
-                id="plugin-tfplugin-upload"
-                type="file"
-                accept=".tfplugin,.zip,application/zip"
-                className="hidden"
-                disabled={busy}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  e.target.value = "";
-                  void handleFile(f);
-                }}
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={busy}
-                onClick={() => document.getElementById("plugin-tfplugin-upload")?.click()}
-              >
-                <Upload className="mr-2 h-4 w-4" />
-                Subir .tfplugin
-              </Button>
-              <Button type="button" variant="outline" disabled={busy} onClick={() => void handleReload()}>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Recargar
-              </Button>
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Instalar con licencia (portal)</p>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  placeholder="Plugin id (ej. com.kreodevs.evd)"
-                  value={pluginId}
-                  onChange={(e) => setPluginId(e.target.value)}
-                  className="font-mono text-xs sm:flex-1"
-                />
-                <Input
-                  type="password"
-                  placeholder="Clave de licencia (tk_…)"
-                  value={licenseKey}
-                  onChange={(e) => setLicenseKey(e.target.value)}
-                  className="font-mono text-xs sm:flex-[2]"
-                />
-                <Button
-                  type="button"
-                  disabled={busy || !licenseKey.trim()}
-                  onClick={() => void handleLicenseInstall()}
-                >
-                  Instalar
-                </Button>
-              </div>
-            </div>
+          <div className="flex flex-wrap items-center gap-3 border-t border-[var(--border)] pt-4">
+            <input
+              id="plugin-tfplugin-upload"
+              type="file"
+              accept=".tfplugin,.zip,application/zip"
+              className="hidden"
+              disabled={busy}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                void handleFile(f);
+              }}
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => document.getElementById("plugin-tfplugin-upload")?.click()}
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              Subir .tfplugin
+            </Button>
+            <Button type="button" variant="outline" disabled={busy} onClick={() => void handleReload()}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Recargar
+            </Button>
           </div>
         ) : (
           <p className="text-xs text-[var(--foreground-muted)]">

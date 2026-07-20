@@ -87,3 +87,11 @@ export interface PluginSettingsPanelDefinition {
 
 /** Mapa userId → ajustes por pluginId */
 export type PluginUserSettingsMap = Record<string, Record<string, unknown>>;
+
+/** Payload para registrar licencia en un plugin (p. ej. tras install desde portal). */
+export interface PluginLicenseRegistration {
+  licenseKey?: string;
+  licensePortalUrl?: string;
+  /** Origen del registro — informativo para logs/auditoría. */
+  source?: "portal" | "manual" | "env";
+}

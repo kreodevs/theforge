@@ -76,9 +76,10 @@ Opcional: copiar el bloque a `.cursor/rules/plugin-packaging.mdc` en el repo del
 Administradores pueden:
 
 - Subir un archivo `.tfplugin`
-- Instalar con clave de licencia (portal devuelve el ZIP)
-- Instalar desde URL HTTPS firmada
+- Configurar licencia y demás campos en **Ajustes por plugin** (paneles declarados por cada plugin cargado vía `getSettingsPanels()`)
 - Desinstalar / recargar plugins
+
+La API acepta `licenseKey` + `pluginId` para el **portal de licencias** (no en la UI de install). Tras descargar e instalar el `.tfplugin`, el core llama `registerLicense()` en el plugin si lo implementa — así la clave queda en el plugin sin formulario global.
 
 ### Desde la API
 
