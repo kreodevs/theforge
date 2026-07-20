@@ -692,3 +692,11 @@ Fase 6 (legacy/MCP)
 | `views/workshop/WorkshopLegacyPanels.tsx` + types | ✅ |
 | `views/workshop/WorkshopBenchmarkPanel.tsx` + types | ✅ |
 | `WorkshopView.tsx` — cluster legacy/benchmark (~4 380 L) | ✅ |
+
+### Fase 5 — Workshop frontend (incremento 5c)
+
+| Ítem | Estado |
+|------|--------|
+| `views/workshop/WorkshopMddPanel.tsx` + types | ✅ |
+| Panel MDD (gates, toolbar acciones, viewer) extraído | ✅ |
+| `WorkshopView.tsx` — ~4 193 L | ✅ |
