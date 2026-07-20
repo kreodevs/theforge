@@ -747,3 +747,11 @@ Fase 6 (legacy/MCP)
 |------|--------|
 | `useWorkshopDocToolbarProps.ts` + types | ✅ |
 | `WorkshopView.tsx` — ~2 862 L | ✅ |
+
+### Fase 5 — Workshop frontend (incremento 5k–5l)
+
+| Ítem | Estado |
+|------|--------|
+| `useWorkshopDocBubbleMenuItems.ts` + types | ✅ |
+| `useWorkshopModalsProps.ts` + types | ✅ |
+| `WorkshopView.tsx` — ~2 510 L | ✅ |
