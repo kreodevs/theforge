@@ -32,10 +32,6 @@ import {
   heuristicUiComponentResolver,
   type UiComponentResolver,
 } from "../ui-mcp/ui-component-resolver.js";
-import {
-  UI_MCP_DESIGN_SYSTEM_HEADING,
-  buildUiMcpDesignSystemSection,
-} from "../ui-mcp/ui-design-system-section.util.js";
 import { SemaphoreService } from "../engine/semaphore.service.js";
 import { normalizeMddContent } from "../engine/mdd-markdown-parser.js";
 import { shouldReplacePhase0SummaryWithBorrador, generateAemBodySchema, isPhase0BorradorJson, isBrownfieldCapable } from "@theforge/shared-types";
@@ -77,10 +73,7 @@ import type { IOrchestratorProjectsPort } from "./projects-service.port.js";
 import { resolveUrls } from "../scraper/url-utils.js";
 import {
   createProjectSchema,
-  createStageBodySchema,
   cloneProjectBodySchema,
-  patchStageBodySchema,
-  transitionStageBodySchema,
   getAllowedStageTransitions,
   updateProjectSchema,
   parseAgentGovernanceScaffold,
@@ -97,20 +90,6 @@ import {
 import {
   suggestAgentGovernanceArtifacts,
 } from "../ai/utils/suggest-agent-governance-artifacts.js";
-import { UX_UI_GUIDE_PROMPT } from "../ai/prompts/ux-ui-guide-prompt.js";
-import { uxGuideLlmOptions } from "../ai/ux-guide-llm-context.js";
-import { buildMddContextForUxGuide } from "../ai/utils/mdd-ux-guide-brief.util.js";
-import { appendUxGuideDesignAttribution } from "../design-ref/design-ref-attribution.util.js";
-import {
-  composeDesignSystemFromRef,
-  composeDesignSystemFromScannedTokens,
-} from "../design-ref/compose-design-system-from-ref.util.js";
-import {
-  lintDesignMd,
-  formatLintSummary,
-  type DesignMdLintResult,
-} from "../design-ref/design-md-lint.util.js";
-import { scanUrlForDesignTokens } from "../design-ref/scan-url.util.js";
 import {
   brdGenerationErrorMessage,
   extractBrdFromLlmResponse,
@@ -119,13 +98,18 @@ import {
 import { validateBrdMermaidOutput } from "../ai/utils/brd-mermaid-validate.util.js";
 import { truncateSourceDocForBrdPrompt } from "../ai/utils/dbga-prompt-context.util.js";
 
-import { loadAccessibleProjectWithStages } from "./project-access.util.js";
+import {
+  loadAccessibleProjectWithStages,
+  projectWhereForOwner,
+} from "./project-access.util.js";
 import {
   buildSemaphoreBaseFromProject,
   mergeProjectFieldsForSemaphore,
 } from "./project-mdd-persist.util.js";
 import { ProjectMddPersistService } from "./project-mdd-persist.service.js";
 import { DeliverablesCascadeService } from "./deliverables-cascade.service.js";
+import { ProjectStageService } from "./project-stage.service.js";
+import { ProjectUxGuideService } from "./project-ux-guide.service.js";
 import {
   buildConstitutionMarkdown,
   pickMddFromStages,
@@ -146,7 +130,6 @@ import {
 import type { MddDeliveryGateResult } from "@theforge/shared-types";
 import {
   persistStageAndProjectDeliverables,
-  seedActiveStageDeliverables,
 } from "./stage-deliverable-persist.util.js";
 import { pickDeliverableFieldsFromSource, type ProjectDeliverableSource } from "@theforge/shared-types";
 import { reconcileExportScaffold, buildAgentGovernanceInput, synthesizeExportGovernanceScaffold } from "./handoff-export.util.js";
@@ -209,7 +192,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
 
   /** Scope de proyecto autenticado (AsyncLocalStorage). Solo owner. */
   private projectWhereForUser(projectId: string) {
-    return { id: projectId, userId: getRequestUserId() };
+    return projectWhereForOwner(projectId);
   }
 
   /**
@@ -249,6 +232,9 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly mddPersist: ProjectMddPersistService,
     @Inject(forwardRef(() => DeliverablesCascadeService))
     private readonly deliverablesCascade: DeliverablesCascadeService,
+    private readonly projectStage: ProjectStageService,
+    @Inject(forwardRef(() => ProjectUxGuideService))
+    private readonly uxGuide: ProjectUxGuideService,
   ) {}
 
   /** Contexto de hooks para generadores LLM (MDD/BRD desde stage primaria). */
@@ -373,32 +359,6 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       phase0GapsJson: project.phase0Gaps,
       coverageBlueprintContent: project.blueprintContent,
     };
-  }
-
-  /**
-   * Anexa la sección de design system inferida del MCP gráfico compatible activo, si lo hay.
-   * Fallback: si no hay MCP activo o falla, devuelve el contenido sin cambios (design system del LLM/Ariadne).
-   */
-  private async appendUiMcpDesignSystem(content: string): Promise<string> {
-    try {
-      if (!(await this.uiMcpClient.isActive())) return content;
-      if (content.includes(UI_MCP_DESIGN_SYSTEM_HEADING)) return content;
-      const [tokens, meta, components] = await Promise.all([
-        this.uiMcpClient.getDesignTokens(),
-        this.uiMcp.getActiveCompatibleMeta(),
-        this.uiMcpClient.listComponents(),
-      ]);
-      const section = buildUiMcpDesignSystemSection({
-        tokens,
-        components,
-        libraryName: meta?.libraryName,
-        libraryVersion: meta?.libraryVersion,
-      });
-      if (!section) return content;
-      return `${content.trimEnd()}\n\n${section}`;
-    } catch {
-      return content;
-    }
   }
 
   /** Resolver de componentes UI: MCP compatible activo o heurístico (fallback por-entidad). */
@@ -1035,154 +995,11 @@ export class ProjectsService implements IOrchestratorProjectsPort {
 
   /** Una sola etapa ACTIVE por proyecto: demueve las demás ACTIVE a SUPERSEDED. */
   async activateStageExclusive(projectId: string, stageId: string): Promise<void> {
-    const uid = getRequestUserId();
-    const stage = await this.prisma.stage.findFirst({
-      where: {
-        id: stageId,
-        projectId,
-        project: { id: projectId, userId: uid },
-      },
-    });
-    if (!stage) throw new NotFoundException("Etapa no encontrada");
-
-    const previousActive = await this.prisma.stage.findMany({
-      where: { projectId, workflowStatus: StageStatus.ACTIVE, NOT: { id: stageId } },
-      select: { id: true, ordinal: true, deliverableSnapshot: true },
-    });
-
-    for (const prev of previousActive) {
-      if (prev.ordinal >= 1) {
-        await ensureStageDeliverableSnapshotIfMissing(this.prisma, prev.id, projectId, {
-          source: "cascade",
-        }).catch((err) =>
-          this.logger.warn(
-            `[Stage] snapshot before activate: ${err instanceof Error ? err.message : String(err)}`,
-          ),
-        );
-      }
-    }
-
-    await this.prisma.$transaction([
-      this.prisma.stage.updateMany({
-        where: { projectId, workflowStatus: StageStatus.ACTIVE },
-        data: { workflowStatus: StageStatus.SUPERSEDED },
-      }),
-      this.prisma.stage.update({
-        where: { id: stageId },
-        data: { workflowStatus: StageStatus.ACTIVE },
-      }),
-    ]);
-
-    const previousStageId = previousActive.sort((a, b) => a.ordinal - b.ordinal)[0]?.id;
-    await seedActiveStageDeliverables(this.prisma, stageId, projectId, {
-      previousStageId: previousStageId ?? null,
-    }).catch((err) =>
-      this.logger.warn(
-        `[Stage] seed deliverables on activate: ${err instanceof Error ? err.message : String(err)}`,
-      ),
-    );
+    return this.projectStage.activateStageExclusive(projectId, stageId);
   }
 
   async createStage(projectId: string, body: unknown) {
-    const dto = createStageBodySchema.parse(body);
-    const project = await this.prisma.project.findFirst({
-      where: this.projectWhereForUser(projectId),
-      include: { stages: { orderBy: { ordinal: "asc" } } },
-    });
-    if (!project) throw new NotFoundException("Project not found");
-
-    const maxOrd = project.stages.length ? Math.max(...project.stages.map((s) => s.ordinal)) : 0;
-    const ordinal = dto.ordinal ?? maxOrd + 1;
-    if (project.stages.some((s) => s.ordinal === ordinal)) {
-      throw new BadRequestException(`Ya existe una etapa con ordinal ${ordinal}`);
-    }
-
-    let mddContent: string | null = null;
-    let stStatus: Status = Status.ROJO;
-    let precisionScore = 0;
-    let legacyChangeState: any = null;
-    if (dto.copyMddFromStageId?.trim()) {
-      const copyFrom = dto.copyMddFromStageId.trim();
-      const src = project.stages.find((s) => s.id === copyFrom);
-      if (!src) throw new BadRequestException("copyMddFromStageId no pertenece al proyecto");
-      mddContent = src.mddContent;
-      stStatus = src.status;
-      precisionScore = src.precisionScore;
-    }
-    if (dto.copyLegacyChangeFromStageId?.trim()) {
-      const copyFrom = dto.copyLegacyChangeFromStageId.trim();
-      const src = project.stages.find((s) => s.id === copyFrom);
-      if (!src) throw new BadRequestException("copyLegacyChangeFromStageId no pertenece al proyecto");
-      legacyChangeState = src.legacyChangeState as object | null;
-    }
-
-    const isLegacy = project.projectType === "LEGACY";
-    const newStage = await this.prisma.stage.create({
-      data: {
-        projectId,
-        ordinal,
-        key: dto.key ?? `stage_${ordinal}`,
-        name: dto.name?.trim() ?? `Etapa ${ordinal}`,
-        workflowStatus: StageStatus.DRAFT,
-        mddContent,
-        status: stStatus,
-        precisionScore,
-        legacyChangeState,
-        isLegacy,
-        theforgeProjectId: project.theforgeProjectId,
-      },
-    });
-
-    if (dto.activate !== false) {
-      await this.activateStageExclusive(projectId, newStage.id);
-    }
-
-    const withEst = await this.prisma.stage.findUnique({
-      where: { id: newStage.id },
-      include: { estimation: true },
-    });
-    if (withEst?.mddContent?.trim()) {
-      await this.estimationRecalc.recalcAndUpsert(withEst.id, {
-        mddContent: withEst.mddContent,
-        infraContent: project.infraContent ?? null,
-        status: withEst.status,
-      });
-    }
-
-    const out = await this.prisma.stage.findFirst({
-      where: { id: newStage.id },
-      include: { estimation: true },
-    });
-    if (!out) throw new NotFoundException("Etapa no encontrada tras crear");
-
-    // Cambio 3: Sincronizar con FalkorDB al crear etapa — nodo + relación con línea base
-    if (isLegacy) {
-      // Sincronizar nodo LegacyStage
-      this.graphMemory.syncLegacyStage({
-        stageId: out.id,
-        projectId,
-        ordinal: out.ordinal,
-        name: out.name ?? "",
-        theforgeProjectId: project.theforgeProjectId ?? undefined,
-      }).catch(() => {});
-      // Relacionar con etapa anterior (ordinal N-1) para FalkorDB DERIVED_FROM
-      if (out.ordinal > 1) {
-        const parentOrdinal = out.ordinal - 1;
-        const parentStage = project.stages.find((s) => s.ordinal === parentOrdinal);
-        if (parentStage) {
-          this.graphMemory.syncLegacyStage({
-            stageId: out.id,
-            projectId,
-            ordinal: out.ordinal,
-            name: out.name ?? "",
-            parentStageId: parentStage.id,
-            theforgeProjectId: project.theforgeProjectId ?? undefined,
-          }).catch(() => {});
-        }
-      }
-    }
-
-    return { stage: out };
+    return this.projectStage.createStage(projectId, body);
   }
 
   async listStages(projectId: string) {
@@ -1309,81 +1126,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
   }
 
   async patchStage(projectId: string, stageId: string, body: unknown) {
-    const dto = patchStageBodySchema.parse(body);
-    const uid = getRequestUserId();
-    // Verificar acceso SHARED/PRIVATE
-    await this.assertProjectAccess(projectId);
-    const stage = await this.prisma.stage.findFirst({
-      where: { id: stageId, projectId },
-      include: { estimation: true },
-    });
-    if (!stage) throw new NotFoundException("Etapa no encontrada");
-
-    // Solo el owner puede activar etapas o cambiar ordinal (cambios estructurales)
-    const ownerId = (await this.prisma.project.findUnique({ where: { id: projectId }, select: { userId: true } }))?.userId;
-    const isOwner = ownerId === uid;
-    if ((dto.activate === true || dto.ordinal !== undefined) && !isOwner) {
-      throw new BadRequestException("Only the project owner can restructure stages");
-    }
-    if (dto.activate === true) {
-      await this.activateStageExclusive(projectId, stageId);
-    }
-
-    const data: Prisma.StageUpdateInput = {};
-    if (dto.name !== undefined) data.name = dto.name.trim();
-    if (dto.key !== undefined) data.key = dto.key.trim();
-    if (dto.brdContent !== undefined) {
-      const trimmed = dto.brdContent.trim();
-      data.brdContent = trimmed ? prependDocumentTimestamps(trimmed) : null;
-    }
-    if (dto.ordinal !== undefined) {
-      const clash = await this.prisma.stage.findFirst({
-        where: {
-          projectId,
-          ordinal: dto.ordinal,
-          NOT: { id: stageId },
-        },
-      });
-      if (clash) throw new BadRequestException(`Ordinal ${dto.ordinal} ya está en uso`);
-      data.ordinal = dto.ordinal;
-    }
-
-    const terminalStatuses: StageStatus[] = [
-      StageStatus.COMPLETED,
-      StageStatus.ARCHIVED,
-      StageStatus.SUPERSEDED,
-    ];
-    if (dto.workflowStatus !== undefined) {
-      data.workflowStatus = dto.workflowStatus as StageStatus;
-      if (terminalStatuses.includes(dto.workflowStatus as StageStatus)) {
-        await ensureStageDeliverableSnapshotIfMissing(this.prisma, stageId, projectId, {
-          source: "manual",
-        }).catch((err) =>
-          this.logger.warn(
-            `[Stage] snapshot on ${dto.workflowStatus}: ${err instanceof Error ? err.message : String(err)}`,
-          ),
-        );
-      }
-      if (dto.workflowStatus === StageStatus.ACTIVE) {
-        await this.activateStageExclusive(projectId, stageId);
-      }
-    }
-
-    if (Object.keys(data).length > 0) {
-      await this.prisma.stage.update({ where: { id: stageId }, data });
-    }
-
-    // Bitácora para brdContent
-    if (dto.brdContent !== undefined) {
-      await this.changeLog.log(projectId, "brdContent", dto.brdContent);
-    }
-
-    const out = await this.prisma.stage.findFirst({
-      where: { id: stageId, projectId },
-      include: { estimation: true },
-    });
-    if (!out) throw new NotFoundException("Etapa no encontrada");
-    return { stage: out };
+    return this.projectStage.patchStage(projectId, stageId, body);
   }
 
   async getStageDetail(projectId: string, stageId: string) {
@@ -1438,62 +1181,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
   }
 
   async transitionStage(projectId: string, stageId: string, body: unknown) {
-    const dto = transitionStageBodySchema.parse(body);
-    await this.assertProjectAccess(projectId);
-
-    const stage = await this.prisma.stage.findFirst({
-      where: { id: stageId, projectId },
-      include: { estimation: true },
-    });
-    if (!stage) throw new NotFoundException("Etapa no encontrada");
-
-    const allowed = getAllowedStageTransitions(stage.workflowStatus);
-    if (!allowed.includes(dto.action)) {
-      throw new BadRequestException({
-        message: `Transición "${dto.action}" no permitida desde estado ${stage.workflowStatus}`,
-        code: "STAGE_TRANSITION_NOT_ALLOWED",
-        currentStatus: stage.workflowStatus,
-        allowedTransitions: allowed,
-      });
-    }
-
-    const previousStatus = stage.workflowStatus;
-
-    if (dto.action === "activate") {
-      const uid = getRequestUserId();
-      const ownerId = (
-        await this.prisma.project.findUnique({ where: { id: projectId }, select: { userId: true } })
-      )?.userId;
-      if (ownerId !== uid) {
-        throw new BadRequestException("Only the project owner can activate stages");
-      }
-      await this.activateStageExclusive(projectId, stageId);
-    } else if (dto.action === "complete") {
-      await this.patchStage(projectId, stageId, { workflowStatus: StageStatus.COMPLETED });
-    } else if (dto.action === "archive") {
-      await this.patchStage(projectId, stageId, { workflowStatus: StageStatus.ARCHIVED });
-    } else if (dto.action === "reopen") {
-      await this.prisma.stage.update({
-        where: { id: stageId },
-        data: { workflowStatus: StageStatus.DRAFT },
-      });
-    }
-
-    const out = await this.prisma.stage.findFirst({
-      where: { id: stageId, projectId },
-      include: { estimation: true },
-    });
-    if (!out) throw new NotFoundException("Etapa no encontrada");
-
-    return {
-      stage: out,
-      transition: {
-        action: dto.action,
-        reason: dto.reason ?? null,
-        previousStatus,
-        newStatus: out.workflowStatus,
-      },
-    };
+    return this.projectStage.transitionStage(projectId, stageId, body);
   }
 
   async generateBenchmark(projectId: string, userIdea: string, urls?: string[]) {
@@ -1628,270 +1316,19 @@ export class ProjectsService implements IOrchestratorProjectsPort {
    * Guía UX/UI generada por LLM (mismo criterio que legacy, sin Relic).
    */
   async generateUxUiGuide(projectId: string) {
-    const project = await this.assertProjectAccess(projectId);
-    const mdd = this.constitutionMarkdown(project);
-    const bp = (project.blueprintContent ?? "").trim();
-
-    // P0: default auto-match si el proyecto aún no tiene referencia
-    if (!project.uxGuideDesignRef?.trim()) {
-      await this.prisma.project.update({
-        where: { id: projectId },
-        data: { uxGuideDesignRef: "auto" },
-      });
-      project.uxGuideDesignRef = "auto";
-    }
-
-    const uxPrompt =
-      "Genera la Guía UX/UI completa en markdown según tu rol. El contexto (resumen MDD, Blueprint y documentos SDD) está en el system prompt. Termina el documento con la línea exacta ---FIN_UX_UI--- y deja un mensaje breve para el usuario después.";
-    const mddBrief = buildMddContextForUxGuide(mdd);
-    const raw = await this.ai.generateUxUiGuide(
-      uxPrompt,
-      this.buildHookGenerateOpts(project),
-      {
-        activeTab: "ux-ui-guide",
-        currentMddContent: mddBrief || undefined,
-        currentBlueprintContent: bp || undefined,
-        ...uxGuideLlmOptions(project, mdd),
-      },
-    );
-    const clean = (raw ?? "").replace(/\n?-{1,}FIN_UX_UI-{1,}[\s\S]*$/i, "").trim();
-    if (!clean) {
-      // LLM no generó contenido de documento (solo chat) — no persistas nada
-      this.logger.warn(`[generateUxUiGuide] LLM returned empty content for project ${projectId}`);
-      return project;
-    }
-    // Si el LLM no generó YAML frontmatter, agregar uno por defecto
-    let finalContent = cleanDocumentContent(clean);
-    if (!finalContent.startsWith("---")) {
-      const name = project.name ?? projectId;
-      finalContent = `---
-name: ${JSON.stringify(name)}
----
-\n\n${finalContent}`;
-    }
-    // Design system inferido del MCP gráfico compatible activo (fallback: heurístico/Ariadne del LLM).
-    finalContent = await this.appendUiMcpDesignSystem(finalContent);
-    finalContent = appendUxGuideDesignAttribution(finalContent, project.uxGuideDesignRef, mdd);
-    const updated = await this.update(projectId, { uxUiGuideContent: finalContent });
-    this.notifyPluginAfterDocumentPersist(
-      "ux-ui-guide",
-      projectId,
-      updated.uxUiGuideContent ?? finalContent,
-    );
-    return updated;
+    return this.uxGuide.generateUxUiGuide(projectId);
   }
 
   /**
    * Design System determinista desde biblioteca (DESIGN.md importado o catálogo builtin).
-   * Sin LLM: auto-match heurístico + composición local.
    */
-  async composeUxGuideFromDesignRef(projectId: string): Promise<{
-    composed: boolean;
-    uxUiGuideContent?: string | null;
-    effectiveSlug?: string;
-    source?: string;
-    referenceName?: string;
-    reason?: string;
-    lint?: DesignMdLintResult;
-  }> {
-    const project = await this.assertProjectAccess(projectId);
-    const mdd = this.constitutionMarkdown(project);
-    const projectName = project.name || projectId;
-    const storedRef = project.uxGuideDesignRef?.trim() ?? null;
-
-    // Rama URL personalizada: escanea el sitio y compone con sus colores reales.
-    if (storedRef?.startsWith("url:")) {
-      const url = storedRef.slice("url:".length).trim();
-      const scan = await scanUrlForDesignTokens(url);
-      if ("error" in scan) {
-        this.logger.warn(`[scan-url] project=${projectId} url=${url} fallo: ${scan.error}`);
-        return { composed: false, reason: "url-scan-failed" };
-      }
-      const content = cleanDocumentContent(
-        composeDesignSystemFromScannedTokens(projectName, scan.tokens),
-      );
-      const updated = await this.update(projectId, { uxUiGuideContent: content });
-      const lint = await this.lintUxGuideContent(content, projectId, storedRef);
-      return {
-        composed: true,
-        uxUiGuideContent: updated.uxUiGuideContent,
-        effectiveSlug: storedRef,
-        source: "url-scan",
-        referenceName: scan.tokens.name,
-        lint,
-      };
-    }
-
-    const composed = composeDesignSystemFromRef({
-      projectName,
-      storedRef: project.uxGuideDesignRef,
-      mddContext: mdd,
-    });
-    if (!composed) {
-      return { composed: false, reason: "no-reference-match" };
-    }
-
-    let finalContent = cleanDocumentContent(composed.content);
-    finalContent = appendUxGuideDesignAttribution(finalContent, project.uxGuideDesignRef, mdd);
-    const updated = await this.update(projectId, { uxUiGuideContent: finalContent });
-
-    const lint = await this.lintUxGuideContent(finalContent, projectId, composed.effectiveSlug);
-
-    return {
-      composed: true,
-      uxUiGuideContent: updated.uxUiGuideContent,
-      effectiveSlug: composed.effectiveSlug,
-      source: composed.source,
-      referenceName: composed.referenceName,
-      lint,
-    };
+  async composeUxGuideFromDesignRef(projectId: string) {
+    return this.uxGuide.composeUxGuideFromDesignRef(projectId);
   }
 
-  /**
-   * Valida el DESIGN.md generado con el CLI oficial `@google/design.md` y
-   * registra un resumen (contraste WCAG, orden de secciones, refs rotas).
-   * Nunca lanza: el linter es informativo y no bloquea el pipeline.
-   */
-  private async lintUxGuideContent(
-    content: string,
-    projectId: string,
-    effectiveSlug?: string,
-  ): Promise<DesignMdLintResult> {
-    const lint = await lintDesignMd(content);
-    if (lint.unavailable) return lint;
-
-    const scope = `[design.md lint] project=${projectId} ref=${effectiveSlug ?? "-"}`;
-    const summary = formatLintSummary(lint);
-    if (lint.summary.errors > 0) {
-      this.logger.warn(`${scope} ${summary}`);
-    } else if (lint.summary.warnings > 0) {
-      this.logger.log(`${scope} ${summary}`);
-    }
-
-    for (const finding of lint.findings) {
-      if (finding.severity === "info") continue;
-      const where = finding.path ? ` (${finding.path})` : "";
-      const line = `${scope} ${finding.severity}${where}: ${finding.message}`;
-      if (finding.severity === "error") this.logger.warn(line);
-      else this.logger.log(line);
-    }
-
-    return lint;
-  }
-
-  /**
-   * Repara/regenera solo el YAML frontmatter de la Guía UX/UI usando el MDD como contexto.
-   * NO regenera el cuerpo markdown — solo los tokens de diseño (colors, typography, etc.).
-   * Útil cuando el LLM generó el markdown pero sin YAML, o el YAML está incompleto.
-   */
+  /** Repara/regenera solo el YAML frontmatter de la Guía UX/UI. */
   async repairUxUiGuideYaml(projectId: string): Promise<string> {
-    const project = await this.assertProjectAccess(projectId);
-    const mdd = this.constitutionMarkdown(project);
-    const bp = (project.blueprintContent ?? "").trim();
-    const spec = (project.specContent ?? "").trim();
-    const name = project.name || projectId;
-
-    const repairPrompt =
-      `Eres un diseñador UX/UI experto. Genera ÚNICAMENTE el YAML frontmatter del archivo DESIGN.md ` +
-      `para el proyecto "${name}", basándote en el contexto del MDD, Blueprint y Spec que recibes.\n\n` +
-      `IMPORTANTE: Responde ÚNICAMENTE con el bloque YAML entre --- y ---. NO incluyas secciones markdown, ` +
-      `ni texto explicativo, ni bloques \`\`\` alrededor.\n\n` +
-      `El YAML debe tener esta estructura:\n` +
-      `---\n` +
-      `version: alpha\n` +
-      `name: "${name}"\n` +
-      `description: "Frase corta que capture la personalidad visual del proyecto"\n` +
-      `colors:\n` +
-      `  primary: "#<Hex>"\n` +
-      `  secondary: "#<Hex>"\n` +
-      `  tertiary: "#<Hex>"\n` +
-      `  neutral: "#<Hex>"\n` +
-      `  foreground: "#<Hex>"\n` +
-      `  background: "#<Hex>"\n` +
-      `  muted: "#<Hex>"\n` +
-      `  border: "#<Hex>"\n` +
-      `  danger: "#<Hex>"\n` +
-      `  success: "#<Hex>"\n` +
-      `  warning: "#<Hex>"\n` +
-      `  info: "#<Hex>"\n` +
-      `typography:\n` +
-      `  font-sans: ["Inter", "system-ui", "sans-serif"]\n` +
-      `  h1: { fontFamily: "...", fontSize: 32px, fontWeight: 700, lineHeight: 40px, letterSpacing: "-0.02em" }\n` +
-      `  h2: { similar }\n` +
-      `  h3: { similar }\n` +
-      `  body-md: { fontFamily: "...", fontSize: 16px, fontWeight: 400, lineHeight: 24px }\n` +
-      `  body-sm: { similar }\n` +
-      `  label-sm: { similar }\n` +
-      `rounded:\n` +
-      `  none: 0px\n` +
-      `  sm: 6px\n` +
-      `  md: 12px\n` +
-      `  lg: 20px\n` +
-      `  xl: 28px\n` +
-      `  full: 9999px\n` +
-      `spacing:\n` +
-      `  xxs: 2px\n` +
-      `  xs: 4px\n` +
-      `  sm: 8px\n` +
-      `  md: 16px\n` +
-      `  lg: 24px\n` +
-      `  xl: 32px\n` +
-      `  2xl: 48px\n` +
-      `  3xl: 64px\n` +
-      `elevation:\n` +
-      `  card: { boxShadow: "..." }\n` +
-      `  dropdown: { boxShadow: "..." }\n` +
-      `  modal: { boxShadow: "..." }\n` +
-      `  sticky: { boxShadow: "..." }\n` +
-      `components:\n` +
-      `  button-primary: { backgroundColor, textColor, rounded, padding, typography }\n` +
-      `  button-secondary: { ... }\n` +
-      `  button-ghost: { ... }\n` +
-      `  button-danger: { ... }\n` +
-      `  card: { ... }\n` +
-      `  badge: { ... }\n` +
-      `  input: { ... }\n` +
-      `  modal: { ... }\n` +
-      `  toast: { ... }\n` +
-      `  skeleton: { ... }\n` +
-      `---\n\n` +
-      `Contexto del proyecto:\n` +
-      `${mdd ? `## Resumen MDD (design system)\n${buildMddContextForUxGuide(mdd)}` : ""}\n\n` +
-      `${bp ? `## Blueprint\n${bp.slice(0, 3000)}` : ""}\n\n` +
-      `${spec ? `## Spec\n${spec.slice(0, 2000)}` : ""}\n\n` +
-      `NO incluyas secciones markdown, solo el bloque YAML.`;
-
-    const mddBrief = buildMddContextForUxGuide(mdd);
-    const raw = await this.ai.generateResponse(repairPrompt, [], {
-      systemPrompt: UX_UI_GUIDE_PROMPT,
-      activeTab: "ux-ui-guide",
-      currentMddContent: mddBrief || undefined,
-      currentBlueprintContent: bp || undefined,
-      ...uxGuideLlmOptions(project, mdd),
-    });
-
-    const trimmed = (raw ?? "").trim();
-    // Extract YAML block (between --- markers)
-    const yamlMatch = trimmed.match(/^---\n([\s\S]*?)\n---/);
-    if (!yamlMatch) {
-      // Maybe the LLM returned just the YAML without --- markers, or with extra text
-      // Try to find any YAML-like structure
-      if (trimmed.startsWith("---")) {
-        // Already a frontmatter block, extract it
-        const endIdx = trimmed.indexOf("---", 3);
-        if (endIdx !== -1) {
-          return trimmed.slice(0, endIdx + 3);
-        }
-        return trimmed;
-      }
-      this.logger.warn(`[repairUxUiGuideYaml] No YAML block found in LLM response for ${projectId}`);
-      // Return minimal default YAML
-      return `---
-name: ${JSON.stringify(name)}
----`;
-    }
-
-    return `---\n${yamlMatch[1]!.trim()}\n---`;
+    return this.uxGuide.repairUxUiGuideYaml(projectId);
   }
 
   /**

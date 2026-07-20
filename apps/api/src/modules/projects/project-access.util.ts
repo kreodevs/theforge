@@ -23,3 +23,8 @@ export async function loadAccessibleProjectWithStages(
   if (!isOwner && !isShared) throw new NotFoundException("Project not found");
   return project as Project & { stages: StageWithEstimation[] };
 }
+
+/** Scope de proyecto solo owner (p. ej. crear etapa). */
+export function projectWhereForOwner(projectId: string) {
+  return { id: projectId, userId: getRequestUserId() };
+}

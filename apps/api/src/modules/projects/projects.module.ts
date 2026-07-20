@@ -28,6 +28,8 @@ import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
 import { TasksGenerationPipelineService } from "./tasks-generation-pipeline.service.js";
 import { ProjectMddPersistService } from "./project-mdd-persist.service.js";
 import { DeliverablesCascadeService } from "./deliverables-cascade.service.js";
+import { ProjectStageService } from "./project-stage.service.js";
+import { ProjectUxGuideService } from "./project-ux-guide.service.js";
 import { ProjectNotionPortabilityService } from "./project-notion-portability.service.js";
 import { PluginModule } from "../../plugins/plugin.module.js";
 
@@ -65,6 +67,8 @@ import { PluginModule } from "../../plugins/plugin.module.js";
     ProjectNotionPortabilityService,
     ProjectMddPersistService,
     DeliverablesCascadeService,
+    ProjectStageService,
+    ProjectUxGuideService,
   ],
   exports: [ProjectsService, ProjectIntegrationService, IntegrationAgentService, ProjectMergeService, PROJECTS_ORCHESTRATOR_PORT, DeliverablesQueueService, ProjectGenerationGuardService, PlanValidationService],
 })
