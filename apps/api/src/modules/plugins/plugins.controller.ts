@@ -2,20 +2,27 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Inject,
   NotFoundException,
   Param,
   Post,
   Put,
+  UploadedFile,
+  UseInterceptors,
   forwardRef,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { PluginLoaderService } from "../../plugins/plugin-loader.service.js";
 import { PluginArtifactService } from "../../plugins/plugin-artifact.service.js";
 import { PluginUserSettingsService } from "../../plugins/plugin-user-settings.service.js";
+import { PluginInstallService } from "../../plugins/plugin-install.service.js";
 import { DeliverablesQueueService } from "../projects/deliverables-queue.service.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { getRequestUserId } from "../../common/request-user.store.js";
+import { requireAdmin } from "../../common/guards/role.helpers.js";
+import type { PluginInstallRequestBody } from "@theforge/shared-types";
 import type { Prisma } from "@theforge/database";
 
 @Controller("plugins")
@@ -24,6 +31,7 @@ export class PluginsController {
     private readonly pluginLoader: PluginLoaderService,
     private readonly pluginArtifact: PluginArtifactService,
     private readonly pluginUserSettings: PluginUserSettingsService,
+    private readonly pluginInstall: PluginInstallService,
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => DeliverablesQueueService))
     private readonly deliverablesQueue: DeliverablesQueueService,
@@ -39,9 +47,54 @@ export class PluginsController {
     return this.pluginLoader.getHealthSnapshot();
   }
 
+  @Get("installed")
+  getInstalled() {
+    return this.pluginInstall.listInstalled();
+  }
+
   @Get("settings-panels")
   getSettingsPanels() {
     return this.pluginLoader.getSettingsPanels();
+  }
+
+  @Post("install")
+  @UseInterceptors(FileInterceptor("file"))
+  async installPlugin(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() body: PluginInstallRequestBody,
+  ) {
+    requireAdmin();
+
+    if (file?.buffer?.length) {
+      return this.pluginInstall.installFromBuffer(file.buffer);
+    }
+
+    if (body?.downloadUrl?.trim()) {
+      return this.pluginInstall.installFromUrl(body.downloadUrl.trim());
+    }
+
+    if (body?.licenseKey?.trim()) {
+      return this.pluginInstall.installFromLicensePortal(
+        body.licenseKey.trim(),
+        body.pluginId?.trim(),
+      );
+    }
+
+    throw new BadRequestException(
+      "Envía un archivo .tfplugin (multipart field 'file') o downloadUrl / licenseKey en JSON",
+    );
+  }
+
+  @Delete("installed/:pluginId")
+  async uninstallPlugin(@Param("pluginId") pluginId: string) {
+    requireAdmin();
+    return this.pluginInstall.uninstall(decodeURIComponent(pluginId));
+  }
+
+  @Post("reload")
+  async reloadPlugins() {
+    requireAdmin();
+    return this.pluginInstall.reloadAll();
   }
 
   @Get("user-settings")

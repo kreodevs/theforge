@@ -21,6 +21,17 @@ mi-plugin/
 5. **Hooks** (opcional) — `beforeDocumentRender`, `afterDocumentRender`, `afterDocumentPersist`, `onProjectCreate`, `onProjectUpdate`.
 6. **Probar sin plugin** — el core debe arrancar igual si la carpeta no existe o falla el import.
 
+## Empaquetar para producción
+
+```bash
+pnpm exec tsx ../../scripts/pack-theforge-plugin.ts \
+  --dir . \
+  --out dist/com.empresa.mi-plugin@1.0.0.tfplugin \
+  --id com.empresa.mi-plugin
+```
+
+Ver `docs/PLUGINS-PACKAGING.md`.
+
 ## Referencias
 
 - Stub de desarrollo: `plugins-enabled/stub-plugin/`

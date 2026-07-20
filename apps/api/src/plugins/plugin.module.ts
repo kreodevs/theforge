@@ -3,6 +3,7 @@ import { PluginLoaderService, PLUGIN_LOADER_SERVICE } from "./plugin-loader.serv
 import { PluginUserSettingsService } from "./plugin-user-settings.service.js";
 import { PluginDocumentPipelineService } from "./plugin-document-pipeline.service.js";
 import { PluginArtifactService } from "./plugin-artifact.service.js";
+import { PluginInstallService } from "./plugin-install.service.js";
 import { PrismaModule } from "../prisma/prisma.module.js";
 
 /**
@@ -21,6 +22,7 @@ import { PrismaModule } from "../prisma/prisma.module.js";
     PluginDocumentPipelineService,
     PluginArtifactService,
     PluginUserSettingsService,
+    PluginInstallService,
     {
       provide: PLUGIN_LOADER_SERVICE,
       useExisting: PluginLoaderService,
@@ -32,6 +34,7 @@ import { PrismaModule } from "../prisma/prisma.module.js";
     PluginDocumentPipelineService,
     PluginArtifactService,
     PluginUserSettingsService,
+    PluginInstallService,
   ],
 })
 export class PluginModule {}

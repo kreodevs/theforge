@@ -8,6 +8,10 @@ Expone el contrato runtime entre el core y plugins cargados dinámicamente.
 |--------|------|-------------|
 | GET | `/plugins/artifacts` | Artifact types (incluye `pluginId`, `generatable`, `requires`, `contentType`) |
 | GET | `/plugins/health` | Snapshot de boot: plugins cargados, hooks registrados |
+| GET | `/plugins/installed` | Plugins en disco + estado cargado (manifest) |
+| POST | `/plugins/install` | Instalar `.tfplugin` (multipart `file`) o JSON `{ downloadUrl, licenseKey, pluginId }` — **admin** |
+| DELETE | `/plugins/installed/:pluginId` | Desinstalar — **admin** |
+| POST | `/plugins/reload` | Re-escaneo de directorios — **admin** |
 | GET | `/plugins/settings-panels` | Paneles de Ajustes declarados por plugins |
 | GET | `/plugins/user-settings` | Mapa de ajustes del usuario autenticado |
 | GET | `/plugins/:pluginId/user-settings` | Ajustes de un plugin |
@@ -16,20 +20,20 @@ Expone el contrato runtime entre el core y plugins cargados dinámicamente.
 | PUT | `/plugins/projects/:id/plugin-data/:pluginId` | Persistir datos del plugin |
 | POST | `/plugins/projects/:id/generate/:pluginId/:artifactId` | Generar artifact (cola `plugin-artifact` o sync) |
 
+## Instalación ZIP (`.tfplugin`)
+
+Ver **`docs/PLUGINS-PACKAGING.md`**: manifest, `pnpm exec tsx scripts/pack-theforge-plugin.ts`, volumen Dokploy `theforge_plugins`.
+
 ## Servicios relacionados (core)
 
 | Servicio | Rol |
 |----------|-----|
-| `PluginLoaderService` | Carga dinámica, registro de hooks y artifacts |
-| `PluginDocumentPipelineService` | Invoca `before/afterDocumentRender` y lifecycle desde generadores |
+| `PluginLoaderService` | Carga dinámica, registro de hooks y artifacts, reload |
+| `PluginInstallService` | Validación ZIP, escritura en `PLUGINS_DIRECTORY`, portal de licencias |
+| `PluginDocumentPipelineService` | Invoca hooks desde generadores |
 | `PluginArtifactService` | Orquesta `generateArtifact` → `project.pluginData` |
 | `PluginUserSettingsService` | Persistencia en `UserAISettings.pluginUserSettings` |
 
-## Motor de generación
-
-- **Modo A (hooks):** `AiService.finishDocumentGeneration` → `generateWithDocumentHooks` — integrado en todos los generadores LLM de entregables (`spec`, `architecture`, `tasks`, `blueprint`, `api-contracts`, `logic-flows`, `infra`, `use-cases`, `user-stories`, `agent-governance`, `aem`, `ux-ui-guide`). `ProjectsService` pasa `hookContext` vía `withHookGenerateOpts` y dispara `afterDocumentPersist` tras persistir.
-- **Modo B (artifacts):** `POST …/generate/…` → cola `plugin-artifact`; Workshop usa `generateAndPollPluginArtifact` con guards de `requires` y estado `generationStatus.busy`.
-
 Plugin de desarrollo: `plugins-enabled/stub-plugin/` (`dev.theforge.stub-plugin`).
 
-Ver `docs/PLUGINS.md` y `docs/ARCHITECTURE_PLUGINS.md`.
+Ver `docs/PLUGINS.md`, `docs/ARCHITECTURE_PLUGINS.md`, `docs/PLUGINS-PACKAGING.md`.

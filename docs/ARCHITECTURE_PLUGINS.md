@@ -30,7 +30,8 @@ Esta propuesta cubre:
 - ✅ Documentación para desarrolladores de plugins
 
 No cubre (futuras iteraciones):
-- 🔲 Plugin marketplace / registry
+- 🔲 Plugin marketplace / registry remoto (catálogo)
+- ✅ Instalación ZIP `.tfplugin` desde UI — ver `docs/PLUGINS-PACKAGING.md`
 - 🔲 Hot-reload de plugins sin reiniciar
 - 🔲 Sandbox/aislamiento de plugins (security)
 

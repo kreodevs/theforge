@@ -137,6 +137,9 @@ services:
       MDD_BULLMQ_CONCURRENCY: ${MDD_BULLMQ_CONCURRENCY:-2}
       DELIVERABLES_BULLMQ_CONCURRENCY: ${DELIVERABLES_BULLMQ_CONCURRENCY:-2}
       LEGACY_DELIVERABLES_BULLMQ_CONCURRENCY: ${LEGACY_DELIVERABLES_BULLMQ_CONCURRENCY:-1}
+      PLUGINS_DIRECTORY: /app/plugins-enabled
+    volumes:
+      - theforge_plugins:/app/plugins-enabled
     depends_on:
       theforge-db:
         condition: service_healthy
@@ -188,6 +191,9 @@ services:
       DEBUG_MCP: ${DEBUG_MCP:-0}
       PRISMA_RESOLVE_ROLLED_BACK: ${PRISMA_RESOLVE_ROLLED_BACK:-}
       AGENT_EVALUATOR_LEGACY: ${AGENT_EVALUATOR_LEGACY:-}
+      PLUGINS_DIRECTORY: /app/plugins-enabled
+    volumes:
+      - theforge_plugins:/app/plugins-enabled
     depends_on:
       theforge-db:
         condition: service_healthy
@@ -293,3 +299,4 @@ volumes:
   theforge_db_data:
   theforge_redis_queue_data:
   falkor_sdd_data:
+  theforge_plugins:

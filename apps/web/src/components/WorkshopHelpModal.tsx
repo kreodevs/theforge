@@ -17,6 +17,7 @@ import {
   ListTodo,
   Palette,
   Plug,
+  Puzzle,
   Scale,
   Server,
   Sparkles,
@@ -29,6 +30,7 @@ import {
 import convergeWebhookCiHelp from "../content/help/converge-webhook-ci.md?raw";
 import generacionSegundoPlanoHelp from "../content/help/generacion-en-segundo-plano.md?raw";
 import legacyNewIntegrationHelp from "../content/help/legacy-new-integration.md?raw";
+import pluginsPackagingHelp from "../content/help/plugins-packaging.md?raw";
 import validacionPlanAriadneHelp from "../content/help/validacion-plan-ariadne.md?raw";
 import {
   Button,
@@ -59,6 +61,7 @@ const SECTION_ICONS: Record<string, LucideIcon> = {
   manual: BookOpen,
   "legacy-new-integration": Link2,
   "converge-webhook-ci": Webhook,
+  "plugins-packaging": Puzzle,
   "generacion-segundo-plano": Clock,
   "validacion-plan-ariadne": ShieldCheck,
   sdd: Brain,
@@ -157,6 +160,8 @@ const SECTIONS: HelpSection[] = [
       "Automatizar drift brownfield en CI (Ariadne + webhook converge): ver **Webhook converge (CI)** en esta misma ayuda.",
       "",
       "Generación en background y orden de entregables: ver **Generación en segundo plano**.",
+      "",
+      "Plugins comerciales (EVD, empaquetado `.tfplugin`, instalación desde UI): ver **Plugins (.tfplugin)** en esta misma ayuda.",
     ].join("\n"),
   },
   {
@@ -178,6 +183,11 @@ const SECTIONS: HelpSection[] = [
     id: "converge-webhook-ci",
     label: "Webhook converge (CI)",
     content: convergeWebhookCiHelp.trim(),
+  },
+  {
+    id: "plugins-packaging",
+    label: "Plugins (.tfplugin)",
+    content: pluginsPackagingHelp.trim(),
   },
   {
     id: "sdd",
@@ -740,7 +750,7 @@ const SECTIONS: HelpSection[] = [
 ];
 
 const NAV_GROUPS: { label: string; sectionIds: string[] }[] = [
-  { label: "Guía", sectionIds: ["manual", "generacion-segundo-plano", "validacion-plan-ariadne", "legacy-new-integration", "converge-webhook-ci"] },
+  { label: "Guía", sectionIds: ["manual", "generacion-segundo-plano", "validacion-plan-ariadne", "legacy-new-integration", "converge-webhook-ci", "plugins-packaging"] },
   { label: "Metodología", sectionIds: ["sdd"] },
   {
     label: "Documentos",

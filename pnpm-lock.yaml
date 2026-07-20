@@ -12,6 +12,12 @@ importers:
         specifier: ^1.2.8
         version: 1.2.8(@types/react-dom@18.3.7(@types/react@18.3.29))(@types/react@18.3.29)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
     devDependencies:
+      '@theforge/shared-types':
+        specifier: workspace:*
+        version: link:packages/shared-types
+      jszip:
+        specifier: ^3.10.1
+        version: 3.10.1
       tsx:
         specifier: ^4.19.2
         version: 4.22.3

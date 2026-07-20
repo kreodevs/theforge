@@ -21,9 +21,12 @@
     "db:push": "turbo run db:push --filter=@theforge/database",
     "db:migrate": "turbo run db:migrate --filter=@theforge/database",
     "rotate-master-key": "tsx scripts/rotate-master-key.ts",
+    "pack:plugin": "tsx scripts/pack-theforge-plugin.ts",
     "setup:githooks": "sh scripts/setup-githooks.sh"
   },
   "devDependencies": {
+    "@theforge/shared-types": "workspace:*",
+    "jszip": "^3.10.1",
     "tsx": "^4.19.2",
     "turbo": "^2.3.0"
   },

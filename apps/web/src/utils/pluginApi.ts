@@ -4,7 +4,11 @@
 
 import type {
   ArtifactTypeDefinition,
+  PluginInstallResult,
+  PluginInstalledListResponse,
+  PluginReloadResult,
   PluginSettingsPanelDefinition,
+  PluginUninstallResult,
   PluginUserSettingsMap,
 } from "@theforge/shared-types";
 import { MIN_GENERATION_CONTENT_LEN } from "@theforge/shared-types";
@@ -37,6 +41,69 @@ export async function fetchPluginSettingsPanels(): Promise<PluginSettingsPanelDe
 export function clearPluginArtifactsCache(): void {
   cachedArtifacts = null;
   cachedSettingsPanels = null;
+}
+
+export async function fetchInstalledPlugins(): Promise<PluginInstalledListResponse> {
+  const res = await apiFetch(`${API_BASE}/plugins/installed`);
+  if (!res.ok) throw new Error("No se pudo obtener plugins instalados");
+  return res.json();
+}
+
+export async function installPluginFromFile(file: File): Promise<PluginInstallResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await apiFetch(`${API_BASE}/plugins/install`, { method: "POST", body: form });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(
+      typeof (err as { message?: string }).message === "string"
+        ? (err as { message: string }).message
+        : "Error al instalar el plugin",
+    );
+  }
+  return res.json();
+}
+
+export async function installPluginFromLicense(
+  licenseKey: string,
+  pluginId?: string,
+): Promise<PluginInstallResult> {
+  const res = await apiFetch(`${API_BASE}/plugins/install`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ licenseKey, pluginId }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(
+      typeof (err as { message?: string }).message === "string"
+        ? (err as { message: string }).message
+        : "Licencia rechazada o portal no disponible",
+    );
+  }
+  return res.json();
+}
+
+export async function uninstallPlugin(pluginId: string): Promise<PluginUninstallResult> {
+  const res = await apiFetch(
+    `${API_BASE}/plugins/installed/${encodeURIComponent(pluginId)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(
+      typeof (err as { message?: string }).message === "string"
+        ? (err as { message: string }).message
+        : "Error al desinstalar",
+    );
+  }
+  return res.json();
+}
+
+export async function reloadPlugins(): Promise<PluginReloadResult> {
+  const res = await apiFetch(`${API_BASE}/plugins/reload`, { method: "POST" });
+  if (!res.ok) throw new Error("Error al recargar plugins");
+  return res.json();
 }
 
 export async function fetchPluginUserSettings(

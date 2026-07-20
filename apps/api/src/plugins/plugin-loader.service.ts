@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   Injectable,
@@ -42,6 +42,9 @@ export class PluginLoaderService implements OnModuleInit {
   /** Mapa de plugins cargados: id → instancia */
   private readonly plugins = new Map<string, ITheForgePlugin>();
 
+  /** Mapa pluginId → ruta en disco */
+  private readonly pluginPaths = new Map<string, string>();
+
   /** Registro de hooks por tipo */
   private readonly beforeDocumentRenderHooks: HookEntry<
     NonNullable<ITheForgePlugin["beforeDocumentRender"]>
@@ -76,7 +79,7 @@ export class PluginLoaderService implements OnModuleInit {
       }
 
       const entries = readdirSync(dir, { withFileTypes: true })
-        .filter((e) => e.isDirectory())
+        .filter((e) => e.isDirectory() && !e.name.startsWith("."))
         .map((e) => join(dir, e.name));
 
       for (const pluginPath of entries) {
@@ -172,6 +175,7 @@ export class PluginLoaderService implements OnModuleInit {
 
       // Registro en el sistema
       this.plugins.set(instance.id, instance);
+      this.pluginPaths.set(instance.id, pluginPath);
       this.registerHooks(instance);
 
       this.logger.log(
@@ -338,12 +342,11 @@ export class PluginLoaderService implements OnModuleInit {
   }
 
   /** Obtiene la lista de directorios donde escanear plugins */
-  private resolvePluginDirectories(): string[] {
+  resolvePluginDirectories(): string[] {
     const fromEnv = this.configService.get<string>("plugins.directory");
     const dirs: string[] = [];
-    if (fromEnv) dirs.push(fromEnv);
+    if (fromEnv?.trim()) dirs.push(resolve(fromEnv.trim()));
 
-    // Try multiple locations for flexibility (dev from apps/api/, prod from dist/, etc.)
     const candidates = [
       resolve(process.cwd(), "plugins-enabled"),
       resolve(process.cwd(), "../../plugins-enabled"),
@@ -353,6 +356,117 @@ export class PluginLoaderService implements OnModuleInit {
     }
 
     return dirs;
+  }
+
+  /** Directorio principal para instalación (configurado o heurística). */
+  getPrimaryPluginDirectory(): string {
+    const dirs = this.resolvePluginDirectories();
+    const configured = this.configService.get<string>("plugins.directory")?.trim();
+    if (configured) {
+      if (!existsSync(configured)) {
+        mkdirSync(configured, { recursive: true });
+      }
+      return resolve(configured);
+    }
+
+    for (const dir of dirs) {
+      if (existsSync(dir)) return dir;
+    }
+
+    const fallback = resolve(process.cwd(), "../../plugins-enabled");
+    if (!existsSync(fallback)) {
+      mkdirSync(fallback, { recursive: true });
+    }
+    return fallback;
+  }
+
+  /** Descarga un plugin del runtime (hooks + mapa). */
+  async unloadPlugin(pluginId: string): Promise<void> {
+    const plugin = this.plugins.get(pluginId);
+    if (plugin?.onPluginDestroy) {
+      try {
+        await plugin.onPluginDestroy();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`onPluginDestroy failed for ${pluginId}: ${msg}`);
+      }
+    }
+
+    this.plugins.delete(pluginId);
+    this.pluginPaths.delete(pluginId);
+    this.removeHooksForPlugin(pluginId);
+    this.logger.log(`Plugin unloaded: ${pluginId}`);
+  }
+
+  /** Recarga un plugin ya instalado en disco. */
+  async reloadPlugin(pluginId: string): Promise<boolean> {
+    const folderName = pluginId.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const primary = this.getPrimaryPluginDirectory();
+    const candidates = [
+      this.pluginPaths.get(pluginId),
+      join(primary, folderName),
+    ].filter((p): p is string => Boolean(p));
+
+    await this.unloadPlugin(pluginId);
+
+    for (const pluginPath of candidates) {
+      if (!existsSync(pluginPath)) continue;
+      await this.tryLoadPlugin(pluginPath);
+      return this.plugins.has(pluginId);
+    }
+
+    return false;
+  }
+
+  /** Re-escanea todos los directorios de plugins. */
+  async reloadAll(): Promise<void> {
+    const ids = [...this.plugins.keys()];
+    for (const id of ids) {
+      await this.unloadPlugin(id);
+    }
+
+    const directories = this.resolvePluginDirectories();
+    for (const dir of directories) {
+      if (!existsSync(dir)) continue;
+      const entries = readdirSync(dir, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+        .map((e) => join(dir, e.name));
+
+      for (const pluginPath of entries) {
+        await this.tryLoadPlugin(pluginPath);
+      }
+    }
+  }
+
+  private removeHooksForPlugin(pluginId: string): void {
+    const filter = <H>(arr: HookEntry<H>[]) =>
+      arr.filter((e) => e.pluginId !== pluginId);
+
+    this.beforeDocumentRenderHooks.splice(
+      0,
+      this.beforeDocumentRenderHooks.length,
+      ...filter(this.beforeDocumentRenderHooks),
+    );
+    this.afterDocumentRenderHooks.splice(
+      0,
+      this.afterDocumentRenderHooks.length,
+      ...filter(this.afterDocumentRenderHooks),
+    );
+    this.afterDocumentPersistHooks.splice(
+      0,
+      this.afterDocumentPersistHooks.length,
+      ...filter(this.afterDocumentPersistHooks),
+    );
+    this.onProjectCreateHooks.splice(
+      0,
+      this.onProjectCreateHooks.length,
+      ...filter(this.onProjectCreateHooks),
+    );
+    this.onProjectUpdateHooks.splice(
+      0,
+      this.onProjectUpdateHooks.length,
+      ...filter(this.onProjectUpdateHooks),
+    );
   }
 
   // ────────────────────────

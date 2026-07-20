@@ -550,6 +550,9 @@ npx tsc
 
 ## 7. Instalación de Plugins
 
+> **Recomendado (prod / Dokploy):** paquete `.tfplugin` — ver **`docs/PLUGINS-PACKAGING.md`**.  
+> Instalación desde UI: Ajustes → Plugins, o `POST /api/plugins/install`.
+
 ### Método A: Git Clone (Desarrollo)
 
 ```bash

@@ -9,6 +9,7 @@ import {
   fetchPluginUserSettings,
   savePluginUserSettings,
 } from "@/utils/pluginApi";
+import { PluginInstallSection } from "@/components/PluginInstallSection";
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
@@ -193,7 +194,9 @@ export function PluginSettingsSection() {
 
   if (panels.length === 0) {
     return (
-      <Card className="border-[var(--border)] bg-[var(--card)]">
+      <div className="space-y-6">
+        <PluginInstallSection />
+        <Card className="border-[var(--border)] bg-[var(--card)]">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Puzzle className="h-5 w-5 text-[var(--primary)]" />
@@ -204,12 +207,14 @@ export function PluginSettingsSection() {
             comerciales (p. ej. EVD) aparecen aquí cuando el plugin está cargado en el servidor.
           </CardDescription>
         </CardHeader>
-      </Card>
+        </Card>
+      </div>
     );
   }
 
   return (
     <div className="space-y-6">
+      <PluginInstallSection />
       {panels.map((panel) => (
         <PluginSettingsPanelCard key={`${panel.pluginId}:${panel.id}`} panel={panel} />
       ))}

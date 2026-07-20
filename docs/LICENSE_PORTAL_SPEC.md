@@ -130,7 +130,37 @@ Response: `202 Accepted` con uso actualizado.
 
 ---
 
-### 3.4 POST `/webhooks/license-changed` — Webhook de Cambios
+---
+
+### 3.4 POST `/plugins/download` — Descargar paquete `.tfplugin`
+
+**Uso:** The Forge core (`PluginInstallService`) cuando el admin instala con clave de licencia en Ajustes → Plugins.
+
+```http
+POST /api/v1/plugins/download
+Content-Type: application/json
+X-API-Key: tk_…
+X-Plugin-Id: com.kreodevs.evd
+```
+
+```typescript
+interface PluginDownloadRequest {
+  pluginId?: string;
+  coreVersion?: string;
+}
+```
+
+**Response 200:** `Content-Type: application/zip` — cuerpo `.tfplugin` (ver `docs/PLUGINS-PACKAGING.md`).
+
+| HTTP | Causa |
+|------|--------|
+| 401 | API Key inválida |
+| 403 | Licencia no cubre el plugin |
+| 404 | Versión no publicada para este core |
+
+---
+
+### 3.5 POST `/webhooks/license-changed` — Webhook de Cambios
 
 El portal notifica al core cuando una licencia cambia de estado.
 

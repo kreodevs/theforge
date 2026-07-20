@@ -36,12 +36,14 @@ import { TechnologyDocsMcpModule } from "./modules/technology-docs-mcp/technolog
 import { PluginModule } from "./plugins/plugin.module.js";
 import { PluginsApiModule } from "./modules/plugins/plugins.module.js";
 import { SystemConfigModule } from "./modules/system-config/system-config.module.js";
+import pluginsConfig from "./config/plugins.config.js";
 
 @Module({
   controllers: [HealthController],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      load: [pluginsConfig],
       envFilePath: [join(__dirname, "../../.env"), join(__dirname, "../../../.env"), ".env"],
     }),
     SystemConfigModule,
