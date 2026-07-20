@@ -14,6 +14,7 @@ CRUD de proyectos, actualización de MDD y entregables (Blueprint, API, etc.).
 - **ProjectDeliverableGateService:** gate MDD de entrega (`assertDeliverablesAllowed`, `assertMddDeliveryGateForDeliverables`) y recálculo de semáforo (`refreshStageSemaphoreFromProject`). Utils: `project-semaphore.util.ts`.
 - **ProjectConformanceService:** auditoría y conformidad (`auditDocuments`, `getConformance`, `verifyDeliverable`).
 - **ProjectBrdService:** generación greenfield de BRD desde DBGA (`suggestBrdFromDbga`).
+- **ProjectUpdateService:** `PATCH /projects/:id` (`update`), snapshots DBGA/Spec (`listDocumentSnapshots`, `restoreDocumentSnapshot`), pipeline MDD en patch, recálculo de estimación y semáforo.
 - **DeliverablesCascadeService:** orquestación multi-ola (`generateDeliverablesCascade`), sync pantallas MCP (`syncUiScreens`), post-pase W4 y retry de conformidad API/Infra. Utils: `deliverables-cascade-gaps.util.ts`, `constitution-markdown.util.ts`, `sync-domain-inventory-stage.util.ts`.
 - **ProjectMddPersistService:** persistencia MDD desde jobs en background (`persistMddFromBackgroundJob`), PATCH (`persistMddFromPatch`), snapshot de delivery gate y errores estructurados del pipeline (`throwMddPipelineBadRequest`). Utils: `project-mdd-persist.util.ts` (`buildSemaphoreBaseFromProject`, `mergeProjectFieldsForSemaphore`, `resolveMddPersistMode`), `project-access.util.ts` (`loadAccessibleProjectWithStages`).
 - **stage-helpers.ts:** `pickPrimaryStage`, `flattenStageDeliverables`.

@@ -34,6 +34,7 @@ import { ProjectDeliverableGeneratorsService } from "./project-deliverable-gener
 import { ProjectDeliverableGateService } from "./project-deliverable-gate.service.js";
 import { ProjectConformanceService } from "./project-conformance.service.js";
 import { ProjectBrdService } from "./project-brd.service.js";
+import { ProjectUpdateService } from "./project-update.service.js";
 import { ProjectNotionPortabilityService } from "./project-notion-portability.service.js";
 import { PluginModule } from "../../plugins/plugin.module.js";
 
@@ -77,6 +78,7 @@ import { PluginModule } from "../../plugins/plugin.module.js";
     ProjectDeliverableGateService,
     ProjectConformanceService,
     ProjectBrdService,
+    ProjectUpdateService,
   ],
   exports: [ProjectsService, ProjectIntegrationService, IntegrationAgentService, ProjectMergeService, PROJECTS_ORCHESTRATOR_PORT, DeliverablesQueueService, ProjectGenerationGuardService, PlanValidationService],
 })
