@@ -602,5 +602,7 @@ Fase 6 (legacy/MCP)
 | `cross-consistency.ts` | ✅ |
 | `contratos-format.ts` | ✅ |
 | `draft-normalize.ts` | ✅ |
-| Barrel `mdd-sanitize.ts` &lt; 200 L | ✅ (~98 L) |
-| `internal.ts` &lt; 800 L | pendiente (~1240 L) |
+| `infra-manifest.ts` | ✅ |
+| `section-structured.ts` | ✅ |
+| Barrel `mdd-sanitize.ts` &lt; 200 L | ✅ (~115 L) |
+| `internal.ts` &lt; 800 L | ✅ (~665 L) |

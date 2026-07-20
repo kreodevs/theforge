@@ -23,6 +23,21 @@ export {
   repairDisplacedJsonBracesInContratos,
   repairNestedJsonFencesInDraft,
 } from "./mdd-sanitize/contratos-format.js";
+export {
+  buildManifestFromIdentifiedInfra,
+  buildNewFormatManifestFromIdentifiedTerms,
+  extractAlreadyDocumentedTopics,
+  extractIdentifiedInfraFromText,
+  replaceAwsProseWithGenericWhenInfraNotAws,
+  sanitizeManifestToMatchIdentifiedInfra,
+} from "./mdd-sanitize/infra-manifest.js";
+export {
+  integracionToSection7Markdown,
+  normalizeTablesToRecord,
+  objectSectionToMarkdown,
+  parseModeloDatosFromSection3Markdown,
+  seguridadItemsToSection6Markdown,
+} from "./mdd-sanitize/section-structured.js";
 export { jsonSectionToMarkdown } from "./mdd-sanitize/json-section-to-markdown.js";
 export { draftUsesLdapPrimaryAuth } from "./mdd-sanitize/security-manifest.js";
 export {

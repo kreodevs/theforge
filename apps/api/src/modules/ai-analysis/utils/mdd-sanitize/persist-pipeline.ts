@@ -70,6 +70,7 @@ import {
   ensureSecurityLockoutInSection6,
   fixDeterministicMddCoherence,
 } from "./cross-consistency.js";
+import { replaceAwsProseWithGenericWhenInfraNotAws } from "./infra-manifest.js";
 import {
   ensureManifestInJsonBlock,
   ensureSection2SqlBlockClosed,
@@ -78,7 +79,6 @@ import {
   fixSection6BulletedJsonToMarkdown,
   convertSection2JsonBodyToMarkdown,
   stripNotaPendienteHeadingWhenManifestComplete,
-  replaceAwsProseWithGenericWhenInfraNotAws,
   unwrapSection2SqlBlockContainingJson,
   ensureTechnicalMetadataBlockInDraft,
   mddExcludesWebUiSurface,

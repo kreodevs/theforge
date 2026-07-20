@@ -16,7 +16,9 @@ Submódulos extraídos de `../mdd-sanitize.ts` durante el refactor GOD-REFACTOR 
 | `cross-consistency.ts` | ~25 exports (re-export barrel) | Coherencia cruzada §1–§7: JWT, outbox, dual approval, lockout, patches LLM, detect* |
 | `contratos-format.ts` | 5 exports (re-export barrel) | §4 Contratos: JSON repair, tablas markdown, `ensureContratosSection` |
 | `draft-normalize.ts` | 13 exports (re-export barrel) | Contexto, §6/§7 JSON→MD, headings canónicos, limpieza artefactos LLM |
-| `internal.ts` | resto de exports vía barrel | Infra manifest, §2/§3 SQL, structured builders, UI surface |
+| `infra-manifest.ts` | 6 exports (re-export barrel) | Detección infra en texto, manifest §7, sanitize AWS genérico |
+| `section-structured.ts` | 5 exports (re-export barrel) | §6/§7 structured→MD, `parseModeloDatosFromSection3Markdown`, `objectSectionToMarkdown` |
+| `internal.ts` | resto de exports vía barrel (~665 L) | §2/§3 SQL helpers, §2–§5 range, UI surface, `logMddNodeOutput` |
 
 El entrypoint estable para consumidores sigue siendo `../mdd-sanitize.ts` (re-exports).
 
@@ -33,3 +35,7 @@ El entrypoint estable para consumidores sigue siendo `../mdd-sanitize.ts` (re-ex
 **Exports de `contratos-format.ts`:** `repairNestedJsonFencesInDraft`, `repairDisplacedJsonBracesInContratos`, `formatContratosBody`, `normalizeContratosTableSummary`, `ensureContratosSection`.
 
 **Exports de `draft-normalize.ts`:** `sanitizeContextSection`, `sanitizeSeguridadIntegracionRawJson`, `normalizeMddEnglishSubheadings`, `CANONICAL_HEADINGS`, `stripMeshDirectivesFromDraft`, `forceStripBrokenPrefix`, `unescapeLiteralNewlines`.
+
+**Exports de `infra-manifest.ts`:** `extractIdentifiedInfraFromText`, `extractAlreadyDocumentedTopics`, `buildManifestFromIdentifiedInfra`, `buildNewFormatManifestFromIdentifiedTerms`, `sanitizeManifestToMatchIdentifiedInfra`, `replaceAwsProseWithGenericWhenInfraNotAws`.
+
+**Exports de `section-structured.ts`:** `seguridadItemsToSection6Markdown`, `integracionToSection7Markdown`, `parseModeloDatosFromSection3Markdown`, `normalizeTablesToRecord`, `objectSectionToMarkdown`.
