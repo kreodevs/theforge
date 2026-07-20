@@ -10,8 +10,6 @@ import {
   HelpCircle,
   Wand2,
   Sparkles,
-  MessageSquare,
-  ClipboardPaste,
   BrushCleaning,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -55,15 +53,13 @@ import {
   useStageDeliverableView,
 } from "../hooks/useStageDeliverableView";
 import { replaceYamlFrontMatter } from "../components/DesignMdPreview";
-import {
-  resolveWorkshopDocEditToolbarToggle,
-  type WorkshopComplexityTier,
-} from "../utils/workshopDocToolbar";
+import { type WorkshopComplexityTier } from "../utils/workshopDocToolbar";
 import { WorkshopHeaderBar } from "./workshop/WorkshopHeaderBar";
 import { WorkshopDocPanel } from "./workshop/WorkshopDocPanel";
 import { WorkshopModals } from "./workshop/WorkshopModals";
 import { WorkshopDocPanelContent } from "./workshop/WorkshopDocPanelContent";
 import { useWorkshopDocPanelProps } from "./workshop/useWorkshopDocPanelProps";
+import { useWorkshopDocToolbarProps } from "./workshop/useWorkshopDocToolbarProps";
 import { WorkshopMetricsColumn } from "./workshop/WorkshopMetricsColumn";
 import { WorkshopLayoutShell } from "./workshop/WorkshopLayoutShell";
 import { WorkshopChatColumn } from "./workshop/WorkshopChatColumn";
@@ -73,7 +69,6 @@ import { useLgChatPanel } from "./workshop/useLgChatPanel";
 import { useWorkshopMobileScrollFab } from "./workshop/useWorkshopMobileScrollFab";
 import type { WorkshopMobileColumn } from "./workshop/workshopMetricsColumn.types";
 import { HANDOFF_GATE_STORAGE_KEY } from "./workshop/workshopLegacyPanels.types";
-import type { WorkshopDocToolbarProps } from "./workshop/workshopDocToolbar.types";
 import { type DocumentsForZip } from "../utils/downloadDocumentsZip";
 import {
   downloadRepoHandoffFromApi,
@@ -1664,198 +1659,14 @@ export default function WorkshopView({
     await store.fetchProject(projectId);
   }, [projectId]);
 
-  const phase0EntryModeToolbarToggle = useMemo(() => {
-    if (!phase0IsEmpty) return null;
-    return {
-      Icon: phase0EntryMode === "interview" ? ClipboardPaste : MessageSquare,
-      tooltip: phase0EntryMode === "interview" ? "Pegar Paso 0" : "Entrevista con IA",
-      onClick: () => setPhase0EntryMode((m) => (m === "interview" ? "paste" : "interview")),
-    };
-  }, [phase0IsEmpty, phase0EntryMode]);
-
-  /** Preview/source (or design) toggle — header toolbar on desktop; not in the bubble menu. */
-  const docEditToolbarToggle = useMemo(
-    () =>
-      resolveWorkshopDocEditToolbarToggle({
-        centralPanel,
-        viewModes: {
-          mddViewMode,
-          mddInicialViewMode,
-          specViewMode,
-          architectureViewMode,
-          useCasesViewMode,
-          userStoriesViewMode,
-          uxUiGuideViewMode,
-          aemViewMode,
-          blueprintViewMode,
-          apiContractsViewMode,
-          logicFlowsViewMode,
-          brdDocViewMode,
-          infraViewMode,
-          agentGovernanceViewMode,
-          tasksViewMode,
-        },
-        content: {
-          blueprintContent,
-          tasksContent,
-          hasAgentGovernance,
-          apiContractsContent,
-          architectureContent,
-          useCasesContent,
-          userStoriesContent,
-          logicFlowsContent,
-          infraContent,
-          activeLegacyState,
-          mddInicialLocalContent,
-          activeStageId,
-        },
-        hasAgentGovernance,
-        benchmarkPhaseTab,
-        benchmarkViewMode,
-        phase0SummaryViewMode,
-        phase0EntryModeToolbarToggle,
-        toggleDocViewMode,
-        setBenchmarkViewMode,
-        setPhase0SummaryViewMode,
-      }),
-    [
-      centralPanel,
-      mddViewMode,
-      mddInicialViewMode,
-      specViewMode,
-      architectureViewMode,
-      useCasesViewMode,
-      userStoriesViewMode,
-      uxUiGuideViewMode,
-      aemViewMode,
-      blueprintViewMode,
-      apiContractsViewMode,
-      logicFlowsViewMode,
-      brdDocViewMode,
-      infraViewMode,
-      agentGovernanceViewMode,
-      tasksViewMode,
-      hasAgentGovernance,
-      benchmarkPhaseTab,
-      benchmarkViewMode,
-      phase0SummaryViewMode,
-      blueprintContent,
-      tasksContent,
-      apiContractsContent,
-      architectureContent,
-      useCasesContent,
-      userStoriesContent,
-      logicFlowsContent,
-      infraContent,
-      activeLegacyState,
-      mddInicialLocalContent,
-      activeStageId,
-      toggleDocViewMode,
-      phase0EntryModeToolbarToggle,
-    ],
-  );
-
-  const workshopDocToolbarProps = useMemo((): WorkshopDocToolbarProps => ({
+  const { workshopDocToolbarProps, phase0EntryModeToolbarToggle } = useWorkshopDocToolbarProps({
     centralPanel,
     effectiveComplexityForTabs: effectiveComplexityForTabs as WorkshopComplexityTier,
     isLegacyProject,
     benchmarkPhaseTab,
-    docEditToolbarToggle,
-    viewModes: {
-      mddViewMode,
-      mddInicialViewMode,
-      specViewMode,
-      architectureViewMode,
-      useCasesViewMode,
-      userStoriesViewMode,
-      uxUiGuideViewMode,
-      aemViewMode,
-      blueprintViewMode,
-      apiContractsViewMode,
-      logicFlowsViewMode,
-      brdDocViewMode,
-      infraViewMode,
-      agentGovernanceViewMode,
-      tasksViewMode,
-    },
-    content: {
-      blueprintContent,
-      tasksContent,
-      hasAgentGovernance,
-      apiContractsContent,
-      architectureContent,
-      useCasesContent,
-      userStoriesContent,
-      logicFlowsContent,
-      infraContent,
-      activeLegacyState,
-      mddInicialLocalContent,
-      activeStageId,
-      specContent,
-      aemContent,
-      uxUiGuideContent,
-      activeStageShortTermContext: activeWorkshopStage?.shortTermContext ?? null,
-    },
-    ui: {
-      loading,
-      projectId,
-      loadingReason,
-      effectiveMddTrimmed,
-      mddReviewing,
-      apiBlueprintDmBlocked,
-      apiBlueprintBlockedHint,
-      mddInicialViewMode,
-      mddInicialSaving,
-      brdDocViewMode,
-      brdWorkshopDirty,
-      brdTobePersistBusy,
-      canGenerateAem,
-      tasksPrerequisites,
-      agentGovernanceGenerating,
-      uxGenerating,
-      uxGenProgress,
-      benchmarkViewMode,
-      phase0SummaryViewMode,
-      phase0EntryModeToolbarToggle,
-      isLgLayout,
-      lgWorkshopChatCollapsed,
-    },
-    actions: {
-      toggleDocViewMode,
-      setFlowOrderModalOpen,
-      setClarifySpecDialogOpen,
-      setDbgaRestoreOpen,
-      handlePrintDocument,
-      setBenchmarkViewMode,
-      setPhase0SummaryViewMode,
-      generateArchitecture,
-      generateUseCases,
-      generateUserStories,
-      generateBlueprint,
-      generateApiContracts,
-      generateLogicFlows,
-      generateInfra,
-      handleRegenerateLegacyCodebaseDoc,
-      setMddInicialSaving,
-      legacyUpdateCodebaseDoc,
-      persistBrdWorkshopDraft,
-      generateSpec,
-      setAemGenerateDialogOpen,
-      generateTasks,
-      convergeTasks,
-      setError,
-      tasksToIssues,
-      generateAgentGovernance,
-      repairUxGuide,
-      generateUxGuideSequential,
-      handleSetLgWorkshopChatCollapsed,
-    },
-  }), [
-    centralPanel,
-    effectiveComplexityForTabs,
-    isLegacyProject,
-    benchmarkPhaseTab,
-    docEditToolbarToggle,
+    phase0IsEmpty,
+    phase0EntryMode,
+    setPhase0EntryMode,
     mddViewMode,
     mddInicialViewMode,
     specViewMode,
@@ -1886,7 +1697,7 @@ export default function WorkshopView({
     specContent,
     aemContent,
     uxUiGuideContent,
-    activeWorkshopStage?.shortTermContext,
+    activeStageShortTermContext: activeWorkshopStage?.shortTermContext ?? null,
     loading,
     projectId,
     loadingReason,
@@ -1894,9 +1705,7 @@ export default function WorkshopView({
     mddReviewing,
     apiBlueprintDmBlocked,
     apiBlueprintBlockedHint,
-    mddInicialViewMode,
     mddInicialSaving,
-    brdDocViewMode,
     brdWorkshopDirty,
     brdTobePersistBusy,
     canGenerateAem,
@@ -1906,13 +1715,15 @@ export default function WorkshopView({
     uxGenProgress,
     benchmarkViewMode,
     phase0SummaryViewMode,
-    phase0EntryModeToolbarToggle,
     isLgLayout,
     lgWorkshopChatCollapsed,
     toggleDocViewMode,
+    setFlowOrderModalOpen,
+    setClarifySpecDialogOpen,
+    setDbgaRestoreOpen,
     handlePrintDocument,
-    handleRegenerateLegacyCodebaseDoc,
-    persistBrdWorkshopDraft,
+    setBenchmarkViewMode,
+    setPhase0SummaryViewMode,
     generateArchitecture,
     generateUseCases,
     generateUserStories,
@@ -1920,17 +1731,21 @@ export default function WorkshopView({
     generateApiContracts,
     generateLogicFlows,
     generateInfra,
+    handleRegenerateLegacyCodebaseDoc,
+    setMddInicialSaving,
+    legacyUpdateCodebaseDoc,
+    persistBrdWorkshopDraft,
     generateSpec,
+    setAemGenerateDialogOpen,
     generateTasks,
     convergeTasks,
+    setError,
     tasksToIssues,
     generateAgentGovernance,
     repairUxGuide,
     generateUxGuideSequential,
     handleSetLgWorkshopChatCollapsed,
-    setError,
-    legacyUpdateCodebaseDoc,
-  ]);
+  });
 
   const docBubbleMenuItems = useMemo((): WorkshopDocBubbleMenuItem[] => {
     if (centralPanel === "legacy" || centralPanel === "adrs" || centralPanel === "integration") return [];

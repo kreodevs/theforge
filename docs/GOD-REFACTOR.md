@@ -740,3 +740,10 @@ Fase 6 (legacy/MCP)
 | `WorkshopLayoutShell`, `WorkshopChatColumn`, `WorkshopMobileNav`, `WorkshopMobileFabs` | ✅ |
 | `useLgChatPanel`, `useWorkshopMobileScrollFab`, utilidades scroll/chat | ✅ |
 | `WorkshopView.tsx` — ~3 047 L | ✅ |
+
+### Fase 5 — Workshop frontend (incremento 5j)
+
+| Ítem | Estado |
+|------|--------|
+| `useWorkshopDocToolbarProps.ts` + types | ✅ |
+| `WorkshopView.tsx` — ~2 862 L | ✅ |

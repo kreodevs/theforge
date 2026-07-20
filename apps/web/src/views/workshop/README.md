@@ -20,6 +20,7 @@ Subcomponentes extraídos de `WorkshopView.tsx` (Fase 5b del [GOD-REFACTOR](../.
 | **WorkshopAdrsPluginPanels.tsx** | ADRs del grafo y paneles plugin dinámicos. Tipos en `workshopAdrsPluginPanels.types.ts`. |
 | **WorkshopDocPanelContent.tsx** | Compositor del área scroll: encadena todos los subpaneles anteriores. Tipos en `workshopDocPanelContent.types.ts`. |
 | **useWorkshopDocPanelProps.ts** | Hook que consolida los `useMemo` de props de todos los subpaneles del documento. Tipos de entrada en `useWorkshopDocPanelProps.types.ts`. |
+| **useWorkshopDocToolbarProps.ts** | Hook que construye `WorkshopDocToolbarProps`, `docEditToolbarToggle` y `phase0EntryModeToolbarToggle`. Tipos en `useWorkshopDocToolbarProps.types.ts`. |
 | **WorkshopMetricsColumn.tsx** | Columna métricas: panel móvil + flyout desktop (semáforo). Tipos en `workshopMetricsColumn.types.ts`. Usa `WorkshopMetricsColumnInner`. |
 | **WorkshopLayoutShell.tsx** | Grid principal lg (chat + docs + métricas) con slots para overlays móviles y modales. |
 | **WorkshopChatColumn.tsx** | Columna A: chat redimensionable + rail de expansión en desktop. |
@@ -31,4 +32,4 @@ Subcomponentes extraídos de `WorkshopView.tsx` (Fase 5b del [GOD-REFACTOR](../.
 
 Utilidades compartidas con otros módulos también viven en `utils/workshopDocToolbar.ts`.
 
-Próximas extracciones planificadas: `workshopDocToolbarProps` hook, slices de `workshopStore`.
+Próximas extracciones planificadas: hook de props de modales, slices de `workshopStore`.
