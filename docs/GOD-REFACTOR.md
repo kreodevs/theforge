@@ -669,3 +669,11 @@ Fase 6 (legacy/MCP)
 | `utils/workshopDocToolbar.ts` — `resolveWorkshopDocEditToolbarToggle` | ✅ |
 | `store/workshop/helpers/pick-default-stage.ts` + spec | ✅ |
 | `WorkshopDocumentIslandToc` deduplicado | ✅ |
+
+### Fase 5 — Workshop frontend (incremento 4)
+
+| Ítem | Estado |
+|------|--------|
+| `views/workshop/WorkshopAuditModal.tsx` | ✅ |
+| `views/workshop/WorkshopModals.tsx` + `workshopModals.types.ts` | ✅ |
+| `WorkshopView.tsx` — modales extraídos (~4 885 L, −~250 vs incremento 3) | ✅ |

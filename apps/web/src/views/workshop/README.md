@@ -8,7 +8,9 @@ Subcomponentes extraídos de `WorkshopView.tsx` (Fase 5b del [GOD-REFACTOR](../.
 | **WorkshopHeaderBar.tsx** | Header global: título, badge Legacy, visibilidad privado/compartido, estado de sync, selector de etapa, nueva etapa, descarga ZIP, export SDD spec-kit, ayuda y línea MCP en proyectos legacy. |
 | **WorkshopDocPanel.tsx** | Columna B: envuelve toolbar + área scrollable + bubble menu (desktop). |
 | **WorkshopDocToolbar.tsx** | Toolbar del documento (preview/source, regen, imprimir, acciones móvil). Tipos en `workshopDocToolbar.types.ts`. |
+| **WorkshopAuditModal.tsx** | Modal inline de auditoría MDD (calidad, gaps, regeneración por sección). |
+| **WorkshopModals.tsx** | Agrupa todos los overlays al final del root (`AlertDialog`, patrones MDD, regen, AEM, etapa, flujo, DBGA, ayuda, modelos no disponibles). Tipos en `workshopModals.types.ts`. |
 
 Utilidades puras compartidas con otros módulos viven en `utils/workshopDocToolbar.ts`.
 
-Próximas extracciones planificadas: contenido scroll del panel (por tab), `WorkshopModals`.
+Próximas extracciones planificadas: contenido scroll del panel (por tab).
