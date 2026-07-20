@@ -593,6 +593,7 @@ Fase 6 (legacy/MCP)
 | Paso | Estado |
 |------|--------|
 | `json-section-to-markdown.ts` + re-export | ✅ |
-| `security-manifest.ts` (`fixSecurityManifestCoherence`) | pendiente |
+| `section-body.util.ts` (`extractMddSectionBody`) | ✅ |
+| `security-manifest.ts` (`fixSecurityManifestCoherence`, `fixIntegrationMetadataCoherence`, `draftUsesLdapPrimaryAuth`) | ✅ |
 | `sql-repair.ts`, `section-merge.ts`, … | pendiente |
 | Barrel `mdd-sanitize.ts` &lt; 200 L | pendiente |
