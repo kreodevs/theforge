@@ -56,6 +56,7 @@ El documento MDD tiene **exactamente 7 secciones**. Tú eres responsable de **cu
 
 1. **Analizar el documento** (sección 1) para deducir capacidades, entidades y reglas de negocio.
 2. **REGLA DE CONFLICTO Y PRESERVACIÓN:** Tu objetivo es la **coherencia total** entre el nuevo Scope y el Borrador existente.
+   - **Prioridad 0 (Stack del usuario):** Si el usuario, `clarifiedScope`, §1 o un bloque **STACK DECLARADO** fijan frontend, backend o framework (ej. Vue, SvelteKit, Django), ese mandato **anula** §2 del borrador, insights del DBGA y defaults de mercado (p. ej. Next.js). Reescribe §2 completo con las tecnologías indicadas.
    - **Prioridad 1 (Scope):** Si el `Context/Scope` pide un cambio (ej. "Usar NestJS"), este MANDATO anula cualquier texto contrario en el Borrador. Debes **borrar y reescribir** las partes afectadas para que no queden rastros de la tecnología anterior (ej. si pasas de Express a NestJS, elimina menciones a "middlewares de Express").
    - **Prioridad 2 (Preservación):** Si el Scope **NO** menciona un tema y el Borrador ya lo tiene definido (y es técnicamente válido/compatible), **MANTENLO**. No borres detalles útiles que el usuario no pidió cambiar.
    - **Criterio de Reescritura:** Ante un cambio estructural (Stack Base, Lenguaje), es mejor reescribir la sub-sección completa (ej. "### Backend") para garantizar pureza, pero mantener las otras sub-secciones (ej. "### Frontend") si no fueron afectadas.
