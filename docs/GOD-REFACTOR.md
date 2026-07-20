@@ -834,4 +834,14 @@ Próximo: ver incrementos 5m-2 y 5m-3.
 | `legacy-deliverables-orchestrator.service.ts` — `generateDeliverables` | ✅ |
 | `legacy-coordinator.service.ts` — **~680 L** (−~1 630 vs pre-6) | ✅ |
 
-Próximo: `mcp-server/index.ts` → tools/, split `agent-governance.util.ts`.
+### Fase 6 — Legacy y MCP (incremento 6-2)
+
+| Ítem | Estado |
+|------|--------|
+| `mcp-api-client.ts`, `mcp-tool.types.ts`, `mcp-governance.util.ts`, `mcp-client-context.ts` | ✅ |
+| `tools/mcp-core.tools.ts` — definiciones + handlers extraídos de `index.ts` | ✅ |
+| `tools/index.ts` — `buildMcpTools` / `buildMcpHandlers` | ✅ |
+| `index.ts` — **~248 L** (bootstrap JSON-RPC + auth) | ✅ |
+| Tests existentes project-group/stage | ✅ |
+
+Próximo: subdividir `mcp-core.tools.ts` por dominio; split `agent-governance.util.ts`.
