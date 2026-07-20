@@ -12,17 +12,29 @@ import {
   type WorkshopStoreContractAction,
 } from "./workshop-store.contract.ts";
 
+const STORE_DIR = join(dirname(fileURLToPath(import.meta.url)), "workshop");
 const STORE_PATH = join(dirname(fileURLToPath(import.meta.url)), "workshopStore.ts");
+const SLICE_PATHS = [
+  join(STORE_DIR, "slice-ui.ts"),
+];
+
+function workshopStoreSource(): string {
+  const parts = [readFileSync(STORE_PATH, "utf8")];
+  for (const slicePath of SLICE_PATHS) {
+    parts.push(readFileSync(slicePath, "utf8"));
+  }
+  return parts.join("\n");
+}
 
 describe("smoke workshopStore contract (Fase 0)", () => {
-  it("workshopStore.ts define todas las acciones del contrato", () => {
-    const source = readFileSync(STORE_PATH, "utf8");
+  it("workshopStore compone todas las acciones del contrato", () => {
+    const source = workshopStoreSource();
     for (const action of WORKSHOP_STORE_CONTRACT_ACTIONS) {
       const pattern = new RegExp(`\\b${action}\\s*:\\s*(async\\s*)?\\(`);
       assert.match(
         source,
         pattern,
-        `workshopStore.ts must define action ${action}`,
+        `workshop store must define action ${action}`,
       );
     }
   });

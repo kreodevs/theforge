@@ -1,7 +1,5 @@
 import { create } from "zustand";
 import type {
-  ChatImagePart,
-  CodebaseDocResponseMode,
   MddDeliveryGateResult,
   MddUpstreamSyncStatus,
   PlanValidationPersisted,
@@ -41,20 +39,17 @@ import {
   WORKSHOP_PERSIST_BASELINE_FIELDS,
 } from "../utils/persist-field-guard";
 import {
-  buildWorkshopDocumentTimestampsMap,
   cleanDocForWorkshop as cleanDoc,
   extractWorkshopDocumentTimestamps,
   normalizeWorkshopDocumentForEditor,
   workshopDocumentBodiesEqual,
   workshopMddEditorBaseline,
-  type WorkshopDocumentTimestamps,
 } from "../utils/workshop-document-content.util";
 import { resolveMddFetchMerge } from "../utils/workshop-mdd-sync.util";
 import {
   parseApiErrorPayloadFromResponse,
   parseErrorMessageFromResponse,
 } from "../utils/httpError";
-import { isModelsUnavailableStreamError } from "../utils/llm-stream-error";
 import { parseNdjsonLine } from "../utils/ndjson";
 import { mddHasSection6Heading, buildMddSectionRegenNotice } from "../utils/mddSectionRegen";
 import { appendMddTraceSection } from "../utils/appendMddTraceSection";
@@ -70,10 +65,8 @@ import { CASCADE_POST_PASS_STEP_LABEL } from "@theforge/shared-types";
 import {
   isStageScopedDeliverableField,
   resolveWorkshopStageDeliverables,
-  workshopDeliverableStoreSlice,
-  type WorkshopStageDeliverableField,
 } from "../utils/workshopStageDeliverables";
-import { mddJobProgressEventFields, mergeAgentProgressFromMddEvent, type AgentProgressItem } from "../utils/agentProgress";
+import { mddJobProgressEventFields, mergeAgentProgressFromMddEvent } from "../utils/agentProgress";
 import { primaryMddJob } from "../utils/projectGenerationGate";
 import {
   advanceAgentGovernanceProgressItems,
@@ -101,139 +94,98 @@ import {
 } from "../utils/workshopSyncStatus";
 import { pickDefaultStageId } from "./workshop/helpers/pick-default-stage";
 
-function workshopScopeProjectId(get: () => WorkshopState): string {
-  return (get().projectId ?? get().project?.id ?? "").trim();
-}
+import { workshopInitialState } from "./workshop/initial-state";
+import type { WorkshopState } from "./workshop/workshop-state.types";
+import { createUiSlice } from "./workshop/slice-ui";
+import { selectPersistedMddBaseline } from "./workshop/selectors";
+export {
+  isMddEditorDirty,
+  selectPersistedMddBaseline,
+  selectWorkshopAgentsBusy,
+} from "./workshop/selectors";
+export { sessionMessageBody } from "./workshop/helpers/session-message";
+import { sessionMessageBody } from "./workshop/helpers/session-message";
+export type {
+  Status,
+  ChatMessage,
+  Estimation,
+  LiveMetricsResult,
+  PrecisionBreakdown,
+  DocumentCompleteness,
+  CrossDocumentGap,
+  ConformanceResult,
+  ApiConformanceResult,
+  LegacyDeliverablesDebugStep,
+  LegacySectionMergeTraceGroup,
+  LegacySectionMergeTrace,
+  LogicFlowsSection5CoverageReport,
+  LegacyDeliverablesDebugReport,
+  LegacyFlowState,
+  WorkshopStage,
+  ComplexityPending,
+  Project,
+  LegacyMcpDebugEntry,
+  Session,
+} from "./workshop/types";
+import type {
+  ApiConformanceResult,
+  ComplexityPending,
+  ConformanceResult,
+  CrossDocumentGap,
+  DocumentCompleteness,
+  LegacyDeliverablesDebugReport,
+  LegacyMcpDebugEntry,
+  LiveMetricsResult,
+  PrecisionBreakdown,
+  Project,
+  Session,
+  WorkshopStage,
+} from "./workshop/types";
+import { shouldApplyWorkshopUpdate, workshopScopeProjectId } from "./workshop/helpers/workshop-scope";
+import {
+  errorStateFromCaught,
+  friendlyFetchError,
+  streamErrorPatch,
+  throwStreamHttpError,
+} from "./workshop/helpers/store-errors";
+import {
+  deliveryGateFromStreamEvent,
+  formatDeliveryGateInsertBlocker,
+  hasDeliveryGateBlockers,
+} from "./workshop/helpers/delivery-gate";
+import {
+  generationStatusPoll,
+  mergeGenerationStatusWithMddUpstreamSync,
+  stopGenerationStatusPolling,
+} from "./workshop/helpers/generation-status";
+import {
+  applyMddEditorBaselineToWorkshop,
+  applyMddFromFetchedProject,
+  enqueueMddPersist,
+  mddContentForEditor,
+  normalizedMddForPersistCompare,
+  patchWorkshopMddStagesWithEditorContent,
+  persistMddFromChatStream,
+  selectRawMddFromStage,
+  streamMarkdownPreservesGovernancePatterns,
+} from "./workshop/helpers/mdd-editor";
+import {
+  effectiveMddContentForSectionRegen,
+  legacyCodebaseDocFromStages,
+  legacyDebugFromStages,
+  projectWithUxAfterStream,
+  workshopFlatFromStage,
+  workshopStateFromProjectStage,
+} from "./workshop/helpers/stage-focus";
+import {
+  lastMddUserMessageContent,
+  pickEvaluatorCritique,
+} from "./workshop/helpers/session-message";
+import { workshopStorePatchForClarifiedField } from "./workshop/helpers/clarified-field-patch";
 
-function shouldApplyWorkshopUpdate(get: () => WorkshopState, requestedProjectId: string): boolean {
-  const id = requestedProjectId.trim();
-  if (!id) return false;
-  return workshopScopeProjectId(get) === id;
-}
 
-export const selectWorkshopAgentsBusy = (s: WorkshopState) => isWorkshopAgentsBusy(s);
 
-/** MDD persistido en BD para la etapa activa (baseline del aviso «sin guardar»). */
-export const selectPersistedMddBaseline = (s: WorkshopState): string => s.mddPersistedBaseline;
 
-/** Aviso «sin guardar»: compara editor vs último baseline persistido (no workshopStages). */
-export function isMddEditorDirty(s: WorkshopState): boolean {
-  return (
-    !s.mddPersisting &&
-    !workshopDocumentBodiesEqual(s.mddContent, s.mddPersistedBaseline)
-  );
-}
-
-/** Markdown MDD en BD sin normalizar (incluye stamp API si existe). */
-function selectRawMddFromStage(s: WorkshopState): string {
-  const stages = s.workshopStages.length > 0 ? s.workshopStages : (s.project?.stages ?? []);
-  const st = stages.find((x) => x.id === s.activeStageId);
-  return String(st?.mddContent ?? s.project?.mddContent ?? "").trim();
-}
-
-/** Comparación estable para evitar PATCH cuando el markdown ya coincide con el baseline persistido. */
-function normalizedMddForPersistCompare(content: string | null | undefined): string {
-  return normalizeWorkshopDocumentForEditor(content) ?? "";
-}
-
-function mergeGenerationStatusWithMddUpstreamSync(
-  status: ProjectGenerationStatus | null | undefined,
-  sync: MddUpstreamSyncStatus | null | undefined,
-): ProjectGenerationStatus | null {
-  if (!sync) return status ?? null;
-  if (!status) {
-    return {
-      busy: false,
-      mddStreamActive: false,
-      mddJobs: [],
-      activeJob: null,
-      queuedJobs: [],
-      gates: {},
-      mddUpstreamSync: sync,
-    };
-  }
-  return { ...status, mddUpstreamSync: sync };
-}
-
-/** Texto del textarea MDD: sin stamp API (fechas solo en WorkshopDocumentStampBar). */
-function mddContentForEditor(content: string | null | undefined): string {
-  return workshopMddEditorBaseline(content);
-}
-
-/** Alinea etapa activa y `project.mddContent` con el texto del editor MDD. */
-function patchWorkshopMddStagesWithEditorContent(
-  project: Project,
-  stages: WorkshopStage[],
-  stageId: string | null | undefined,
-  editorContent: string,
-): { project: Project & { stages: WorkshopStage[] }; stages: WorkshopStage[] } {
-  const nextStages = stages.map((s) =>
-    stageId && s.id === stageId ? { ...s, mddContent: editorContent } : s,
-  );
-  const stageMdd =
-    stageId && nextStages.length
-      ? (nextStages.find((s) => s.id === stageId)?.mddContent ?? editorContent)
-      : editorContent;
-  return {
-    project: { ...project, stages: nextStages, mddContent: stageMdd },
-    stages: nextStages,
-  };
-}
-
-/** Resuelve etapas para parchear MDD: no usar `[]` del API si ya hay etapas locales. */
-function resolveWorkshopStagesList(
-  projectStages: WorkshopStage[] | undefined,
-  fallback: WorkshopStage[],
-): WorkshopStage[] {
-  if (projectStages?.length) return projectStages;
-  return fallback;
-}
-
-/** Tras persist/fetch: alinea editor, workshopStages y project.mddContent al mismo baseline. */
-function applyMddEditorBaselineToWorkshop(
-  project: Project,
-  workshopStages: WorkshopStage[],
-  stageId: string | null | undefined,
-  editorBaseline: string,
-) {
-  const stages = resolveWorkshopStagesList(project.stages, workshopStages);
-  const patched = patchWorkshopMddStagesWithEditorContent(
-    project,
-    stages,
-    stageId,
-    editorBaseline,
-  );
-  const focused = workshopStateFromProjectStage(patched.project, stageId ?? null);
-  const alignedStages = patched.stages.length > 0 ? patched.stages : stages;
-  return {
-    project: { ...focused.project, stages: alignedStages, mddContent: editorBaseline },
-    workshopStages: alignedStages,
-    mddContent: editorBaseline,
-    mddPersistedBaseline: editorBaseline,
-  };
-}
-
-/** Aplica MDD de la etapa activa al editor tras regeneración en background (ignora merge conservador). */
-function applyMddFromFetchedProject(
-  get: () => WorkshopState,
-  set: (partial: Partial<WorkshopState> | ((state: WorkshopState) => Partial<WorkshopState>)) => void,
-  project: Project | null | undefined,
-): void {
-  if (!project) return;
-  const stageId = get().activeStageId;
-  const st = project.stages?.find((s) => s.id === stageId);
-  const raw = (st?.mddContent ?? project.mddContent ?? "").trim();
-  if (raw.length < 48) return;
-  const editorBaseline = normalizeWorkshopDocumentForEditor(raw) ?? raw;
-  if (editorBaseline.trim().length < 48) return;
-  const patch = applyMddEditorBaselineToWorkshop(
-    project,
-    get().workshopStages.length > 0 ? get().workshopStages : (project.stages ?? []),
-    stageId,
-    editorBaseline,
-  );
-  set(patch);
-}
 
 function patchAgentProgressFromMddEvent(
   set: (partial: Partial<WorkshopState> | ((state: WorkshopState) => Partial<WorkshopState>)) => void,
@@ -243,149 +195,7 @@ function patchAgentProgressFromMddEvent(
     agentProgress: mergeAgentProgressFromMddEvent(s.agentProgress, raw),
   }));
 }
-
-let mddPersistQueue: Promise<void> = Promise.resolve();
-let mddStreamPersistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-function enqueueMddPersist(task: () => Promise<void>): Promise<void> {
-  const next = mddPersistQueue.then(task, task);
-  mddPersistQueue = next.catch(() => {});
-  return next;
-}
-
-/** No aplicar markdown de stream si borraría patrones [X] ya visibles o guardados. */
-function streamMarkdownPreservesGovernancePatterns(current: string, incoming: string): boolean {
-  return !serverWouldDropGovernancePatterns(current, incoming);
-}
-
-/** Persiste MDD tras eventos interrupt/done del stream Manager (debounce + sin fetchProject). */
-async function persistMddFromChatStream(
-  get: () => WorkshopState,
-  set: (partial: Partial<WorkshopState>) => void,
-  markdown: string,
-  requestProjectId: string,
-): Promise<void> {
-  const incoming = markdown.trim();
-  if (incoming.length <= 80) return;
-
-  if (!shouldApplyWorkshopUpdate(get, requestProjectId)) return;
-
-  const current = get().mddContent ?? "";
-  if (serverWouldDropGovernancePatterns(current, incoming)) return;
-
-  set({ mddContent: mddContentForEditor(incoming) });
-
-  if (mddStreamPersistDebounceTimer) clearTimeout(mddStreamPersistDebounceTimer);
-  await new Promise<void>((resolve) => {
-    mddStreamPersistDebounceTimer = setTimeout(() => {
-      mddStreamPersistDebounceTimer = null;
-      resolve();
-    }, 400);
-  });
-
-  if (!shouldApplyWorkshopUpdate(get, requestProjectId)) return;
-
-  const baseline = normalizedMddForPersistCompare(selectPersistedMddBaseline(get()));
-  const normalized = normalizedMddForPersistCompare(incoming);
-  if (normalized === baseline) {
-    set({ synced: true, mddPersistedBaseline: normalized });
-    return;
-  }
-
-  const errBefore = get().error;
-  await get().persistMddContent(incoming);
-  if (!shouldApplyWorkshopUpdate(get, requestProjectId)) return;
-  if (errBefore) set({ error: errBefore });
-}
-
-/**
- * Convierte mensajes de error de fetch del navegador (Safari "Load failed", Chrome "Failed to fetch")
- * a mensajes amigables en español.
- */
-async function throwStreamHttpError(res: Response, fallback: string): Promise<never> {
-  const { message, code } = await parseApiErrorPayloadFromResponse(res, fallback);
-  const err = new Error(message) as Error & { code?: string };
-  if (code) err.code = code;
-  throw err;
-}
-
-function friendlyFetchError(e: unknown): string {
-  if (e instanceof Error) {
-    const msg = e.message;
-    if (
-      msg === "Load failed" ||
-      msg === "Failed to fetch" ||
-      msg === "NetworkError when attempting to fetch resource." ||
-      msg === "The network connection was lost." ||
-      msg.startsWith("TypeError: Failed to fetch") ||
-      msg.startsWith("TypeError: NetworkError") ||
-      msg.startsWith("TypeError: Load failed") ||
-      msg.includes("ERR_CONNECTION") ||
-      msg.includes("ERR_NETWORK") ||
-      msg.includes("network") ||
-      msg.includes("NetworkError") ||
-      /load\s+fail/i.test(msg) ||
-      /failed\s+to\s+fetch/i.test(msg)
-    ) {
-      return "Error de conexión con el servidor. Reintenta en unos segundos.";
-    }
-    return msg;
-  }
-  return String(e);
-}
-
-function streamErrorPatch(event: { message?: string; code?: string }) {
-  const message = String(event.message ?? "Error en el análisis");
-  return {
-    error: message,
-    modelsUnavailableModalOpen: isModelsUnavailableStreamError(event),
-  };
-}
-
-function errorStateFromCaught(e: unknown) {
-  const message = friendlyFetchError(e);
-  if (e instanceof Error) {
-    const code =
-      "code" in e && typeof (e as { code?: string }).code === "string"
-        ? (e as { code?: string }).code
-        : undefined;
-    return streamErrorPatch({ message, code });
-  }
-  return streamErrorPatch({ message });
-}
-
-function pickEvaluatorCritique(data: Record<string, unknown>): string | null {
-  const c = data.evaluatorCritique;
-  return typeof c === "string" && c.trim().length > 0 ? c.trim() : null;
-}
-
-/** Body JSON para `POST /sessions/:id/messages` con `stageId` opcional. */
-export function sessionMessageBody(
-  base: { role: "user" | "assistant"; content: string; tab?: string; images?: ChatImagePart[] },
-  stageId: string | null | undefined,
-): string {
-  return JSON.stringify({
-    ...base,
-    ...(stageId?.trim() ? { stageId: stageId.trim() } : {}),
-  });
-}
-
-function lastMddUserMessageContent(
-  log: { role: string; content: string; tab?: string }[] | undefined,
-): string | null {
-  if (!log?.length) return null;
-  for (let i = log.length - 1; i >= 0; i--) {
-    const m = log[i];
-    if (!m) continue;
-    if (m.role === "user" && (m.tab ?? "mdd") === "mdd") return m.content;
-  }
-  return null;
-}
-
-/**
- * Helper para persist*Content: aplica retry, offline queue y setea error en el store.
- * Reemplaza el patrón repetitivo de 13 persist functions.
- */
+/** Helper para persist*Content: aplica retry, offline queue y setea error en el store. */
 type PersistFieldResult = { ok: true } | { ok: false; error: string };
 
 async function persistField(
@@ -540,1000 +350,13 @@ async function persistField(
   }
 }
 
-export type Status = "ROJO" | "AMARILLO" | "VERDE";
 
-export interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-  tab?: string;
-  /** Etapa en foco al enviar (el historial del chat sigue siendo global). */
-  stageId?: string;
-  images?: ChatImagePart[];
-}
 
-export interface Estimation {
-  id: string;
-  projectId: string;
-  totalHours: number;
-  totalMxn: number;
-  teamStructure: Record<string, number>;
-}
 
-/** Métricas en vivo del EstimationService (Semáforo + nómina interna y precio mercado). */
-export interface LiveMetricsResult {
-  precision: number;
-  totalMXN: number;
-  totalMXNMarket: number;
-  /** Costo estimado de generación con IA (USD → MXN). */
-  totalMXNIA: number;
-  totalHours: number;
-  roles: Record<string, number>;
-  rolesHours: Record<string, number>;
-  status: "red" | "yellow" | "green";
-  /** @deprecated Usar mddReadinessHints */
-  readinessHints?: string[];
-  mddReadinessHints?: string[];
-  traceabilityHints?: string[];
-  consistencyScore?: number;
-  /** Completitud por documento (30% del total integral). */
-  completeness?: DocumentCompleteness;
-  /** Calidad MDD usada en la fórmula integral (45% del total). */
-  mddQualityScore?: number;
-  crossDocumentGaps?: CrossDocumentGap[];
-  /** Gate bloqueante de entrega MDD (≥9/10). */
-  deliveryGate?: MddDeliveryGateResult;
-  /** Conformidad heurística MDD ↔ cascada. */
-  conformanceSummary?: {
-    ok: boolean;
-    api: { ok: boolean; missingCount: number; extraCount: number; aliasWarnings: string[] };
-    infra: { ok: boolean; gapCount: number; gaps: string[] };
-    blueprint: { ok: boolean };
-    logicFlows: { ok: boolean };
-  };
-}
 
-function deliveryGateFromStreamEvent(
-  event: { deliveryGate?: MddDeliveryGateResult },
-): MddDeliveryGateResult | undefined {
-  const gate = event.deliveryGate;
-  if (!gate || typeof gate.ok !== "boolean") return undefined;
-  return gate;
-}
-
-function formatDeliveryGateInsertBlocker(gate: MddDeliveryGateResult): string {
-  const blockers = gate.blockers.filter((b) => b.trim().length > 0);
-  if (blockers.length === 0) return "";
-  const shown = blockers.slice(0, 2).join(" · ");
-  const suffix = blockers.length > 2 ? ` (+${blockers.length - 2} más)` : "";
-  return `No se puede guardar: ${shown}${suffix}. Arregla el MDD antes de insertar.`;
-}
-
-function hasDeliveryGateBlockers(gate: MddDeliveryGateResult | null | undefined): boolean {
-  return !!gate && !gate.ok && gate.blockers.some((b) => b.trim().length > 0);
-}
-
-/** Calificación por sección/agente (0–100) en el evento done del stream MDD. */
-export interface PrecisionBreakdown {
-  contexto: number;
-  modeloDatos: number;
-  apiContracts: number;
-  frontend: number;
-  seguridad: number;
-  integracion: number;
-  /** Motivo de la calificación por sección (por qué se obtuvo ese %). */
-  sectionReasons?: Partial<Record<"contexto" | "modeloDatos" | "apiContracts" | "frontend" | "seguridad" | "integracion", string>>;
-}
-
-/** Breakdown de completitud por documento (0-100). Coincide con backend PlanningDocumentFields. */
-export interface DocumentCompleteness {
-  brdContent: number;
-  asIsManualContent: number;
-  specContent: number;
-  architectureContent: number;
-  useCasesContent: number;
-  userStoriesContent: number;
-  blueprintContent: number;
-  apiContractsContent: number;
-  logicFlowsContent: number;
-  infraContent: number;
-  tasksContent: number;
-  overall: number;
-}
-
-/** Gap de consistencia entre dos documentos. */
-export interface CrossDocumentGap {
-  from: string;
-  to: string;
-  concept: string;
-  severity: "missing" | "partial" | "contradiction";
-  brdSection?: string;
-  brdSubsection?: string;
-  kind?: "capability" | "rule" | "entity" | "formula" | "uat" | "permission" | "flow";
-  missingTerms?: string[];
-  hint?: string;
-}
-
-/** Resultado de conformance (Blueprint/Infra vs MDD). */
-export interface ConformanceResult {
-  ok: boolean;
-  gaps: string[];
-}
-
-/** Resultado de conformance API vs MDD. */
-export interface ApiConformanceResult {
-  ok: boolean;
-  missingInApi: string[];
-  extraInApi: string[];
-}
-
-/** Paso de la cascada legacy de entregables (respuesta `POST …/legacy/generate-deliverables`). */
-export interface LegacyDeliverablesDebugStep {
-  kind: string;
-  at: string;
-  durationMs: number;
-  ok: boolean;
-  outChars?: number;
-  detail?: string;
-  error?: string;
-}
-
-/** Grupo de ventanas MDD en section-merge (API `lastDeliverablesDebug`). */
-export interface LegacySectionMergeTraceGroup {
-  id: string;
-  sections: number[];
-  durationMs: number;
-  outChars: number;
-  ok: boolean;
-}
-
-export interface LegacySectionMergeTrace {
-  kind: string;
-  groups: LegacySectionMergeTraceGroup[];
-  mechanicalOk: boolean;
-  conformanceOk?: boolean;
-  gaps: string[];
-  repaired?: boolean;
-  finalChars: number;
-}
-
-/** Cobertura heurística servicios §5 vs flujos (legacy etapa 1). */
-export interface LogicFlowsSection5CoverageReport {
-  totalServices: number;
-  coveredServices: number;
-  coveragePercent: number;
-  missingServices: string[];
-  targetPercent: number;
-  metTarget: boolean;
-  batchCount?: number;
-  gapPassApplied?: boolean;
-}
-
-/** Trazabilidad de la última generación de entregables legacy (API + `legacyFlowState`). */
-export interface LegacyDeliverablesDebugReport {
-  startedAt: string;
-  finishedAt?: string;
-  ok?: boolean;
-  deliverablesWithBody?: number;
-  mddSource: string;
-  mddChars: number;
-  codebaseDocChars: number;
-  mddContentChars: number;
-  theforgeContextChars: number;
-  theforgeConfigured: boolean;
-  complexityEffective: string;
-  deliverablesOrder: string[];
-  steps: LegacyDeliverablesDebugStep[];
-  fatalError?: { message: string; stack?: string };
-  upstreamRateLimited?: boolean;
-  retryAfterSeconds?: number;
-  mddCharsSentToLlm?: number;
-  mddClippedForLlm?: boolean;
-  mddLlmStrategy?: "full" | "truncate" | "rollup";
-  mddRollupWindows?: number;
-  mddRollupFailed?: boolean;
-  sectionMergeTraces?: LegacySectionMergeTrace[];
-  legacyBaselineStage?: boolean;
-  logicFlowsSection5Coverage?: LogicFlowsSection5CoverageReport;
-}
-
-/** Estado del flujo legacy (archivos, preguntas, respuestas sugeridas por AriadneSpecs). */
-export interface LegacyFlowState {
-  description?: string;
-  /** Paths o { path, repoId } (multi-repo, SPEC-MCP-001). */
-  filesToModify?: (string | { path: string; repoId?: string })[];
-  questions?: string[];
-  /** Respuestas sugeridas por AriadneSpecs desde el codebase; se muestran pre-rellenadas */
-  suggestedAnswers?: Record<string, string>;
-  answers?: Record<string, string>;
-  /** Documentación de partida del codebase (opcional, generada vía MCP). */
-  codebaseDoc?: string;
-  /** Última traza de `generate-deliverables` (persistida en el servidor). */
-  lastDeliverablesDebug?: LegacyDeliverablesDebugReport;
-}
-
-/** Fila `Stage` en `GET /projects/:id` (MDD/semáforo por etapa). */
-export interface WorkshopStage {
-  id: string;
-  ordinal: number;
-  key: string | null;
-  name: string | null;
-  workflowStatus: string;
-  mddContent?: string | null;
-  brdContent?: string | null;
-  brdApprovedAt?: string | null;
-  status: Status;
-  precisionScore: number;
-  estimation: Estimation | null;
-  /** Entregables por etapa (columnas Stage; fallback a Project en el store). */
-  specContent?: string | null;
-  architectureContent?: string | null;
-  useCasesContent?: string | null;
-  userStoriesContent?: string | null;
-  blueprintContent?: string | null;
-  tasksContent?: string | null;
-  apiContractsContent?: string | null;
-  logicFlowsContent?: string | null;
-  infraContent?: string | null;
-  agentGovernanceContent?: string | null;
-  uxUiGuideContent?: string | null;
-  uiScreensContent?: string | null;
-  phase0SummaryContent?: string | null;
-  aemContent?: string | null;
-  /** Estado del flujo legacy para esta etapa (cambio) */
-  legacyChangeState?: LegacyFlowState | null;
-  /** STM agéntica: gate MDD, snapshot calidad Tasks, etc. */
-  shortTermContext?: Record<string, unknown> | null;
-  handoffImportedAt?: string | null;
-  handoffSnapshot?: { items?: unknown[] | null } | null;
-  linkedNewProjectId?: string | null;
-}
-
-/** Propuesta HITL hasta confirmación en chat o `POST .../confirm-complexity`. */
-export interface ComplexityPending {
-  level: "LOW" | "MEDIUM" | "HIGH";
-  planSummary: string;
-  reason?: string;
-}
-
-export interface Project {
-  id: string;
-  name: string;
-  /** Política SDD: gobierna semáforo y entregables (API: `Project.complexity`). */
-  complexity?: "LOW" | "MEDIUM" | "HIGH";
-  /** Inferencia / plan propuesto; no aplica a `complexity` hasta confirmación explícita. */
-  complexityPending?: ComplexityPending | null;
-  projectType?: "NEW" | "LEGACY";
-  /** Privado (solo owner) o compartido (todos los usuarios). */
-  visibility?: "PRIVATE" | "SHARED";
-  /** Si true, el API bloquea MDD técnico hasta BRD + To-Be aprobados (configurable en el panel). */
-  requireBrdTobeGate?: boolean;
-  theforgeProjectId?: string | null;
-  status: Status;
-  precisionScore: number;
-  hasUxTeam: boolean;
-  dbgaContent: string | null;
-  specContent: string | null;
-  mddContent: string | null;
-  phase0SummaryContent: string | null;
-  uxUiGuideContent: string | null;
-  /** Referencia visual para Design System: slug del catálogo o `auto`. */
-  uxGuideDesignRef?: string | null;
-  blueprintContent: string | null;
-  tasksContent: string | null;
-  apiContractsContent: string | null;
-  logicFlowsContent: string | null;
-  architectureContent: string | null;
-  useCasesContent: string | null;
-  userStoriesContent: string | null;
-  infraContent: string | null;
-  aemContent: string | null;
-
-  uiScreensContent: string | null;
-  agentGovernanceContent: string | null;
-  /** Mapa pluginId → payload (motor de plugins). */
-  pluginData?: Record<string, unknown> | null;
-  convergeWebhookUrl?: string | null;
-  linkedLegacyProjectId?: string | null;
-  linkedNewProjectId?: string | null;
-  estimation: Estimation | null;
-  /** Presente en respuesta API completa; el front usa `activeStageId` para foco MDD. */
-  stages?: WorkshopStage[];
-}
-
-function legacyDebugFromStages(stages: WorkshopStage[], activeStageId: string | null) {
-  const stage =
-    (activeStageId ? stages.find((s) => s.id === activeStageId) : null) ??
-    (pickDefaultStageId(stages) ? stages.find((s) => s.id === pickDefaultStageId(stages)) : null);
-  return stage?.legacyChangeState?.lastDeliverablesDebug ?? null;
-}
-
-function legacyCodebaseDocFromStages(stages: WorkshopStage[], activeStageId: string | null): string {
-  const stage =
-    (activeStageId ? stages.find((s) => s.id === activeStageId) : null) ??
-    (pickDefaultStageId(stages) ? stages.find((s) => s.id === pickDefaultStageId(stages)) : null);
-  return (stage?.legacyChangeState?.codebaseDoc ?? "").trim();
-}
-
-/** Campos planos del proyecto alineados con la etapa en foco (MDD / semáforo / estimación). */
-/** MDD efectivo para regenerar §N: store + etapa activa (evita mandar borrador vacío al API). */
-function effectiveMddContentForSectionRegen(getState: () => {
-  mddContent: string;
-  activeStageId: string | null;
-  project: Project | null;
-}): string {
-  const { mddContent, activeStageId, project } = getState();
-  const fromStore = (mddContent ?? "").trim();
-  if (fromStore.length >= 100) return fromStore;
-  const st = project?.stages?.find((s) => s.id === activeStageId);
-  return (normalizeWorkshopDocumentForEditor(st?.mddContent ?? null) ??
-    normalizeWorkshopDocumentForEditor(project?.mddContent ?? null) ??
-    "").trim();
-}
-
-function workshopDeliverableStorePatch(
-  deliverables: ReturnType<typeof resolveWorkshopStageDeliverables>,
-): Pick<WorkshopState, WorkshopStageDeliverableField> {
-  const slice = workshopDeliverableStoreSlice(deliverables);
-  return {
-    specContent: normalizeWorkshopDocumentForEditor(slice.specContent),
-    architectureContent: normalizeWorkshopDocumentForEditor(slice.architectureContent),
-    useCasesContent: normalizeWorkshopDocumentForEditor(slice.useCasesContent),
-    userStoriesContent: normalizeWorkshopDocumentForEditor(slice.userStoriesContent),
-    blueprintContent: normalizeWorkshopDocumentForEditor(slice.blueprintContent),
-    tasksContent: normalizeWorkshopDocumentForEditor(slice.tasksContent),
-    apiContractsContent: normalizeWorkshopDocumentForEditor(slice.apiContractsContent),
-    logicFlowsContent: normalizeWorkshopDocumentForEditor(slice.logicFlowsContent),
-    infraContent: normalizeWorkshopDocumentForEditor(slice.infraContent),
-    agentGovernanceContent: slice.agentGovernanceContent,
-    uxUiGuideContent: normalizeWorkshopDocumentForEditor(slice.uxUiGuideContent),
-    uiScreensContent: normalizeWorkshopDocumentForEditor(slice.uiScreensContent),
-    phase0SummaryContent: slice.phase0SummaryContent,
-    aemContent: normalizeWorkshopDocumentForEditor(slice.aemContent),
-  };
-}
-
-/** Alinea proyecto + campos del store con la etapa en foco (MDD y entregables editables). */
-function workshopStateFromProjectStage(p: Project, stageId: string | null) {
-  const stages = p.stages ?? [];
-  const deliverables = resolveWorkshopStageDeliverables({ ...p, stages }, stageId);
-  const flat = workshopFlatFromStage(p, stageId);
-  const deliverablePatch = workshopDeliverableStorePatch(deliverables);
-  return {
-    project: {
-      ...p,
-      ...flat,
-      ...deliverablePatch,
-      dbgaContent: normalizeWorkshopDocumentForEditor(p.dbgaContent),
-      stages,
-    },
-    activeStageId: stageId,
-    mddContent: normalizeWorkshopDocumentForEditor(flat.mddContent) ?? "",
-    documentTimestamps: buildWorkshopDocumentTimestampsMap(p, stageId),
-    ...deliverablePatch,
-  };
-}
-
-function workshopFlatFromStage(p: Project, stageId: string | null): Pick<Project, "mddContent" | "status" | "precisionScore" | "estimation"> {
-  const stages = p.stages;
-  if (!stageId || !stages?.length) {
-    return {
-      mddContent: p.mddContent,
-      status: p.status,
-      precisionScore: p.precisionScore,
-      estimation: p.estimation,
-    };
-  }
-  const st = stages.find((s) => s.id === stageId);
-  if (!st) {
-    return {
-      mddContent: p.mddContent,
-      status: p.status,
-      precisionScore: p.precisionScore,
-      estimation: p.estimation,
-    };
-  }
-  return {
-    mddContent: st.mddContent ?? null,
-    status: st.status,
-    precisionScore: st.precisionScore,
-    estimation: st.estimation ?? null,
-  };
-}
-
-/** Tras respuesta API con `stages[]`, mantiene foco si la etapa sigue existiendo. */
-function mergeProjectWithActiveStage(
-  proj: Project,
-  prevActiveId: string | null,
-): { project: Project; activeStageId: string | null; mddContent: string } {
-  const stages = proj.stages ?? [];
-  const activeStageId =
-    prevActiveId && stages.some((s) => s.id === prevActiveId) ? prevActiveId : pickDefaultStageId(stages);
-  const focused = workshopStateFromProjectStage(proj, activeStageId);
-  return {
-    project: focused.project,
-    activeStageId,
-    mddContent: focused.mddContent,
-  };
-}
-
-/** Proyecto tras evento `done` del orquestador: conserva etapa activa y limpia documentos mostrados. */
-function projectWithUxAfterStream(
-  proj: Project | undefined,
-  uxFromApi: string | null | undefined,
-  prevActiveId: string | null,
-): { project: Project; mddContent: string; activeStageId: string | null } | null {
-  if (!proj) return null;
-  const merged = mergeProjectWithActiveStage(proj, prevActiveId);
-  const p = merged.project;
-  return {
-    project: {
-      ...p,
-      complexityPending:
-        proj != null && proj.complexityPending !== undefined
-          ? proj.complexityPending
-          : p.complexityPending ?? null,
-      uxUiGuideContent: normalizeWorkshopDocumentForEditor(uxFromApi ?? p.uxUiGuideContent ?? null),
-      blueprintContent: normalizeWorkshopDocumentForEditor(p.blueprintContent ?? null),
-      dbgaContent: normalizeWorkshopDocumentForEditor(p.dbgaContent ?? null),
-      specContent: normalizeWorkshopDocumentForEditor(p.specContent ?? null),
-      apiContractsContent: normalizeWorkshopDocumentForEditor(p.apiContractsContent ?? null),
-      logicFlowsContent: normalizeWorkshopDocumentForEditor(p.logicFlowsContent ?? null),
-      tasksContent: normalizeWorkshopDocumentForEditor(p.tasksContent ?? null),
-      architectureContent: normalizeWorkshopDocumentForEditor(p.architectureContent ?? null),
-      useCasesContent: normalizeWorkshopDocumentForEditor(p.useCasesContent ?? null),
-      userStoriesContent: normalizeWorkshopDocumentForEditor(p.userStoriesContent ?? null),
-      infraContent: normalizeWorkshopDocumentForEditor(p.infraContent ?? null),
-    },
-    mddContent: merged.mddContent,
-    activeStageId: merged.activeStageId,
-  };
-}
-
-/** Trazas MCP (Ariadne) devueltas cuando el API tiene `LEGACY_CODEBASE_DOC_MCP_DEBUG_UI=1`. */
-export interface LegacyMcpDebugEntry {
-  at: string;
-  rpcMethod: string;
-  toolName?: string;
-  requestJson: string;
-  responseHttpStatus: number;
-  responseBodyPreview: string;
-  durationMs: number;
-}
-
-export interface Session {
-  id: string;
-  projectId: string;
-  chatLog: ChatMessage[];
-  contextStep: string;
-  updatedAt: string;
-}
-
-interface WorkshopState {
-  projectId: string | null;
-  project: Project | null;
-  session: Session | null;
-  /** Contenido del MDD (Constitución del proyecto en SDD; gobierna Blueprint, Contratos, Infra). */
-  mddContent: string;
-  /** Último MDD guardado en BD alineado al editor (baseline «sin guardar»). */
-  mddPersistedBaseline: string;
-  uxUiGuideContent: string | null;
-  dbgaContent: string | null;
-  specContent: string | null;
-  phase0SummaryContent: string | null;
-  blueprintContent: string | null;
-  tasksContent: string | null;
-  apiContractsContent: string | null;
-  logicFlowsContent: string | null;
-  architectureContent: string | null;
-  useCasesContent: string | null;
-  userStoriesContent: string | null;
-  infraContent: string | null;
-  aemContent: string | null;
-
-  uiScreensContent: string | null;
-  agentGovernanceContent: string | null;
-  /** Fechas Creado/Última regeneración por campo (desde stamp API, no del editor). */
-  documentTimestamps: Record<string, WorkshopDocumentTimestamps>;
-  conformance: {
-    blueprint: ConformanceResult;
-    blueprintDataModel: ConformanceResult;
-    api: ApiConformanceResult;
-    logicFlows: ConformanceResult;
-    infra: ConformanceResult;
-  } | null;
-  /** Vista previa de entregable eliminada — regeneración directa sin modal */
-  loading: boolean;
-  /** Razón del loading para mostrar mensajes específicos (ej. deep research tarda más) */
-  loadingReason:
-    | "benchmark"
-    | "mdd"
-    | "mdd-section"
-    | "phase0-deep-research"
-    | "legacy-codebase-doc"
-    | "legacy-mdd"
-    | "legacy-as-is"
-    | "legacy-brd-suggest"
-    | "brd-from-dbga"
-    | "legacy-deliverables"
-    | "deliverables-cascade"
-    | "agent-governance"
-    | "converge"
-    | "tasks-to-issues"
-    | "clarify-spec"
-    | "clarify-document"
-    | "resolve-clarifications"
-    | "aem"
-    | null;
-  /** Mensaje de usuario en curso (streaming); se muestra hasta recibir "done" */
-  streamingUserMessage: string | null;
-  /** Imágenes del turno en streaming (mismo ciclo que streamingUserMessage). */
-  streamingUserImages: ChatImagePart[] | null;
-  /** Contenido del asistente que llega por stream; se concatena hasta "done" */
-  streamingContent: string | null;
-  /** Tab del mensaje en streaming (para filtrar por tab) */
-  streamingTab: string | null;
-  /** Progreso de agentes DBGA (Benchmark): qué agente trabaja y qué hace */
-  agentProgress: AgentProgressItem[];
-  /** Conteo de docs completados en cascada (para botón) */
-  cascadeCompleted: number;
-  cascadeTotal: number;
-  /** Métricas en vivo (Semáforo + estimación) desde GET /ai-analysis/estimation */
-  liveMetrics: LiveMetricsResult | null;
-  /** Gate 2 — Ariadne validate_change_plan (last persisted on stage). */
-  planValidation: PlanValidationPersisted | null;
-  /** ThreadId del flujo Manager (MDD); cuando está definido, el siguiente mensaje en tab MDD va a resume */
-  managerThreadId: string | null;
-  /** true mientras se ejecuta persistAndReviewMdd (grabar + revisión de consistencia) */
-  mddReviewing: boolean;
-  /** true mientras reapplyMddFormat persiste el MDD con sanitizers SSOT */
-  mddReapplyingFormat: boolean;
-  /** true mientras persistMddContent ejecuta un PATCH al proyecto */
-  mddPersisting: boolean;
-  synced: boolean;
-  error: string | null;
-  /** Avisos informativos (p. ej. patrones SSOT); no bloquean ni marcan «Sin conexión». */
-  notice: string | null;
-  /** Modal: ningún modelo de la cadena (principal + respaldos) respondió. */
-  modelsUnavailableModalOpen: boolean;
-  setModelsUnavailableModalOpen: (open: boolean) => void;
-  /** Logs de auditoría del último stream MDD */
-  auditTrail: string[] | null;
-  /** Desglose de calificación del último stream MDD */
-  precisionBreakdown: PrecisionBreakdown | null;
-  /** Completitud por documento (semáforo integral). */
-  documentCompleteness: DocumentCompleteness | null;
-  /** Gaps de consistencia transversal entre documentos. */
-  crossDocumentGaps: CrossDocumentGap[];
-  /** Score de consistencia (0-100). */
-  consistencyScore: number | null;
-  /** Feedback del auditor (para mostrar en UI fuera del chat) */
-  auditorFeedback: string | null;
-  /** Gate bloqueante de entrega MDD (stream SSE o GET /estimation). */
-  deliveryGate: MddDeliveryGateResult | null;
-  /** Incrementar para refrescar paneles de gaps HITL tras cascada/regeneración. */
-  documentationGapsRefreshNonce: number;
-  bumpDocumentationGapsRefresh: () => void;
-  /** Crítica del evaluador legacy (SDD vs código); solo si el backend la envía */
-  evaluatorCritique: string | null;
-  clearEvaluatorCritique: () => void;
-  /** Última traza pregunta↔respuesta MCP al generar doc. partida (solo si el API envía `mcpDebugTrace`). */
-  legacyMcpDebugTrace: LegacyMcpDebugEntry[] | null;
-  clearLegacyMcpDebugTrace: () => void;
-  /** Última traza de `POST …/legacy/generate-deliverables` (cuerpo JSON de la respuesta). */
-  lastLegacyDeliverablesDebug: LegacyDeliverablesDebugReport | null;
-  clearLegacyDeliverablesDebug: () => void;
-  /** Plan pendiente de aprobación (HITL 4.4): pasos a ejecutar; el usuario puede Ejecutar o Modificar */
-  pendingPlanApproval: {
-    plan: Array<{ step_id: string; task_description: string; node: string; goal?: string }>;
-    planMessage: string;
-  } | null;
-  /** true tras generar MDD desde Benchmark (one-shot); mostrar banner de revisión en panel MDD */
-  mddJustGeneratedFromBenchmark: boolean;
-  /** Decisiones Arquitectónicas (ADRs) asociadas al proyecto */
-  adrs: any[] | null;
-  /** Etapas del proyecto (sincronizado con API; fuente para selector y foco MDD). */
-  workshopStages: WorkshopStage[];
-  /** Etapa cuyo MDD edita el Workshop (vista en vivo). */
-  activeStageId: string | null;
-  setActiveStageId: (stageId: string | null) => void;
-  /** Panel central de documentos (pestaña activa); sincroniza barra global y `WorkshopView`. */
-  workshopActiveDocPanel: string;
-  setWorkshopActiveDocPanel: (panel: string) => void;
-  /** `POST /projects/:id/stages` → `{ stage }`; opcional `copyMddFromStageId`. */
-  createWorkshopStage: (opts: { name?: string; key?: string; copyMddFromStageId?: string; copyLegacyChangeFromStageId?: string }) => Promise<Project | null>;
-  /** `PATCH /projects/:id/stages/:stageId` — BRD/To-Be/As-Is, aprobaciones, etc. */
-  patchWorkshopStage: (
-    stageId: string,
-    body: Record<string, string | boolean | undefined>,
-  ) => Promise<boolean>;
-  /** `PATCH /projects/:id` con `{ requireBrdTobeGate }` — control usuario (no env). */
-  setProjectRequireBrdTobeGate: (projectId: string, requireBrdTobeGate: boolean) => Promise<boolean>;
-
-  setProjectId: (id: string | null) => void;
-  setProject: (p: Project | null) => void;
-  setSession: (s: Session | null) => void;
-  setMddContent: (content: string) => void;
-  setUxUiGuideContent: (content: string | null) => void;
-  persistUxUiGuideContent: (content: string) => Promise<void>;
-  persistUxGuideDesignRef: (ref: string | null) => Promise<boolean>;
-  setLoading: (v: boolean) => void;
-  setSynced: (v: boolean) => void;
-  setError: (e: string | null) => void;
-  setNotice: (n: string | null) => void;
-  /** Reintenta cola offline y valida conexión con el API. */
-  retryWorkshopSync: () => Promise<void>;
-
-  /** Gate de cola: jobs activos, MDD en stream y dependencias upstream. */
-  generationStatus: ProjectGenerationStatus | null;
-  fetchGenerationStatus: (projectId: string, stageId?: string | null) => Promise<ProjectGenerationStatus | null>;
-  cancelMddJob: (projectId: string, jobId: string) => Promise<boolean>;
-  /** Datos por pluginId (`project.pluginData` sincronizado desde API). */
-  pluginData: Record<string, unknown>;
-  patchPluginData: (pluginId: string, data: unknown) => void;
-  /** Tab visible again: sync queue status without wiping deliverables checklist. */
-  refreshWorkshopOnTabVisible: (projectId: string) => Promise<void>;
-  fetchPlanValidation: (projectId: string, stageId?: string) => Promise<PlanValidationPersisted | null>;
-  validateChangePlan: (projectId: string, stageId?: string) => Promise<PlanValidationPersisted | null>;
-
-  fetchProject: (projectId: string, options?: { preferServerMdd?: boolean }) => Promise<Project | null>;
-  fetchWelcome: (projectId: string, activeTab?: string) => Promise<void>;
-  clearChat: (projectId: string, activeTab?: string) => Promise<void>;
-  /** options.regenerateSection (1–7): regenerar solo esa sección del MDD (comando / en chat). §1 = solo sintetizador de contexto. */
-  sendMessage: (
-    message: string,
-    activeTab?: string,
-    options?: { regenerateSection?: number; regenerateSectionGaps?: string[]; images?: ChatImagePart[] },
-  ) => Promise<void>;
-  /** `/formatear` — normaliza markdown del documento del tab (sin LLM). */
-  formatDocumentForActiveTab: (activeTab?: string) => Promise<{ ok: boolean; message: string }>;
-  updateMddContent: (content: string) => void;
-  persistMddContent: (
-    content: string,
-    options?: {
-      force?: boolean;
-      allowGovernancePatternChange?: boolean;
-      mddGovernanceSeedOnly?: boolean;
-      mddFormatOnly?: boolean;
-      clearMddCompletely?: boolean;
-    },
-  ) => Promise<void>;
-  /** Vacía el MDD (sin reinyectar patrones SSOT). */
-  clearMddContentCompletely: (projectId: string) => Promise<boolean>;
-  revertMddContent: () => void;
-  persistAndReviewMdd: () => Promise<void>;
-  /** Re-ejecuta sanitizeMddAtPersist en servidor sin editar manualmente el borrador. */
-  reapplyMddFormat: () => Promise<void>;
-  setBlueprintContent: (content: string | null) => void;
-  persistBlueprintContent: (content: string) => Promise<void>;
-  generateBlueprint: (projectId: string, options?: { gapsFeedback?: string }) => Promise<Project | null>;
-  setApiContractsContent: (content: string | null) => void;
-  persistApiContractsContent: (content: string) => Promise<void>;
-  generateApiContracts: (projectId: string, options?: { gapsFeedback?: string }) => Promise<Project | null>;
-  setLogicFlowsContent: (content: string | null) => void;
-  persistLogicFlowsContent: (content: string) => Promise<void>;
-  generateLogicFlows: (projectId: string, options?: { gapsFeedback?: string }) => Promise<Project | null>;
-  setInfraContent: (content: string | null) => void;
-  persistInfraContent: (content: string) => Promise<void>;
-  generateInfra: (projectId: string, options?: { gapsFeedback?: string }) => Promise<Project | null>;
-
-  setArchitectureContent: (content: string | null) => void;
-  persistArchitectureContent: (content: string) => Promise<void>;
-  generateArchitecture: (projectId: string, options?: Record<string, never>) => Promise<Project | null>;
-
-  setUseCasesContent: (content: string | null) => void;
-  persistUseCasesContent: (content: string) => Promise<void>;
-  generateUseCases: (projectId: string, options?: Record<string, never>) => Promise<Project | null>;
-
-  setUserStoriesContent: (content: string | null) => void;
-  persistUserStoriesContent: (content: string) => Promise<void>;
-  generateUserStories: (projectId: string, options?: Record<string, never>) => Promise<Project | null>;
-  setSpecContent: (content: string | null) => void;
-  persistSpecContent: (content: string) => Promise<void>;
-  setAemContent: (content: string | null) => void;
-  persistAemContent: (content: string) => Promise<void>;
-  setUiScreensContent: (content: string | null) => void;
-  /** Genera el deliverable "Pantallas" desde el MCP gráfico compatible activo. */
-  syncUiScreens: (projectId: string) => Promise<string | null>;
-  generateSpec: (projectId: string) => Promise<Project | null>;
-  generateAem: (
-    projectId: string,
-    opts: { marketScope: import("@theforge/shared-types").AemMarketScope },
-  ) => Promise<Project | null>;
-  setTasksContent: (content: string | null) => void;
-  persistTasksContent: (content: string) => Promise<void>;
-  generateTasks: (
-    projectId: string,
-    options?: { acknowledgeGaps?: boolean },
-  ) => Promise<Project | null>;
-  /** Pregunta acknowledgeGaps si el gate MDD tiene blockers; luego encola generate-tasks. */
-  requestGenerateTasks: (projectId: string) => Promise<Project | null>;
-  generateAgentGovernance: (projectId: string) => Promise<Project | null>;
-  /** GET reconciled scaffold para ZIP (materializa sugerencias omitidas en `files[]`). */
-  fetchAgentGovernanceExport: (projectId: string) => Promise<import("@theforge/shared-types").AgentGovernanceScaffold | null>;
-  /** POST /projects/:id/generate-deliverables — cascada según complexity. */
-  generateDeliverablesCascade: (
-    projectId: string,
-    options?: { acknowledgeGaps?: boolean },
-  ) => Promise<Project | null>;
-  /** HITL: aplica propuesta pendiente a `complexity` y limpia `complexityPending`. */
-  confirmComplexityProposal: (projectId: string) => Promise<Project | null>;
-  /** HITL: descarta propuesta sin aplicar nivel (`clearComplexityPending`). */
-  dismissComplexityProposal: (projectId: string) => Promise<Project | null>;
-  /** Re-infiere propuesta HITL desde documentos existentes (`POST .../reassess-complexity`). */
-  reassessComplexity: (projectId: string, note?: string) => Promise<Project | null>;
-  fetchConformance: (projectId: string, options?: { useLlm?: boolean }) => Promise<void>;
-  verifyDeliverable: (projectId: string, deliverable: "blueprint" | "api" | "infra" | "architecture" | "use-cases" | "user-stories") => Promise<string>;
-  setDbgaContent: (content: string | null) => void;
-  persistDbgaContent: (content: string) => Promise<void>;
-  clearDbgaContent: (projectId: string) => Promise<void>;
-  generateBenchmark: (projectId: string, userIdea: string, urls?: string[]) => Promise<Project | null>;
-  generateMddFromBenchmark: (projectId: string) => Promise<Project | null>;
-  /** Sincroniza §1–§7 afectadas por cambios upstream (mode upstream-sync en cola MDD). */
-  generateMddUpstreamSync: (
-    projectId: string,
-    opts?: { sections?: number[]; stageId?: string | null },
-  ) => Promise<Project | null>;
-  clearMddJustGeneratedFromBenchmark: () => void;
-  setAgentProgress: (progress: Array<{ agent: string; message: string }>) => void;
-  setPhase0SummaryContent: (content: string | null) => void;
-  persistPhase0SummaryContent: (content: string) => Promise<void>;
-  phase0DeepResearch: (
-    projectId: string,
-    opts: { userIdea?: string; urls?: string[]; includeBenchmark?: boolean },
-  ) => Promise<Project | null>;
-  clearPhase0SummaryContent: (projectId: string) => Promise<void>;
-  /** Clears the active workshop document tab content (PATCH null / empty). */
-  clearWorkshopDocumentContent: (
-    projectId: string,
-    panel: string,
-    options?: { benchmarkPhaseTab?: "fase0" | "benchmark"; stageId?: string },
-  ) => Promise<boolean>;
-  /** Flujo legacy: documentación de partida (opcional); puede incluir `mcpDebugTrace` si el API tiene debug activo. */
-  legacyGenerateCodebaseDoc: (
-    projectId: string,
-    opts?: { responseMode?: CodebaseDocResponseMode; stageId?: string },
-  ) => Promise<{ codebaseDoc: string; mcpDebugTrace?: LegacyMcpDebugEntry[] } | null>;
-  /** Flujo legacy: actualizar documentación de partida (edición manual) */
-  legacyUpdateCodebaseDoc: (projectId: string, codebaseDoc: string) => Promise<boolean>;
-  /** Flujo legacy: analizar con AriadneSpecs → archivos + preguntas */
-  legacyStart: (projectId: string, description: string, stageId?: string) => Promise<{ filesToModify: (string | { path: string; repoId?: string })[]; questions: string[]; suggestedAnswers?: Record<string, string> } | null>;
-  legacyAnswer: (projectId: string, answers: Record<string, string>, stageId?: string) => Promise<boolean>;
-  legacyGenerateMdd: (projectId: string, stageId?: string) => Promise<{ mddContent: string } | null>;
-  /** POST …/legacy/generate-as-is-manual → persiste `asIsManualContent` en la etapa legacy/primaria. */
-  legacyGenerateAsIsManual: (projectId: string) => Promise<{ asIsManualContent: string; stageId: string } | null>;
-  /** POST …/legacy/suggest-brd-from-codebase-doc — borrador BRD desde doc. Ariadne. */
-  legacySuggestBrdFromCodebaseDoc: (
-    projectId: string,
-    stageId?: string,
-  ) => Promise<{ brdContent: string; stageId: string } | null>;
-  /** POST …/legacy/generate-from-codebase — genera entregable individual desde codebaseDoc. */
-  legacyGenerateFromCodebaseDoc: (
-    projectId: string,
-    documentType: string,
-    stageId?: string,
-  ) => Promise<{ content: string; field: string } | null>;
-  /** POST …/projects/:id/suggest-brd-from-dbga — greenfield desde `dbgaContent`. */
-  suggestBrdFromDbga: (
-    projectId: string,
-    opts?: { stageId?: string | null },
-  ) => Promise<{ brdContent: string; stageId: string } | null>;
-  legacyGenerateDeliverables: (projectId: string) => Promise<boolean>;
-  fetchEstimation: (projectId: string, mddContentOverride?: string) => Promise<LiveMetricsResult | null>;
-  fetchAdrs: (projectId: string) => Promise<void>;
-  suggestGovernancePatterns: (
-    projectId: string,
-    stageId?: string | null,
-  ) => Promise<{ patternIds: string[]; rationale?: string }>;
-  /** POST …/ai-analysis/traceability/suggest-fix — parche markdown para brecha BRD→MDD. */
-  suggestTraceabilityFix: (
-    projectId: string,
-    gap: CrossDocumentGap,
-    opts?: { stageId?: string | null; mddContent?: string; signal?: AbortSignal },
-  ) => Promise<TraceabilitySuggestFixResponse | null>;
-  /** Inserta parche al final de §1/§4/§5 y persiste el MDD. */
-  insertTraceabilityPatch: (
-    suggestion: string,
-    targetSection: TraceabilitySuggestFixResponse["targetSection"],
-  ) => Promise<boolean>;
-  recordGovernancePatternAdrs: (
-    projectId: string,
-    patternIds: ReadonlySet<string>,
-  ) => Promise<void>;
-  convergeTasks: (
-    projectId: string,
-    persist?: boolean,
-  ) => Promise<{ convergeSection: string; persisted: boolean; openTaskCount: number } | null>;
-  tasksToIssues: (
-    projectId: string,
-    body: { owner: string; repo: string; milestone?: number; dryRun?: boolean },
-  ) => Promise<{ created: Array<{ number: number; html_url: string }>; errors: string[] } | null>;
-  clarifySpec: (
-    projectId: string,
-    opts: { persist: boolean; notes?: string; syncMdd?: boolean },
-  ) => Promise<{
-    clarifiedSpec: string;
-    clarificationMarkerCount: number;
-    persisted: boolean;
-    mddSyncQueued?: boolean;
-  } | null>;
-  clarifyDocument: (
-    projectId: string,
-    opts: {
-      field: ClarifyableDocumentField;
-      persist: boolean;
-      notes?: string;
-      stageId?: string | null;
-      syncMdd?: boolean;
-    },
-  ) => Promise<{
-    field: ClarifyableDocumentField;
-    clarifiedContent: string;
-    clarificationMarkerCount: number;
-    persisted: boolean;
-    mddSyncQueued?: boolean;
-  } | null>;
-  resolveClarifications: (
-    projectId: string,
-    opts: {
-      field: ClarifyableDocumentField;
-      answers: Record<string, string>;
-      persist?: boolean;
-      stageId?: string | null;
-    },
-  ) => Promise<{
-    field: ClarifyableDocumentField;
-    resolvedContent: string;
-    clarificationMarkerCount: number;
-    persisted: boolean;
-  } | null>;
-  reset: () => void;
-}
-
-function workshopStorePatchForClarifiedField(
-  field: ClarifyableDocumentField,
-  content: string,
-): Partial<typeof initialState> {
-  switch (field) {
-    case "mddContent":
-      return { mddContent: content };
-    case "dbgaContent":
-      return { dbgaContent: content };
-    case "specContent":
-      return { specContent: content };
-    case "architectureContent":
-      return { architectureContent: content };
-    case "useCasesContent":
-      return { useCasesContent: content };
-    case "userStoriesContent":
-      return { userStoriesContent: content };
-    case "blueprintContent":
-      return { blueprintContent: content };
-    case "tasksContent":
-      return { tasksContent: content };
-    case "apiContractsContent":
-      return { apiContractsContent: content };
-    case "logicFlowsContent":
-      return { logicFlowsContent: content };
-    case "infraContent":
-      return { infraContent: content };
-    case "agentGovernanceContent":
-      return { agentGovernanceContent: content };
-    case "uxUiGuideContent":
-      return { uxUiGuideContent: content };
-    case "uiScreensContent":
-      return { uiScreensContent: content };
-    case "phase0SummaryContent":
-      return { phase0SummaryContent: content };
-    case "aemContent":
-      return { aemContent: content };
-    case "brdContent":
-      return {};
-    default:
-      return {};
-  }
-}
-
-const initialState = {
-  projectId: null as string | null,
-  project: null as Project | null,
-  session: null as Session | null,
-  mddContent: "",
-  mddPersistedBaseline: "",
-  uxUiGuideContent: null as string | null,
-  dbgaContent: null as string | null,
-  specContent: null as string | null,
-  phase0SummaryContent: null as string | null,
-  blueprintContent: null as string | null,
-  tasksContent: null as string | null,
-  apiContractsContent: null as string | null,
-  logicFlowsContent: null as string | null,
-  architectureContent: null as string | null,
-  useCasesContent: null as string | null,
-  userStoriesContent: null as string | null,
-  infraContent: null as string | null,
-  aemContent: null as string | null,
-
-  uiScreensContent: null as string | null,
-  agentGovernanceContent: null as string | null,
-  documentTimestamps: {} as Record<string, WorkshopDocumentTimestamps>,
-  conformance: null as {
-    blueprint: ConformanceResult;
-    blueprintDataModel: ConformanceResult;
-    api: ApiConformanceResult;
-    logicFlows: ConformanceResult;
-    infra: ConformanceResult;
-  } | null,
-  loading: false,
-  loadingReason: null as
-    | "benchmark"
-    | "mdd"
-    | "mdd-section"
-    | "phase0-deep-research"
-    | "legacy-codebase-doc"
-    | "legacy-mdd"
-    | "legacy-as-is"
-    | "legacy-brd-suggest"
-    | "brd-from-dbga"
-    | "legacy-deliverables"
-    | "deliverables-cascade"
-    | "agent-governance"
-    | null,
-  streamingUserMessage: null as string | null,
-  streamingUserImages: null as ChatImagePart[] | null,
-  streamingContent: null as string | null,
-  streamingTab: null as string | null,
-  agentProgress: [] as AgentProgressItem[],
-  cascadeCompleted: 0,
-  cascadeTotal: 0,
-  liveMetrics: null as LiveMetricsResult | null,
-  planValidation: null as PlanValidationPersisted | null,
-  managerThreadId: null as string | null,
-  mddReviewing: false,
-  mddReapplyingFormat: false,
-  mddPersisting: false,
-  synced: true,
-  error: null as string | null,
-  notice: null as string | null,
-  modelsUnavailableModalOpen: false,
-  auditTrail: null as string[] | null,
-  precisionBreakdown: null as PrecisionBreakdown | null,
-  documentCompleteness: null as DocumentCompleteness | null,
-  crossDocumentGaps: [] as CrossDocumentGap[],
-  consistencyScore: null as number | null,
-  auditorFeedback: null as string | null,
-  deliveryGate: null as MddDeliveryGateResult | null,
-  documentationGapsRefreshNonce: 0,
-  evaluatorCritique: null as string | null,
-  legacyMcpDebugTrace: null as LegacyMcpDebugEntry[] | null,
-  lastLegacyDeliverablesDebug: null as LegacyDeliverablesDebugReport | null,
-  pendingPlanApproval: null as {
-    plan: Array<{ step_id: string; task_description: string; node: string; goal?: string }>;
-    planMessage: string;
-  } | null,
-  mddJustGeneratedFromBenchmark: false,
-  adrs: null as any[] | null,
-  workshopStages: [] as WorkshopStage[],
-  activeStageId: null as string | null,
-  workshopActiveDocPanel: "mdd",
-  generationStatus: null as ProjectGenerationStatus | null,
-  pluginData: {} as Record<string, unknown>,
-};
-
-let generationStatusPollTimer: ReturnType<typeof setInterval> | null = null;
-let generationStatusPollProjectId: string | null = null;
-
-function stopGenerationStatusPolling(): void {
-  if (generationStatusPollTimer) {
-    clearInterval(generationStatusPollTimer);
-    generationStatusPollTimer = null;
-  }
-  generationStatusPollProjectId = null;
-}
-
-export const useWorkshopStore = create<WorkshopState>((set, get) => ({
-  ...initialState,
-
-  setProjectId: (id) => set({ projectId: id }),
+export const useWorkshopStore = create<WorkshopState>((set, get, api) => ({
+  ...workshopInitialState,
+  ...createUiSlice(set, get, api),
   setWorkshopActiveDocPanel: (panel) => {
     const state = get();
     if (isWorkshopAgentsBusy(state)) return;
@@ -1593,12 +416,6 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
     })),
   setSession: (s) => set({ session: s }),
   setMddContent: (content) => set({ mddContent: mddContentForEditor(content) }),
-  setLoading: (v) => set({ loading: v }),
-  setSynced: (v) => set({ synced: v }),
-  setError: (e) => set({ error: e }),
-  bumpDocumentationGapsRefresh: () =>
-    set((s) => ({ documentationGapsRefreshNonce: s.documentationGapsRefreshNonce + 1 })),
-  setNotice: (n) => set({ notice: n }),
   retryWorkshopSync: async () => {
     const { projectId, error } = get();
     const pid = projectId?.trim();
@@ -1629,10 +446,6 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       }
     }
   },
-  setModelsUnavailableModalOpen: (open) => set({ modelsUnavailableModalOpen: open }),
-  clearEvaluatorCritique: () => set({ evaluatorCritique: null }),
-  clearLegacyMcpDebugTrace: () => set({ legacyMcpDebugTrace: null }),
-  clearLegacyDeliverablesDebug: () => set({ lastLegacyDeliverablesDebug: null }),
 
   setActiveStageId: (stageId) => {
     const { project, projectId, workshopStages } = get();
@@ -1822,10 +635,10 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
         }));
       }
       if (status.busy) {
-        if (generationStatusPollProjectId !== requestedId) {
+        if (generationStatusPoll.projectId !== requestedId) {
           stopGenerationStatusPolling();
-          generationStatusPollProjectId = requestedId;
-          generationStatusPollTimer = setInterval(() => {
+          generationStatusPoll.projectId = requestedId;
+          generationStatusPoll.timer = setInterval(() => {
             void get().fetchGenerationStatus(requestedId);
           }, 5000);
         }
@@ -5306,5 +4119,5 @@ export const useWorkshopStore = create<WorkshopState>((set, get) => ({
       set({ loading: false, loadingReason: null });
     }
   },
-  reset: () => set(initialState),
+  reset: () => set(workshopInitialState),
 }));
