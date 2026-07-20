@@ -857,4 +857,14 @@ Próximo: ver incrementos 5m-2 y 5m-3.
 | `tools/markdown.tools.ts` — tablas y Mermaid | ✅ |
 | `tools/index.ts` — compone dominios; eliminado `mcp-core.tools.ts` (~1 727 L) | ✅ |
 
-Próximo: split `agent-governance.util.ts` (6-4).
+### Fase 6 — Legacy y MCP (incremento 6-4)
+
+| Ítem | Estado |
+|------|--------|
+| `agent-governance/rules-artifacts.util.ts` | ✅ |
+| `agent-governance/skills-artifacts.util.ts` | ✅ |
+| `agent-governance/agents-artifacts.util.ts` | ✅ |
+| `agent-governance/install-map.util.ts` + `sdd-conflict.util.ts` | ✅ |
+| `agent-governance.util.ts` — **~1 867 L** (−~410 vs pre-6-4) | ✅ |
+
+Próximo: reducir más el orquestador `agent-governance.util.ts` u otras fases GOD-REFACTOR.
