@@ -1312,7 +1312,8 @@ export class AiService {
     }
     if (options?.tasksPlanJson?.trim()) {
       prompt +=
-        "\n\n**PLAN JSON APROBADO (OBLIGATORIO — no añadas tareas fuera del plan; expande cada ítem en markdown):**\n---\n" +
+        "\n\n**PLAN JSON APROBADO (cobertura mínima obligatoria — expande CADA ítem en markdown YAML v2 completo; " +
+        "si el CHECKLIST DE COBERTURA exige endpoints, pantallas, Testing o Deploy no listados en el plan, inclúyelos igual):**\n---\n" +
         options.tasksPlanJson.trim() +
         "\n---";
     }

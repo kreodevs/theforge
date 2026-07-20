@@ -24,8 +24,11 @@ import {
   type TasksQualityReport,
 } from "./tasks-generation-quality.util.js";
 import { runTasksPreflightStrict } from "./tasks-preflight.util.js";
-import { buildHeuristicTasksPlan } from "./tasks-heuristic-plan.util.js";
+import { buildHeuristicTasksPlan, type HeuristicTasksPlanInput } from "./tasks-heuristic-plan.util.js";
 import { buildSlimTasksPlannerContext } from "./tasks-planner-context.util.js";
+import { mergeTasksPlanWithCoverageFloor } from "./tasks-plan-merge.util.js";
+import { extractHttpEndpointsFromMarkdown } from "../ui-mcp/api-contract-endpoints.util.js";
+import { extractPantallaRoutes } from "./tasks-generation-structure.util.js";
 import {
   buildTasksCoverageChecklist,
   serializeTasksCoverageChecklist,
@@ -65,6 +68,9 @@ export type TasksPipelineResult = {
   plan: TasksGenerationPlan | null;
   snapshot: TasksPipelineQualitySnapshot;
 };
+
+/** Ítems por lote de redacción (~500 tok/tarea YAML → 18 caben en 8K; lotes evitan truncado). */
+const TASKS_REDACTOR_BATCH_SIZE = 18;
 
 @Injectable()
 export class TasksGenerationPipelineService {
@@ -108,12 +114,12 @@ export class TasksGenerationPipelineService {
     const plannerContext = this.buildPlannerContext(input);
     const plan = await this.runPlanner(plannerContext, input);
     const planJson = JSON.stringify(plan, null, 2);
+    const redactorMaxTokens = resolveLlmMaxTokensForPurpose("tasksDoc");
+    this.logger.log(
+      `[Tasks pipeline] plan ${plan.items.length} items → redactor max_tokens=${redactorMaxTokens} (global ceiling llm_max_tokens)`,
+    );
 
-    let tasksMarkdown = await this.ai.generateTasks(input.mddMarkdown, input.blueprintMarkdown ?? null, {
-      ...input.taskOpts,
-      tasksPlanJson: planJson,
-      gapsFeedback: input.gapsFeedback,
-    });
+    let tasksMarkdown = await this.runRedactor(plan, input, input.gapsFeedback);
 
     let llmAuditor = await this.runLlmAuditor(tasksMarkdown, input);
     let quality = this.evaluateQuality(tasksMarkdown, input);
@@ -143,7 +149,7 @@ export class TasksGenerationPipelineService {
           `(det=${quality.score}, llm=${llmAuditor.score})`,
       );
       const repairFeedback = this.composeRepairFeedback(quality, llmAuditor, input.gapsFeedback);
-      tasksMarkdown = await this.runRepair(tasksMarkdown, planJson, repairFeedback, input);
+      tasksMarkdown = await this.runRepair(tasksMarkdown, plan, repairFeedback, input);
       llmAuditor = await this.runLlmAuditor(tasksMarkdown, input);
       quality = this.evaluateQuality(tasksMarkdown, input);
     }
@@ -225,7 +231,86 @@ export class TasksGenerationPipelineService {
     return parts.join("");
   }
 
+  /** Redacta tasks.md desde el plan; lotes si hay muchos ítems (evita truncado por max_tokens). */
+  private async runRedactor(
+    plan: TasksGenerationPlan,
+    input: TasksPipelineInput,
+    gapsFeedback?: string | null,
+  ): Promise<string> {
+    const planJson = JSON.stringify(plan, null, 2);
+    if (plan.items.length <= TASKS_REDACTOR_BATCH_SIZE) {
+      return this.ai.generateTasks(input.mddMarkdown, input.blueprintMarkdown ?? null, {
+        ...input.taskOpts,
+        tasksPlanJson: planJson,
+        gapsFeedback,
+      });
+    }
+
+    this.logger.log(
+      `[Tasks pipeline] redactor en lotes: ${plan.items.length} ítems, batch=${TASKS_REDACTOR_BATCH_SIZE}`,
+    );
+    const parts: string[] = [];
+    for (let offset = 0; offset < plan.items.length; offset += TASKS_REDACTOR_BATCH_SIZE) {
+      const sliceItems = plan.items.slice(offset, offset + TASKS_REDACTOR_BATCH_SIZE);
+      const slicePlan: TasksGenerationPlan = { sections: plan.sections, items: sliceItems };
+      const batchIndex = Math.floor(offset / TASKS_REDACTOR_BATCH_SIZE) + 1;
+      const batchTotal = Math.ceil(plan.items.length / TASKS_REDACTOR_BATCH_SIZE);
+      const batchFeedback =
+        offset === 0
+          ? gapsFeedback
+          : [
+              gapsFeedback?.trim(),
+              `Lote ${batchIndex}/${batchTotal} del plan Tasks. Continúa desde ${sliceItems[0]!.id}. ` +
+                "No repitas el título # Tasks ni secciones H2 ya generadas en lotes anteriores.",
+            ]
+              .filter(Boolean)
+              .join("\n\n");
+
+      const chunk = await this.ai.generateTasks(input.mddMarkdown, input.blueprintMarkdown ?? null, {
+        ...input.taskOpts,
+        tasksPlanJson: JSON.stringify(slicePlan, null, 2),
+        gapsFeedback: batchFeedback,
+      });
+      const trimmed = chunk.trim();
+      if (offset === 0) {
+        parts.push(trimmed);
+      } else {
+        parts.push(trimmed.replace(/^#\s*Tasks\s*\n+/im, "").trim());
+      }
+    }
+    return parts.filter(Boolean).join("\n\n");
+  }
+
+  private heuristicPlanInput(input: TasksPipelineInput): HeuristicTasksPlanInput {
+    return {
+      mddMarkdown: input.mddMarkdown,
+      apiContractsMarkdown: input.taskOpts.apiContractsContent,
+      uiScreensMarkdown: input.taskOpts.uiScreensContent,
+      inventory: input.inventory,
+      hasUxTeam: input.hasUxTeam,
+      blueprintMarkdown: input.blueprintMarkdown,
+    };
+  }
+
+  /** Expande plan LLM con piso heurístico (API, pantallas, entidades, infra, QA). */
+  private expandPlanWithCoverageFloor(
+    plan: TasksGenerationPlan,
+    input: TasksPipelineInput,
+  ): TasksGenerationPlan {
+    const floor = buildHeuristicTasksPlan(this.heuristicPlanInput(input));
+    const merged = mergeTasksPlanWithCoverageFloor(plan, floor);
+    if (merged.items.length > plan.items.length) {
+      this.logger.warn(
+        `[Tasks pipeline] plan LLM ${plan.items.length} → ${merged.items.length} ítems tras piso heurístico`,
+      );
+    }
+    return merged;
+  }
+
   private async runPlanner(context: string, input: TasksPipelineInput): Promise<TasksGenerationPlan> {
+    const heuristicFallback = () =>
+      buildHeuristicTasksPlan(this.heuristicPlanInput(input));
+
     const contexts: Array<{ label: string; prompt: string }> = [
       { label: "full", prompt: context },
       {
@@ -250,7 +335,7 @@ export class TasksGenerationPipelineService {
         maxTokensPurpose: "tasksPlanner",
       });
       if (parsed) {
-        const plan: TasksGenerationPlan = {
+        let plan: TasksGenerationPlan = {
           sections: parsed.sections ?? [],
           items: parsed.items.map((item) => ({
             ...item,
@@ -261,6 +346,7 @@ export class TasksGenerationPipelineService {
             targetFilesHint: item.targetFilesHint ?? [],
           })),
         };
+        plan = this.expandPlanWithCoverageFloor(plan, input);
         try {
           this.validatePlanCompleteness(plan, input);
           this.logger.log(`[Tasks pipeline] planner OK (${label}, ${plan.items.length} items)`);
@@ -272,14 +358,7 @@ export class TasksGenerationPipelineService {
       this.logger.warn(`[Tasks pipeline] planner JSON failed (${label})`);
     }
 
-    const heuristic = buildHeuristicTasksPlan({
-      mddMarkdown: input.mddMarkdown,
-      apiContractsMarkdown: input.taskOpts.apiContractsContent,
-      uiScreensMarkdown: input.taskOpts.uiScreensContent,
-      inventory: input.inventory,
-      hasUxTeam: input.hasUxTeam,
-      blueprintMarkdown: input.blueprintMarkdown,
-    });
+    const heuristic = heuristicFallback();
     this.logger.warn(
       `[Tasks pipeline] planner heuristic fallback (${heuristic.items.length} items) — revisa auditorChatModel o upstream`,
     );
@@ -292,6 +371,51 @@ export class TasksGenerationPipelineService {
    * para forzar reintentos con el planner o el fallback heurístico.
    */
   private validatePlanCompleteness(plan: TasksGenerationPlan, input: TasksPipelineInput): void {
+    const endpoints = extractHttpEndpointsFromMarkdown(input.taskOpts.apiContractsContent ?? "");
+    if (endpoints.length >= 2) {
+      const covered = endpoints.filter((ep) =>
+        plan.items.some((item) =>
+          item.upstreamRefs.some(
+            (ref) =>
+              ref === `api-contracts:${ep.method} ${ep.path}` ||
+              ref.toLowerCase().includes(ep.path.toLowerCase()),
+          ),
+        ),
+      );
+      if (covered.length < endpoints.length) {
+        throw new BadRequestException({
+          code: "TASKS_PLAN_MISSING_ENDPOINTS",
+          message: `Plan incompleto: ${covered.length}/${endpoints.length} endpoints de api-contracts.`,
+          endpointCount: endpoints.length,
+          coveredEndpoints: covered.length,
+          planItemCount: plan.items.length,
+        });
+      }
+    }
+
+    const routes = extractPantallaRoutes(input.taskOpts.uiScreensContent ?? "").filter(
+      (r) => !/\/admin\/proc-cap/i.test(r),
+    );
+    if (routes.length >= 1) {
+      const coveredRoutes = routes.filter((route) =>
+        plan.items.some(
+          (item) =>
+            item.layer === "Frontend" &&
+            (item.upstreamRefs.some((ref) => ref === `pantallas:${route}`) ||
+              item.title.includes(route)),
+        ),
+      );
+      if (coveredRoutes.length < routes.length) {
+        throw new BadRequestException({
+          code: "TASKS_PLAN_MISSING_ROUTES",
+          message: `Plan incompleto: ${coveredRoutes.length}/${routes.length} rutas de pantallas.md.`,
+          routeCount: routes.length,
+          coveredRoutes: coveredRoutes.length,
+          planItemCount: plan.items.length,
+        });
+      }
+    }
+
     const blueprint = (input.blueprintMarkdown ?? "").trim();
     if (blueprint.length < 200) return; // No hay blueprint significativo
 
@@ -486,10 +610,11 @@ export class TasksGenerationPipelineService {
 
   private async runRepair(
     tasksMarkdown: string,
-    planJson: string,
+    plan: TasksGenerationPlan,
     feedback: string,
     input: TasksPipelineInput,
   ): Promise<string> {
+    const planJson = JSON.stringify(plan, null, 2);
     const upstream = this.buildAuditorUpstreamContext(input, tasksMarkdown);
     const prompt =
       "Repara el documento Tasks según gaps.\n\n" +
@@ -514,12 +639,7 @@ export class TasksGenerationPipelineService {
     if (trimmed.startsWith("#") || trimmed.includes("## Backend")) {
       return trimmed;
     }
-    return await this.ai.generateTasks(input.mddMarkdown, input.blueprintMarkdown ?? null, {
-      ...input.taskOpts,
-      tasksPlanJson: planJson,
-      gapsFeedback: feedback,
-      tasksAuditorFeedback: feedback,
-    });
+    return await this.runRedactor(plan, input, feedback);
   }
 
   private evaluateQuality(tasksMarkdown: string, input: TasksPipelineInput): TasksQualityReport {
