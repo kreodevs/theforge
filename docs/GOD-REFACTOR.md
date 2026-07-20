@@ -595,5 +595,6 @@ Fase 6 (legacy/MCP)
 | `json-section-to-markdown.ts` + re-export | ✅ |
 | `section-body.util.ts` (`extractMddSectionBody`) | ✅ |
 | `security-manifest.ts` (`fixSecurityManifestCoherence`, `fixIntegrationMetadataCoherence`, `draftUsesLdapPrimaryAuth`) | ✅ |
-| `sql-repair.ts`, `section-merge.ts`, … | pendiente |
+| `sql-repair.ts` (7 exports SQL + `sqlBlockContainsProseArtifact` interno) | ✅ |
+| `section-merge.ts`, … | pendiente |
 | Barrel `mdd-sanitize.ts` &lt; 200 L | pendiente |
