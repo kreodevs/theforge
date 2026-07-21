@@ -35,6 +35,12 @@ import {
   serializeTasksCoverageChecklist,
 } from "./tasks-coverage-checklist.util.js";
 import { isTasksDocumentTruncated } from "./tasks-generation-structure.util.js";
+import {
+  composeTasksRedactorRetryFeedback,
+  composeTasksRepairFeedbackLines,
+  summarizeTasksRepairAttempt,
+  type TasksRedactorRetryFeedback,
+} from "./tasks-generation-repair-feedback.util.js";
 
 export type TasksPipelineInput = {
   mddMarkdown: string;
@@ -139,17 +145,36 @@ export class TasksGenerationPipelineService {
       );
     }
 
+    const repairHistory: string[] = [];
+
     while (
       repairAttempts < maxRepairs &&
       (!quality.ok || !llmAuditor.passed || llmAuditor.score < TASKS_LLM_AUDITOR_PASS_THRESHOLD)
     ) {
       repairAttempts += 1;
+      const documentTruncated = isTasksDocumentTruncated(tasksMarkdown);
       this.logger.warn(
         `[Tasks pipeline] repair ${repairAttempts}/${maxRepairs} ` +
-          `(det=${quality.score}, llm=${llmAuditor.score})`,
+          `(det=${quality.score}, llm=${llmAuditor.score}, truncated=${documentTruncated})`,
       );
-      const repairFeedback = this.composeRepairFeedback(quality, llmAuditor, input.gapsFeedback);
-      tasksMarkdown = await this.runRepair(tasksMarkdown, plan, repairFeedback, input);
+      const repairFeedbackLines = composeTasksRepairFeedbackLines(
+        quality,
+        llmAuditor,
+        input.gapsFeedback,
+      );
+      const retryFeedback = composeTasksRedactorRetryFeedback({
+        repairAttempt: repairAttempts,
+        maxRepairs,
+        repairFeedbackLines,
+        llmAuditor,
+        priorAttemptSummaries: repairHistory,
+        documentTruncated,
+      });
+      repairHistory.push(summarizeTasksRepairAttempt(quality, llmAuditor));
+      tasksMarkdown = await this.runRepair(tasksMarkdown, plan, retryFeedback, input, {
+        documentTruncated,
+        patchFeedbackLines: repairFeedbackLines,
+      });
       llmAuditor = await this.runLlmAuditor(tasksMarkdown, input);
       quality = this.evaluateQuality(tasksMarkdown, input);
     }
@@ -236,6 +261,7 @@ export class TasksGenerationPipelineService {
     plan: TasksGenerationPlan,
     input: TasksPipelineInput,
     gapsFeedback?: string | null,
+    tasksAuditorFeedback?: string | null,
   ): Promise<string> {
     const journeyPartitions =
       (input.inventory?.processes?.length ?? 0) > 0
@@ -263,13 +289,13 @@ export class TasksGenerationPipelineService {
               ]
                 .filter(Boolean)
                 .join("\n\n");
-        const chunk = await this.redactorSlice(slicePlan, input, batchFeedback, ji === 0);
+        const chunk = await this.redactorSlice(slicePlan, input, batchFeedback, ji === 0, tasksAuditorFeedback);
         parts.push(chunk);
       }
       return parts.filter(Boolean).join("\n\n");
     }
 
-    return this.redactorSlice(plan, input, gapsFeedback, true);
+    return this.redactorSlice(plan, input, gapsFeedback, true, tasksAuditorFeedback);
   }
 
   private async redactorSlice(
@@ -277,6 +303,7 @@ export class TasksGenerationPipelineService {
     input: TasksPipelineInput,
     gapsFeedback?: string | null,
     isFirstChunk = true,
+    tasksAuditorFeedback?: string | null,
   ): Promise<string> {
     const planJson = JSON.stringify(plan, null, 2);
     if (plan.items.length <= TASKS_REDACTOR_BATCH_SIZE) {
@@ -284,6 +311,7 @@ export class TasksGenerationPipelineService {
         ...input.taskOpts,
         tasksPlanJson: planJson,
         gapsFeedback,
+        tasksAuditorFeedback,
       });
       return isFirstChunk ? chunk.trim() : chunk.trim().replace(/^#\s*Tasks\s*\n+/im, "").trim();
     }
@@ -312,6 +340,7 @@ export class TasksGenerationPipelineService {
         ...input.taskOpts,
         tasksPlanJson: JSON.stringify(slicePlan, null, 2),
         gapsFeedback: batchFeedback,
+        tasksAuditorFeedback: offset === 0 ? tasksAuditorFeedback : undefined,
       });
       const trimmed = chunk.trim();
       if (offset === 0 && isFirstChunk) {
@@ -650,7 +679,48 @@ export class TasksGenerationPipelineService {
     });
   }
 
+  /**
+   * Reparación: regenera con el redactor principal (aprende del auditor).
+   * Parche LLM solo como fallback si el redactor no devuelve markdown usable y el doc no está truncado.
+   */
   private async runRepair(
+    previousMarkdown: string,
+    plan: TasksGenerationPlan,
+    retryFeedback: TasksRedactorRetryFeedback,
+    input: TasksPipelineInput,
+    options: { documentTruncated: boolean; patchFeedbackLines: string },
+  ): Promise<string> {
+    this.logger.log(
+      `[Tasks pipeline] repair → redactor regenerate (truncated=${options.documentTruncated})`,
+    );
+
+    const regenerated = await this.runRedactor(
+      plan,
+      input,
+      retryFeedback.gapsFeedback,
+      retryFeedback.tasksAuditorFeedback,
+    );
+
+    const looksLikeTasksDoc =
+      regenerated.trim().startsWith("#") || regenerated.includes("## Backend");
+
+    if (looksLikeTasksDoc || options.documentTruncated) {
+      return regenerated;
+    }
+
+    this.logger.warn(
+      "[Tasks pipeline] redactor repair returned unusable output — falling back to patch agent",
+    );
+    return this.runPatchRepair(
+      previousMarkdown,
+      plan,
+      options.patchFeedbackLines,
+      input,
+    );
+  }
+
+  /** Fallback: parche dirigido sobre el borrador anterior (solo si el redactor no produjo markdown válido). */
+  private async runPatchRepair(
     tasksMarkdown: string,
     plan: TasksGenerationPlan,
     feedback: string,
@@ -681,7 +751,7 @@ export class TasksGenerationPipelineService {
     if (trimmed.startsWith("#") || trimmed.includes("## Backend")) {
       return trimmed;
     }
-    return await this.runRedactor(plan, input, feedback);
+    return await this.runRedactor(plan, input, feedback, null);
   }
 
   private evaluateQuality(tasksMarkdown: string, input: TasksPipelineInput): TasksQualityReport {
@@ -697,22 +767,5 @@ export class TasksGenerationPipelineService {
       userStoriesMarkdown: input.taskOpts.userStoriesContent,
       blueprintMarkdown: input.blueprintMarkdown,
     });
-  }
-
-  private composeRepairFeedback(
-    quality: TasksQualityReport,
-    llmAuditor: TasksLlmAuditorOutput,
-    externalGaps?: string | null,
-  ): string {
-    const lines: string[] = [];
-    if (externalGaps?.trim()) lines.push(externalGaps.trim());
-    if (quality.feedback?.trim()) lines.push(quality.feedback.trim());
-    if (llmAuditor.feedback?.trim()) lines.push(llmAuditor.feedback.trim());
-    for (const g of llmAuditor.missing_coverage) lines.push(`Cobertura: ${g}`);
-    for (const g of llmAuditor.conflicts) lines.push(`Conflicto: ${g}`);
-    for (const g of llmAuditor.traceability_gaps) lines.push(`Trazabilidad: ${g}`);
-    for (const g of llmAuditor.dependency_issues) lines.push(`Dependencia: ${g}`);
-    for (const g of llmAuditor.executable_gaps) lines.push(`Ejecutabilidad: ${g}`);
-    return [...new Set(lines.map((l) => l.trim()).filter(Boolean))].join("\n");
   }
 }
