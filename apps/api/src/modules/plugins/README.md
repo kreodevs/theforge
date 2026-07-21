@@ -10,6 +10,7 @@ Expone el contrato runtime entre el core y plugins cargados dinámicamente.
 | GET | `/plugins/health` | Snapshot de boot: plugins cargados, hooks registrados |
 | GET | `/plugins/installed` | Plugins en disco + estado cargado (manifest) |
 | POST | `/plugins/install` | Instalar `.tfplugin` (multipart `file`) o JSON `{ downloadUrl, licenseKey, pluginId }` — **admin** |
+| POST | `/plugins/provision` | Aprovisionamiento compuesto `{ pluginId, downloadUrl?, licenseKey?, licensePortalUrl? }` — **admin** |
 | DELETE | `/plugins/installed/:pluginId` | Desinstalar — **admin** |
 | POST | `/plugins/reload` | Re-escaneo de directorios — **admin** |
 | GET | `/plugins/settings-panels` | Paneles de Ajustes declarados por plugins |
@@ -36,4 +37,4 @@ Ver **`docs/PLUGINS-PACKAGING.md`**: manifest, `pnpm exec tsx scripts/pack-thefo
 
 Plugin de desarrollo: `plugins-enabled/stub-plugin/` (`dev.theforge.stub-plugin`).
 
-Ver `docs/PLUGINS.md`, `docs/ARCHITECTURE_PLUGINS.md`, `docs/PLUGINS-PACKAGING.md`.
+Ver `docs/PLUGINS.md`, `docs/ARCHITECTURE_PLUGINS.md`, `docs/PLUGINS-PACKAGING.md`, `docs/PLUGINS_PROVISIONING_DBGA.md`.

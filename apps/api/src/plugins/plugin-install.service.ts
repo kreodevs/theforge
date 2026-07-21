@@ -14,6 +14,8 @@ import {
   type InstalledPluginRecord,
   type PluginInstallResult,
   type PluginInstalledListResponse,
+  type PluginProvisionRequestBody,
+  type PluginProvisionResult,
   type PluginReloadResult,
   type PluginUninstallResult,
   type TheForgePluginManifest,
@@ -140,11 +142,8 @@ export class PluginInstallService {
       throw new BadRequestException("licenseKey es obligatorio");
     }
 
-    const portalUrl = this.configService.get<string>(
-      "plugins.licensePortalUrl",
-      "https://licenses.theforge.dev/api/v1",
-    );
-    const url = `${portalUrl.replace(/\/$/, "")}/plugins/download`;
+    const portalUrl = this.getLicensePortalUrl();
+    const url = `${portalUrl}/plugins/download`;
 
     const res = await fetch(url, {
       method: "POST",
@@ -167,9 +166,11 @@ export class PluginInstallService {
       Buffer.from(await res.arrayBuffer()),
     );
 
-    if (result.reloaded) {
-      await this.tryRegisterPluginLicense(result.pluginId, key, portalUrl);
-    } else {
+    const licenseRegistered = result.reloaded
+      ? await this.tryRegisterPluginLicense(result.pluginId, key, portalUrl)
+      : false;
+
+    if (!result.reloaded) {
       this.logger.warn(
         `Plugin ${result.pluginId} instalado pero no cargado; registerLicense omitido hasta recargar`,
       );
@@ -177,23 +178,116 @@ export class PluginInstallService {
 
     return {
       ...result,
+      licenseRegistered,
       message: result.reloaded
-        ? "Plugin instalado, cargado y licencia registrada (si el plugin lo soporta)"
+        ? licenseRegistered
+          ? "Plugin instalado, cargado y licencia registrada"
+          : "Plugin instalado y cargado; el plugin no expone registerLicense()"
         : result.message,
     };
+  }
+
+  /**
+   * Aprovisionamiento compuesto: instala `.tfplugin` (URL o portal) y registra licencia.
+   * Pensado para portal de licencias, ForgeOps y bloques DBGA de aprovisionamiento.
+   */
+  async provision(
+    body: PluginProvisionRequestBody,
+  ): Promise<PluginProvisionResult> {
+    const pluginId = body.pluginId?.trim();
+    const licenseKey = body.licenseKey?.trim();
+    const downloadUrl = body.downloadUrl?.trim();
+    const licensePortalUrl = body.licensePortalUrl?.trim() || this.getLicensePortalUrl();
+
+    if (!pluginId) {
+      throw new BadRequestException("pluginId es obligatorio");
+    }
+    if (!licenseKey && !downloadUrl) {
+      throw new BadRequestException(
+        "Indica downloadUrl (CDN) y/o licenseKey (portal)",
+      );
+    }
+
+    if (downloadUrl) {
+      const result = await this.installFromUrl(downloadUrl);
+      this.assertPluginIdMatches(result.pluginId, pluginId);
+
+      let licenseRegistered = false;
+      if (licenseKey && result.reloaded) {
+        licenseRegistered = await this.tryRegisterPluginLicense(
+          result.pluginId,
+          licenseKey,
+          licensePortalUrl,
+        );
+      } else if (licenseKey && !result.reloaded) {
+        this.logger.warn(
+          `Plugin ${result.pluginId} en disco sin cargar; registerLicense omitido`,
+        );
+      }
+
+      return {
+        ...result,
+        installSource: "url",
+        licenseRegistered,
+        message: this.buildProvisionMessage(result.reloaded, licenseRegistered, "url"),
+      };
+    }
+
+    const result = await this.installFromLicensePortal(licenseKey!, pluginId);
+    this.assertPluginIdMatches(result.pluginId, pluginId);
+
+    return {
+      ...result,
+      installSource: "portal",
+      licenseRegistered: result.licenseRegistered ?? false,
+    };
+  }
+
+  private assertPluginIdMatches(installedId: string, expectedId: string): void {
+    if (installedId !== expectedId) {
+      throw new BadRequestException(
+        `El manifest instalado (${installedId}) no coincide con pluginId (${expectedId})`,
+      );
+    }
+  }
+
+  private buildProvisionMessage(
+    reloaded: boolean,
+    licenseRegistered: boolean,
+    source: "portal" | "url",
+  ): string {
+    if (!reloaded) {
+      return "Plugin instalado en disco; reinicia o recarga para completar licencia";
+    }
+    if (licenseRegistered) {
+      return source === "portal"
+        ? "Plugin aprovisionado desde portal con licencia registrada"
+        : "Plugin instalado desde URL con licencia registrada";
+    }
+    return source === "url"
+      ? "Plugin instalado desde URL; licencia no registrada (sin clave o sin registerLicense)"
+      : "Plugin instalado; licencia pendiente de registro en el plugin";
+  }
+
+  private getLicensePortalUrl(): string {
+    return (
+      this.configService
+        .get<string>("plugins.licensePortalUrl", "https://licenses.theforge.dev/api/v1")
+        ?.replace(/\/$/, "") ?? "https://licenses.theforge.dev/api/v1"
+    );
   }
 
   private async tryRegisterPluginLicense(
     pluginId: string,
     licenseKey: string,
     licensePortalUrl: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const plugin = this.pluginLoader.getPlugin(pluginId);
     if (!plugin?.registerLicense) {
       this.logger.debug(
         `Plugin ${pluginId} no implementa registerLicense(); licencia no propagada al plugin`,
       );
-      return;
+      return false;
     }
 
     try {
@@ -203,10 +297,12 @@ export class PluginInstallService {
         source: "portal",
       });
       this.logger.log(`Licencia registrada en plugin ${pluginId}`);
+      return true;
     } catch (err) {
       this.logger.warn(
         `registerLicense falló para ${pluginId}: ${err instanceof Error ? err.message : String(err)}`,
       );
+      return false;
     }
   }
 

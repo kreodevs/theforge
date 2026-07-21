@@ -87,6 +87,7 @@ La API acepta `licenseKey` + `pluginId` para el **portal de licencias** (no en l
 |--------|------|-----|
 | GET | `/api/plugins/installed` | Listado instalado + health |
 | POST | `/api/plugins/install` | Multipart `file` o JSON `{ downloadUrl, licenseKey, pluginId }` |
+| POST | `/api/plugins/provision` | JSON `{ pluginId, downloadUrl?, licenseKey?, licensePortalUrl? }` — install + licencia |
 | DELETE | `/api/plugins/installed/:pluginId` | Desinstalar (admin) |
 | POST | `/api/plugins/reload` | Re-escaneo (admin) |
 
@@ -125,7 +126,7 @@ X-Plugin-Id: com.kreodevs.evd
 → 200 application/zip (cuerpo .tfplugin)
 ```
 
-Ver también `docs/LICENSE_PORTAL_SPEC.md`.
+Ver también `docs/PLUGINS_PROVISIONING_DBGA.md` (modelo DBGA + aprovisionamiento compuesto).
 
 ## Ejemplo EVD
 

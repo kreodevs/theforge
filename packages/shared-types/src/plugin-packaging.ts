@@ -72,6 +72,21 @@ export interface PluginInstallRequestBody {
   pluginId?: string;
 }
 
+/**
+ * Body JSON para POST /plugins/provision — install + licencia en un paso.
+ * Usado por portal de licencias, ForgeOps o aprovisionadores que leen DBGA.
+ */
+export interface PluginProvisionRequestBody {
+  /** Identificador reverse-DNS del plugin (obligatorio). */
+  pluginId: string;
+  /** URL HTTPS del `.tfplugin` (CDN, GitHub Release). Si se omite, el core descarga del portal con licenseKey. */
+  downloadUrl?: string;
+  /** Clave comercial (`tk_…`). Registra licencia en el plugin vía registerLicense(). */
+  licenseKey?: string;
+  /** Override de LICENSE_PORTAL_URL para validación/registro. */
+  licensePortalUrl?: string;
+}
+
 /** Respuesta de instalación exitosa. */
 export interface PluginInstallResult {
   ok: true;
@@ -80,6 +95,16 @@ export interface PluginInstallResult {
   name: string;
   reloaded: boolean;
   message?: string;
+  /** Presente cuando el install propagó licencia vía registerLicense(). */
+  licenseRegistered?: boolean;
+}
+
+/** Respuesta de POST /plugins/provision */
+export interface PluginProvisionResult extends PluginInstallResult {
+  /** Origen del paquete instalado. */
+  installSource: "portal" | "url";
+  /** Si registerLicense() se ejecutó con éxito en el plugin. */
+  licenseRegistered: boolean;
 }
 
 /** Respuesta de desinstalación. */

@@ -22,7 +22,10 @@ import { DeliverablesQueueService } from "../projects/deliverables-queue.service
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { getRequestUserId } from "../../common/request-user.store.js";
 import { requireAdmin } from "../../common/guards/role.helpers.js";
-import type { PluginInstallRequestBody } from "@theforge/shared-types";
+import type {
+  PluginInstallRequestBody,
+  PluginProvisionRequestBody,
+} from "@theforge/shared-types";
 import type { Prisma } from "@theforge/database";
 
 @Controller("plugins")
@@ -83,6 +86,12 @@ export class PluginsController {
     throw new BadRequestException(
       "Envía un archivo .tfplugin (multipart field 'file') o downloadUrl / licenseKey en JSON",
     );
+  }
+
+  @Post("provision")
+  async provisionPlugin(@Body() body: PluginProvisionRequestBody) {
+    requireAdmin();
+    return this.pluginInstall.provision(body);
   }
 
   @Delete("installed/:pluginId")
