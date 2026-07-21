@@ -52,6 +52,12 @@ export const workshopInitialState = {
       llm: number;
       human: number;
       truncated: boolean;
+      items: Array<{
+        message: string;
+        kind: "auto" | "llm" | "human";
+        prefix: string;
+        targetDeliverable?: string;
+      }>;
     };
     compositeReadiness?: { reasons: string[] };
     consistencyScore?: number;
@@ -70,6 +76,7 @@ export const workshopInitialState = {
     | "brd-from-dbga"
     | "legacy-deliverables"
     | "deliverables-cascade"
+    | "repair-sdd-gaps"
     | "agent-governance"
     | null,
   streamingUserMessage: null as string | null,

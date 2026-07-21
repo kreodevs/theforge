@@ -74,6 +74,7 @@ type DeliverablesSliceActions = Pick<
   | "generateAgentGovernance"
   | "fetchAgentGovernanceExport"
   | "generateDeliverablesCascade"
+  | "repairSddGaps"
   | "confirmComplexityProposal"
   | "dismissComplexityProposal"
   | "reassessComplexity"
@@ -586,6 +587,65 @@ export const createDeliverablesSlice: StateCreator<
     }
   },
 
+  repairSddGaps: async (projectId, options) => {
+    if (!projectId?.trim()) return null;
+    const pid = projectId.trim();
+    const acknowledgeGaps = options?.acknowledgeGaps === true;
+    set({
+      loading: true,
+      loadingReason: "repair-sdd-gaps",
+      error: null,
+      agentProgress: [
+        {
+          agent: "Brechas SDD",
+          message: "Corrigiendo brechas auto/LLM…",
+          step: "repair-sdd-gaps",
+          status: "generando" as const,
+        },
+      ],
+    });
+    try {
+      const qs = acknowledgeGaps ? "?acknowledgeGaps=true" : "";
+      const r = await apiFetch(`${API_BASE}/projects/${pid}/repair-sdd-gaps${qs}`, { method: "POST" });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error al corregir brechas SDD");
+      }
+      const data = (await r.json()) as { queued?: boolean; jobId?: string };
+      if (data.queued === true && typeof data.jobId === "string") {
+        set({ activeDeliverablesJobId: data.jobId });
+        const deadline = Date.now() + 45 * 60 * 1000;
+        while (Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+          const st = await apiFetch(`${API_BASE}/projects/${pid}/deliverables-jobs/${data.jobId}`);
+          if (!st.ok) {
+            const err = await st.json().catch(() => ({}));
+            throw new Error((err as { message?: string }).message ?? "Error al consultar reparación SDD");
+          }
+          const j = (await st.json()) as { status: string; error?: string };
+          if (j.status === "failed") {
+            if (j.error?.includes("Cancelado por el usuario")) return null;
+            throw new Error(j.error ?? "Reparación de brechas SDD fallida");
+          }
+          if (j.status === "completed") break;
+        }
+      }
+      const proj = await get().fetchProject(pid);
+      await get().fetchConformance(pid).catch(() => {});
+      await get().fetchEstimation(pid).catch(() => {});
+      set({ agentProgress: [] });
+      return proj;
+    } catch (e) {
+      set({
+        error: e instanceof Error ? e.message : "Error al corregir brechas SDD",
+        agentProgress: [],
+      });
+      return null;
+    } finally {
+      set({ loading: false, loadingReason: null, activeDeliverablesJobId: null });
+    }
+  },
+
   confirmComplexityProposal: async (projectId) => {
     if (!projectId?.trim()) return null;
     set({ loading: true, error: null });
@@ -669,6 +729,12 @@ export const createDeliverablesSlice: StateCreator<
               llm: number;
               human: number;
               truncated: boolean;
+              items?: Array<{
+                message: string;
+                kind: "auto" | "llm" | "human";
+                prefix: string;
+                targetDeliverable?: string;
+              }>;
             };
             compositeReadiness?: { reasons: string[] };
             consistencyScore?: number;
@@ -682,7 +748,14 @@ export const createDeliverablesSlice: StateCreator<
           },
           readinessAudit: data.readiness
             ? {
-                gapSummary: data.readiness.gapSummary,
+                gapSummary: {
+                  total: data.readiness.gapSummary.total,
+                  auto: data.readiness.gapSummary.auto,
+                  llm: data.readiness.gapSummary.llm,
+                  human: data.readiness.gapSummary.human,
+                  truncated: data.readiness.gapSummary.truncated,
+                  items: data.readiness.gapSummary.items ?? [],
+                },
                 compositeReadiness: data.readiness.compositeReadiness,
                 consistencyScore: data.readiness.consistencyScore,
                 conformanceOk: data.readiness.conformanceOk,

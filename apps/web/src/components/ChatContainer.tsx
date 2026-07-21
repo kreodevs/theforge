@@ -525,6 +525,7 @@ export default function ChatContainer({
     isBenchmarkStreaming ||
     isMddStreaming ||
     loadingReason === "deliverables-cascade" ||
+    loadingReason === "repair-sdd-gaps" ||
     loadingReason === "legacy-deliverables" ||
     loadingReason === "agent-governance";
   /** Generación larga en segundo plano (mismo criterio que el panel central en WorkshopView). */
