@@ -507,6 +507,7 @@ export const createDeliverablesSlice: StateCreator<
       }
       const data = (await r.json()) as { queued?: boolean; jobId?: string; streamPath?: string };
       if (data.queued === true && typeof data.jobId === "string") {
+        set({ activeDeliverablesJobId: data.jobId });
         const deadline = Date.now() + 45 * 60 * 1000;
 
         const completedSteps = new Set<string>();
@@ -524,6 +525,9 @@ export const createDeliverablesSlice: StateCreator<
             error?: string;
           };
           if (j.status === "failed") {
+            if (j.error?.includes("Cancelado por el usuario")) {
+              return null;
+            }
             throw new Error(j.error ?? "Cascada de entregables fallida");
           }
           if (j.status === "completed") break;
@@ -578,7 +582,7 @@ export const createDeliverablesSlice: StateCreator<
       set({ error: e instanceof Error ? e.message : "Error al generar entregables", agentProgress: [] });
       return null;
     } finally {
-      set({ loading: false, loadingReason: null });
+      set({ loading: false, loadingReason: null, activeDeliverablesJobId: null });
     }
   },
 

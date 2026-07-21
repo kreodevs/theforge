@@ -97,7 +97,7 @@ export class DeliverablesCascadeService {
   async generateDeliverablesCascade(
     projectId: string,
     onProgress?: (p: DeliverablesCascadeProgress) => void,
-    options?: { acknowledgeGaps?: boolean },
+    options?: { acknowledgeGaps?: boolean; signal?: AbortSignal },
   ) {
     await this.projects.assertDeliverablesAllowed(projectId, options);
     const project = await loadAccessibleProjectWithStages(this.prisma, projectId);
@@ -135,6 +135,9 @@ export class DeliverablesCascadeService {
     };
 
     for (let waveIndex = 0; waveIndex < waves.length; waveIndex++) {
+      if (options?.signal?.aborted) {
+        throw new Error("Cancelado por el usuario");
+      }
       const wave = waves[waveIndex]!;
       const projectFresh = await this.projects.findOne(projectId);
       const mddContent = buildConstitutionMarkdown(projectFresh);

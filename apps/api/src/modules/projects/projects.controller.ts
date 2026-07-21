@@ -187,6 +187,23 @@ export class ProjectsController {
     return this.mddQueue.cancelJob(jobId, projectId);
   }
 
+  /** Cancela job de entregables (cascada, spec, plugin-artifact, etc.). */
+  @Delete(":id/deliverables-jobs/:jobId")
+  async cancelDeliverablesJob(@Param("id") projectId: string, @Param("jobId") jobId: string) {
+    return this.deliverablesQueue.cancelJob(jobId, projectId);
+  }
+
+  /** Cancela job genérico (polling `/projects/jobs/:jobId`). */
+  @Delete("jobs/:jobId")
+  async cancelJob(@Param("jobId") jobId: string, @Query("projectId") projectId?: string) {
+    if (!projectId?.trim()) {
+      const status = await this.deliverablesQueue.getJobStatus(jobId);
+      if (!status.projectId) throw new NotFoundException("Job no encontrado");
+      return this.deliverablesQueue.cancelJob(jobId, status.projectId);
+    }
+    return this.deliverablesQueue.cancelJob(jobId, projectId.trim());
+  }
+
   /** SSE: progreso de cascada de entregables en cola BullMQ (`REDIS_URL`). */
   @Get(":id/deliverables-jobs/:jobId/stream")
   async deliverablesJobStream(

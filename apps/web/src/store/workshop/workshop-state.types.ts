@@ -181,7 +181,10 @@ export interface WorkshopState {
   /** Gate de cola: jobs activos, MDD en stream y dependencias upstream. */
   generationStatus: ProjectGenerationStatus | null;
   fetchGenerationStatus: (projectId: string, stageId?: string | null) => Promise<ProjectGenerationStatus | null>;
+  /** Job de entregables iniciado en esta sesión (p. ej. cascada en cola). */
+  activeDeliverablesJobId: string | null;
   cancelMddJob: (projectId: string, jobId: string) => Promise<boolean>;
+  cancelDeliverablesJob: (projectId: string, jobId: string) => Promise<boolean>;
   /** Datos por pluginId (`project.pluginData` sincronizado desde API). */
   pluginData: Record<string, unknown>;
   patchPluginData: (pluginId: string, data: unknown) => void;

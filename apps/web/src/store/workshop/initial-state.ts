@@ -98,6 +98,7 @@ export const workshopInitialState = {
   activeStageId: null as string | null,
   workshopActiveDocPanel: "mdd",
   generationStatus: null as ProjectGenerationStatus | null,
+  activeDeliverablesJobId: null as string | null,
   pluginData: {} as Record<string, unknown>,
 };
 

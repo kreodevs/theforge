@@ -391,7 +391,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
       index: number;
       total: number;
     }) => void,
-    options?: { acknowledgeGaps?: boolean },
+    options?: { acknowledgeGaps?: boolean; signal?: AbortSignal },
   ) {
     return this.deliverablesCascade.generateDeliverablesCascade(projectId, onProgress, options);
   }

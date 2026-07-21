@@ -1,7 +1,9 @@
 import {
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
+  NotFoundException,
   OnModuleDestroy,
   OnModuleInit,
   Optional,
@@ -23,6 +25,9 @@ import { ProjectsService } from "./projects.service.js";
 import { PluginArtifactService } from "../../plugins/plugin-artifact.service.js";
 
 export const DELIVERABLES_QUEUE_NAME = "theforge-deliverables";
+
+/** Clave Redis compartida API ↔ worker para cancelar jobs activos en BullMQ. */
+const DELIVERABLES_CANCEL_KEY_PREFIX = "theforge:deliverables-cancel:";
 
 /** Tipos de job soportados por la cola. */
 export type GenerateJobType =
@@ -116,6 +121,7 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
   /** Un job in-memory activo por proyecto (cola secuencial sin Redis). */
   private readonly inMemoryRunningProjects = new Set<string>();
   private readonly inMemoryPendingByProject = new Map<string, string[]>();
+  private readonly jobAbortControllers = new Map<string, AbortController>();
 
   /** Intentos máximos por job (BullMQ reintenta automáticamente con backoff). */
   private readonly MAX_ATTEMPTS = 4;
@@ -173,7 +179,9 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
               `BullMQ worker: iniciando job ${job.id} type=${job.data.type} projectId=${job.data.projectId} attempt=${job.attemptsMade + 1}/${this.MAX_ATTEMPTS}`,
             );
             job.updateProgress(0);
-            return this.runJob(job.data, (p) => job.updateProgress(p as Job["progress"]));
+            return this.executeJob(String(job.id), job.data, (p) =>
+              job.updateProgress(p as Job["progress"]),
+            );
           });
         },
         {
@@ -210,7 +218,135 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
     await this.queue?.close();
   }
 
-  private async runJob(data: GenerateJobData, onProgress: (p: unknown) => void): Promise<unknown> {
+  private throwIfAborted(signal?: AbortSignal): void {
+    if (signal?.aborted) {
+      throw new Error("Cancelado por el usuario");
+    }
+  }
+
+  private async markCancelRequested(jobId: string): Promise<void> {
+    if (!this.queue) return;
+    const client = await this.queue.client;
+    await client.set(`${DELIVERABLES_CANCEL_KEY_PREFIX}${jobId}`, "1");
+  }
+
+  private async clearCancelRequested(jobId: string): Promise<void> {
+    if (!this.queue) return;
+    const client = await this.queue.client;
+    await client.del(`${DELIVERABLES_CANCEL_KEY_PREFIX}${jobId}`);
+  }
+
+  private startCancelPoll(jobId: string, abortController: AbortController): () => void {
+    if (!this.queue) return () => undefined;
+    const interval = setInterval(() => {
+      void (async () => {
+        const client = await this.queue!.client;
+        const val = await client.get(`${DELIVERABLES_CANCEL_KEY_PREFIX}${jobId}`);
+        if (val) abortController.abort();
+      })().catch(() => undefined);
+    }, 1500);
+    return () => clearInterval(interval);
+  }
+
+  /**
+   * Cancela un job de entregables encolado o solicita abort del job activo.
+   * Cola: remove inmediato. Activo: flag Redis + AbortController en worker.
+   */
+  async cancelJob(
+    jobId: string,
+    projectId: string,
+  ): Promise<{ cancelled: boolean; status: string }> {
+    const mem = this.inMemoryJobs.get(jobId);
+    if (mem) {
+      if (mem.data.projectId !== projectId) {
+        throw new ForbiddenException();
+      }
+      if (mem.status === "completed") {
+        return { cancelled: false, status: "completed" };
+      }
+      if (mem.status === "failed") {
+        return { cancelled: false, status: "failed" };
+      }
+      if (mem.status === "queued") {
+        const pending = this.inMemoryPendingByProject.get(projectId) ?? [];
+        const filtered = pending.filter((id) => id !== jobId);
+        if (filtered.length === 0) {
+          this.inMemoryPendingByProject.delete(projectId);
+        } else {
+          this.inMemoryPendingByProject.set(projectId, filtered);
+        }
+        mem.status = "failed";
+        mem.error = "Cancelado por el usuario";
+        mem.finishedAt = Date.now();
+        this.generationGuard.finishBackgroundJob(jobId);
+        this.logger.log(`In-memory deliverables job ${jobId} cancelado (queued)`);
+        return { cancelled: true, status: "cancelled" };
+      }
+      if (mem.status === "active") {
+        this.jobAbortControllers.get(jobId)?.abort();
+        this.logger.log(`In-memory deliverables job ${jobId} cancelación solicitada (active)`);
+        return { cancelled: true, status: "cancelling" };
+      }
+      return { cancelled: false, status: mem.status };
+    }
+
+    if (!this.queue) {
+      throw new NotFoundException("Job no encontrado");
+    }
+
+    const job = await this.queue.getJob(jobId);
+    if (!job) {
+      throw new NotFoundException("Job no encontrado");
+    }
+    const data = job.data as GenerateJobData | undefined;
+    if (data?.projectId !== projectId) {
+      throw new ForbiddenException();
+    }
+    const state = await job.getState();
+    if (state === "completed") {
+      return { cancelled: false, status: "completed" };
+    }
+    if (state === "failed") {
+      return { cancelled: false, status: "failed" };
+    }
+    if (state === "waiting" || state === "delayed" || state === "waiting-children") {
+      await job.remove();
+      await this.clearCancelRequested(jobId);
+      this.logger.log(`BullMQ deliverables job ${jobId} cancelado (queued)`);
+      return { cancelled: true, status: "cancelled" };
+    }
+    if (state === "active") {
+      await this.markCancelRequested(jobId);
+      this.jobAbortControllers.get(jobId)?.abort();
+      this.logger.log(`BullMQ deliverables job ${jobId} cancelación solicitada (active)`);
+      return { cancelled: true, status: "cancelling" };
+    }
+    return { cancelled: false, status: state };
+  }
+
+  private async executeJob(
+    jobId: string,
+    data: GenerateJobData,
+    onProgress: (p: unknown) => void,
+  ): Promise<unknown> {
+    const abortController = new AbortController();
+    this.jobAbortControllers.set(jobId, abortController);
+    const stopCancelPoll = this.startCancelPoll(jobId, abortController);
+    try {
+      return await this.runJob(data, onProgress, abortController.signal);
+    } finally {
+      stopCancelPoll();
+      this.jobAbortControllers.delete(jobId);
+      await this.clearCancelRequested(jobId);
+    }
+  }
+
+  private async runJob(
+    data: GenerateJobData,
+    onProgress: (p: unknown) => void,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    this.throwIfAborted(signal);
     const {
       type,
       projectId,
@@ -234,9 +370,10 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
         result = await this.projects.generateDeliverablesCascade(
           projectId,
           (p) => {
+            this.throwIfAborted(signal);
             onProgress(p);
           },
-          { acknowledgeGaps },
+          { acknowledgeGaps, signal },
         );
         break;
       case "blueprint":
@@ -319,6 +456,7 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
         break;
       }
       case "plugin-artifact": {
+        this.throwIfAborted(signal);
         const pluginId = data.pluginId?.trim();
         const artifactId = data.artifactId?.trim();
         if (!pluginId || !artifactId) {
@@ -358,7 +496,7 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
     void runWithRequestUserAsync(data.userId ?? "system", async () => {
       const started = Date.now();
       try {
-        const result = await this.runJob(data, (p) => {
+        const result = await this.executeJob(jobId, data, (p) => {
           record.progress = p;
         });
         record.status = "completed";

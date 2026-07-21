@@ -131,5 +131,22 @@ export async function queueAndPoll<T>(
 
   const jobId = data.jobId as string;
   agentGovDebug(`queueAndPoll branch bullmq jobId=${jobId}`);
+  registerJobCancelOnAbort(jobId, projectId, signal);
   return pollJobUntilComplete<T>(jobId, signal);
+}
+
+function registerJobCancelOnAbort(
+  jobId: string,
+  projectId: string | null,
+  signal?: AbortSignal,
+): void {
+  if (!signal || signal.aborted) return;
+  signal.addEventListener(
+    "abort",
+    () => {
+      const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+      void apiFetch(`${API_BASE}/projects/jobs/${jobId}${qs}`, { method: "DELETE" });
+    },
+    { once: true },
+  );
 }

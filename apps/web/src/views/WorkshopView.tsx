@@ -416,10 +416,19 @@ export default function WorkshopView({
   const error = useWorkshopStore((s) => s.error);
   const notice = useWorkshopStore((s) => s.notice);
   const generationStatus = useWorkshopStore((s) => s.generationStatus);
+  const activeDeliverablesJobId = useWorkshopStore((s) => s.activeDeliverablesJobId);
   const cancelMddJob = useWorkshopStore((s) => s.cancelMddJob);
+  const cancelDeliverablesJob = useWorkshopStore((s) => s.cancelDeliverablesJob);
   const backgroundGenerationLabel = activeGenerationLabel(generationStatus);
   const activeMddJob = primaryMddJob(generationStatus);
-  const [cancellingMddJob, setCancellingMddJob] = useState(false);
+  const activeDeliverablesJob = generationStatus?.activeJob ?? generationStatus?.queuedJobs?.[0] ?? null;
+  const cancellableJobId =
+    activeMddJob?.jobId ??
+    activeDeliverablesJob?.jobId ??
+    activeDeliverablesJobId ??
+    null;
+  const cancellableJobIsMdd = Boolean(activeMddJob && cancellableJobId === activeMddJob.jobId);
+  const [cancellingJob, setCancellingJob] = useState(false);
   const isGenerationGateBlocked = useCallback(
     (type: GenerationJobType) => !generationJobAllowed(generationStatus, type),
     [generationStatus],
@@ -2256,19 +2265,29 @@ export default function WorkshopView({
         onOpenHelp={() => setShowHelpModal(true)}
       />
 
-      {(backgroundGenerationLabel && !cascadeRunning) && (
+      {(backgroundGenerationLabel || cascadeRunning) && (
         <div className="shrink-0 border-b border-[color-mix(in_oklch,var(--primary)_35%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_10%,transparent)] px-4 py-2">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0 flex-1 space-y-1">
               <p className="text-sm text-[color-mix(in_oklch,var(--primary)_80%,white)]">
-                {backgroundGenerationLabel} Puedes cerrar el navegador; al volver, recarga el proyecto para ver el
-                resultado.
+                {cascadeRunning
+                  ? "Generación de entregables en curso…"
+                  : `${backgroundGenerationLabel ?? "Generación en curso…"} Puedes cerrar el navegador; al volver, recarga el proyecto para ver el resultado.`}
               </p>
               {activeMddJob ? (
                 <p className="text-xs text-[color-mix(in_oklch,var(--primary)_65%,white)]">
                   Job {activeMddJob.jobId.slice(0, 8)}… · {MDD_JOB_MODE_LABELS[activeMddJob.mode]} ·{" "}
                   {activeMddJob.status === "queued" ? "en cola" : "en ejecución"}
                   {activeMddJob.progressMessage ? ` · ${activeMddJob.progressMessage}` : ""}
+                </p>
+              ) : activeDeliverablesJob ? (
+                <p className="text-xs text-[color-mix(in_oklch,var(--primary)_65%,white)]">
+                  Job {activeDeliverablesJob.jobId.slice(0, 8)}… · {activeDeliverablesJob.type} ·{" "}
+                  {activeDeliverablesJob.status === "queued" ? "en cola" : "en ejecución"}
+                </p>
+              ) : activeDeliverablesJobId ? (
+                <p className="text-xs text-[color-mix(in_oklch,var(--primary)_65%,white)]">
+                  Job {activeDeliverablesJobId.slice(0, 8)}… · en ejecución
                 </p>
               ) : null}
               {(generationStatus?.mddJobs?.length ?? 0) > 1 ? (
@@ -2277,23 +2296,26 @@ export default function WorkshopView({
                 </p>
               ) : null}
             </div>
-            {activeMddJob && projectId ? (
+            {cancellableJobId && projectId ? (
               <button
                 type="button"
-                disabled={cancellingMddJob}
+                disabled={cancellingJob}
                 onClick={() => {
-                  setCancellingMddJob(true);
-                  void cancelMddJob(projectId, activeMddJob.jobId).finally(() => setCancellingMddJob(false));
+                  setCancellingJob(true);
+                  const action = cancellableJobIsMdd
+                    ? cancelMddJob(projectId, cancellableJobId)
+                    : cancelDeliverablesJob(projectId, cancellableJobId);
+                  void action.finally(() => setCancellingJob(false));
                 }}
                 className="shrink-0 rounded-md border border-[color-mix(in_oklch,var(--destructive)_45%,var(--border))] bg-[color-mix(in_oklch,var(--destructive)_8%,transparent)] px-2.5 py-1 text-xs font-medium text-[color-mix(in_oklch,var(--destructive)_75%,white)] hover:bg-[color-mix(in_oklch,var(--destructive)_14%,transparent)] disabled:opacity-50"
               >
-                {cancellingMddJob ? (
+                {cancellingJob ? (
                   <>
                     <Loader2 className="mr-1 inline h-3 w-3 animate-spin" aria-hidden />
                     Cancelando…
                   </>
                 ) : (
-                  "Cancelar MDD"
+                  "Cancelar generación"
                 )}
               </button>
             ) : null}

@@ -31,6 +31,7 @@ type LegacyDebugSliceActions = Pick<
   WorkshopState,
   | "fetchGenerationStatus"
   | "cancelMddJob"
+  | "cancelDeliverablesJob"
   | "fetchPlanValidation"
   | "validateChangePlan"
   | "refreshWorkshopOnTabVisible"
@@ -122,6 +123,36 @@ export const createLegacyDebugSlice: StateCreator<
         agentProgress: [],
         notice:
           "Generación MDD cancelada. El pipeline puede tardar unos segundos en detenerse entre nodos.",
+      });
+      await get().fetchGenerationStatus(pid);
+      return true;
+    } catch (e) {
+      set({ error: friendlyFetchError(e) });
+      return false;
+    }
+  },
+
+  cancelDeliverablesJob: async (projectId, jobId) => {
+    const pid = projectId.trim();
+    const jid = jobId.trim();
+    if (!pid || !jid) return false;
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${pid}/deliverables-jobs/${jid}`, {
+        method: "DELETE",
+      });
+      if (!r.ok) {
+        set({
+          error: await parseErrorMessageFromResponse(r, "No se pudo cancelar el job"),
+        });
+        return false;
+      }
+      set({
+        loading: false,
+        loadingReason: null,
+        activeDeliverablesJobId: null,
+        agentProgress: [],
+        notice:
+          "Generación cancelada. El job puede tardar unos segundos en detenerse si ya estaba en ejecución.",
       });
       await get().fetchGenerationStatus(pid);
       return true;
