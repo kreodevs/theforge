@@ -376,11 +376,12 @@ export const createDeliverablesSlice: StateCreator<
   },
   generateTasks: async (projectId, options) => {
     if (!projectId?.trim()) return null;
+    const pid = projectId.trim();
     set({ loading: true, error: null });
     try {
       const qs = options?.acknowledgeGaps === true ? "?acknowledgeGaps=true" : "";
       const data = await queueAndPoll<Project>(
-        `${API_BASE}/projects/${projectId}/generate-tasks${qs}`,
+        `${API_BASE}/projects/${pid}/generate-tasks${qs}`,
         {},
       );
       const nextStages = data.stages ?? get().workshopStages;
@@ -390,14 +391,14 @@ export const createDeliverablesSlice: StateCreator<
         workshopStages: nextStages.length > 0 ? nextStages : get().workshopStages,
         error: null,
       });
-      void get().fetchGenerationStatus(projectId);
-      void get().fetchPlanValidation(projectId);
+      void get().fetchPlanValidation(pid);
       return data;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : "Error al generar Tasks" });
       return null;
     } finally {
       set({ loading: false });
+      void get().fetchGenerationStatus(pid);
     }
   },
   requestGenerateTasks: async (projectId) => {

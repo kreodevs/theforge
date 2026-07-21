@@ -10,7 +10,7 @@ import {
   forwardRef,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { Queue, UnrecoverableError, Worker, type Job } from "bullmq";
+import { Queue, Worker, type Job } from "bullmq";
 import type { AffectedArtifact } from "@theforge/shared-types";
 import { getRequestUserId, runWithRequestUserAsync } from "../../common/request-user.store.js";
 import {
@@ -23,25 +23,14 @@ import { DocReconcileService } from "../documentation-gap/doc-reconcile.service.
 import { ProjectGenerationGuardService } from "./project-generation-guard.service.js";
 import { ProjectsService } from "./projects.service.js";
 import { PluginArtifactService } from "../../plugins/plugin-artifact.service.js";
+import {
+  toDeliverablesJobError,
+} from "./deliverables-job-error.util.js";
 
 export const DELIVERABLES_QUEUE_NAME = "theforge-deliverables";
 
 /** Clave Redis compartida API ↔ worker para cancelar jobs activos en BullMQ. */
 const DELIVERABLES_CANCEL_KEY_PREFIX = "theforge:deliverables-cancel:";
-
-function isUserCancellationError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return msg.includes("Cancelado por el usuario");
-}
-
-/** Evita reintentos BullMQ cuando el usuario canceló el job. */
-function toDeliverablesJobError(err: unknown): Error {
-  if (isUserCancellationError(err)) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return new UnrecoverableError(msg);
-  }
-  return err instanceof Error ? err : new Error(String(err));
-}
 
 /** Tipos de job soportados por la cola. */
 export type GenerateJobType =
@@ -634,8 +623,14 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
       for (const job of jobs) {
         const data = job.data as GenerateJobData | undefined;
         if (data?.projectId !== projectId) continue;
+        const actualState = await job.getState();
+        if (actualState === "completed" || actualState === "failed") continue;
         const status =
-          state === "active" ? "active" : state === "delayed" ? "retrying" : ("queued" as const);
+          actualState === "active"
+            ? "active"
+            : actualState === "delayed"
+              ? "retrying"
+              : ("queued" as const);
         out.push({ jobId: String(job.id), type: data.type, status });
       }
     }
