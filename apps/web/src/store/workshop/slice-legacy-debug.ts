@@ -109,6 +109,10 @@ export const createLegacyDebugSlice: StateCreator<
     const pid = projectId.trim();
     const jid = jobId.trim();
     if (!pid || !jid) return false;
+    
+    // Detenemos el polling inmediatamente para liberar la UI
+    stopGenerationStatusPolling();
+    
     try {
       const r = await apiFetch(`${API_BASE}/projects/${pid}/mdd-jobs/${jid}`, { method: "DELETE" });
       if (!r.ok) {
@@ -136,6 +140,10 @@ export const createLegacyDebugSlice: StateCreator<
     const pid = projectId.trim();
     const jid = jobId.trim();
     if (!pid || !jid) return false;
+    
+    // Detenemos el polling inmediatamente para liberar la UI
+    stopGenerationStatusPolling();
+    
     try {
       const r = await apiFetch(`${API_BASE}/projects/${pid}/deliverables-jobs/${jid}`, {
         method: "DELETE",
