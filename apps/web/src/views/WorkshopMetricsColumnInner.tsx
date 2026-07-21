@@ -218,10 +218,12 @@ export function WorkshopMetricsColumnInner({
 
   const loading = useWorkshopStore((s) => s.loading);
   const loadingReason = useWorkshopStore((s) => s.loadingReason);
+  const mddReviewing = useWorkshopStore((s) => s.mddReviewing);
   const cascadeRunning = loading && (loadingReason === "deliverables-cascade" || loadingReason === "legacy-deliverables");
+  const repairSddRunning = loading && loadingReason === "repair-sdd-gaps";
+  const brechasBusy = cascadeRunning || repairSddRunning || mddReviewing;
   const setError = useWorkshopStore((s) => s.setError);
   const fetchProject = useWorkshopStore((s) => s.fetchProject);
-  const mddReviewing = useWorkshopStore((s) => s.mddReviewing);
 
   const cascadeCtaHint = useMemo(() => {
     if (cascadeRunning) return "Generación de entregables en curso…";
@@ -271,6 +273,8 @@ export function WorkshopMetricsColumnInner({
   const generateInfra = useWorkshopStore((s) => s.generateInfra);
   const legacyGenerateDeliverables = useWorkshopStore((s) => s.legacyGenerateDeliverables);
   const generateDeliverablesCascade = useWorkshopStore((s) => s.generateDeliverablesCascade);
+  const repairSddGaps = useWorkshopStore((s) => s.repairSddGaps);
+  const setWorkshopActiveDocPanel = useWorkshopStore((s) => s.setWorkshopActiveDocPanel);
 
   const mddEmpty = !((mddContent ?? "").trim() || (project?.mddContent ?? "").trim());
   const precisionScore = mddEmpty ? 0 : (liveMetrics?.precision ?? project?.precisionScore ?? 0);
@@ -526,6 +530,79 @@ export function WorkshopMetricsColumnInner({
                     ))}
                   </ul>
                 ) : null}
+                {(readinessAudit.gapSummary.items?.length ?? 0) > 0 ? (
+                  <ul className="max-h-28 space-y-1 overflow-y-auto border-t border-[color-mix(in_oklch,var(--border)_80%,transparent)] pt-1.5 text-[10px]">
+                    {readinessAudit.gapSummary.items.slice(0, 6).map((item, idx) => (
+                      <li key={`${item.kind}-${idx}`} className="flex gap-1.5">
+                        <span
+                          className={cn(
+                            "shrink-0 rounded px-1 py-px font-semibold uppercase tracking-wide",
+                            item.kind === "auto" &&
+                              "bg-[color-mix(in_oklch,var(--success)_14%,transparent)] text-[color-mix(in_oklch,var(--success)_90%,var(--foreground))]",
+                            item.kind === "llm" &&
+                              "bg-[color-mix(in_oklch,var(--primary)_14%,transparent)] text-[color-mix(in_oklch,var(--primary)_88%,var(--foreground))]",
+                            item.kind === "human" &&
+                              "bg-[color-mix(in_oklch,var(--warning)_14%,transparent)] text-[color-mix(in_oklch,var(--warning)_88%,var(--foreground))]",
+                          )}
+                        >
+                          {item.kind}
+                        </span>
+                        <span className="min-w-0 line-clamp-2" title={item.message}>
+                          {item.message}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                <div className="flex flex-col gap-1.5 border-t border-[color-mix(in_oklch,var(--border)_80%,transparent)] pt-1.5">
+                  {readinessAudit.gapSummary.auto + readinessAudit.gapSummary.llm > 0 ? (
+                    <button
+                      type="button"
+                      disabled={!projectId || brechasBusy}
+                      onClick={() => {
+                        if (!projectId) return;
+                        void repairSddGaps(projectId, {
+                          acknowledgeGaps: deliveryGate != null && !deliveryGate.ok,
+                        });
+                      }}
+                      className="inline-flex min-h-8 w-full items-center justify-center gap-1.5 rounded-md bg-[color-mix(in_oklch,var(--primary)_14%,var(--card))] px-2 text-[11px] font-semibold text-[var(--primary)] transition-colors hover:bg-[color-mix(in_oklch,var(--primary)_22%,var(--card))] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {repairSddRunning ? (
+                        <>
+                          <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden />
+                          Corrigiendo…
+                        </>
+                      ) : (
+                        "Corregir auto/LLM"
+                      )}
+                    </button>
+                  ) : null}
+                  {readinessAudit.gapSummary.human > 0 ? (
+                    <div className="space-y-1">
+                      <p className="text-[10px] leading-snug text-[color-mix(in_oklch,var(--warning)_88%,var(--foreground))]">
+                        Los gaps humanos requieren decisión en el BRD / decision log.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setWorkshopActiveDocPanel("brd")}
+                        className="inline-flex min-h-7 w-full items-center justify-center rounded-md px-2 text-[11px] font-medium text-[var(--foreground)] underline-offset-2 hover:underline"
+                      >
+                        Abrir BRD
+                      </button>
+                    </div>
+                  ) : null}
+                  <p className="text-[10px] leading-snug text-[color-mix(in_oklch,var(--muted-foreground)_96%,var(--foreground))]">
+                    Gaps LLM también se pueden regenerar uno a uno en Conformance vs MDD.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => onOpenAuditModal()}
+                    className="inline-flex min-h-7 w-full items-center justify-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-[var(--muted-foreground)] transition-colors hover:bg-[color-mix(in_oklch,var(--muted)_48%,transparent)] hover:text-[var(--primary)]"
+                  >
+                    <FileText className="h-3 w-3 shrink-0" aria-hidden />
+                    Ver logs y desglose
+                  </button>
+                </div>
               </div>
             ) : null}
             {deliveryGate && !deliveryGate.ok ? (

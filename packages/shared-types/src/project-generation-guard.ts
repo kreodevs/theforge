@@ -53,6 +53,7 @@ export type MddUpstreamSyncStatus = Pick<
 export type GenerationJobType =
   | "cascade"
   | "cascade-delta"
+  | "repair-sdd-gaps"
   | "spec"
   | "blueprint"
   | "api-contracts"
@@ -69,6 +70,7 @@ export type GenerationJobType =
 export const GENERATION_JOB_TYPE_LABELS: Record<GenerationJobType, string> = {
   cascade: "Cascada de entregables",
   "cascade-delta": "Cascada delta (MDD)",
+  "repair-sdd-gaps": "Corregir brechas SDD",
   spec: "Spec",
   blueprint: "Blueprint",
   "api-contracts": "Contratos API",
@@ -110,6 +112,7 @@ export function generationJobToDeliverableKind(
       return "agent_governance";
     case "cascade":
     case "cascade-delta":
+    case "repair-sdd-gaps":
       return "cascade";
     case "doc-reconcile-partial":
       return "doc_reconcile";
@@ -239,11 +242,11 @@ export function evaluateGenerationGate(params: {
     };
   }
 
-  if (activeJobs.some((j) => j.type === "cascade" || j.type === "cascade-delta")) {
+  if (activeJobs.some((j) => j.type === "cascade" || j.type === "cascade-delta" || j.type === "repair-sdd-gaps")) {
     return {
       allowed: false,
       blockReason: "project_busy",
-      reason: "La cascada de entregables está en curso. No encoles otra generación.",
+      reason: "La cascada o reparación de brechas SDD está en curso. No encoles otra generación.",
     };
   }
 
@@ -306,6 +309,7 @@ export function buildGenerationGates(params: {
   const types: GenerationJobType[] = [
     "cascade",
     "cascade-delta",
+    "repair-sdd-gaps",
     "spec",
     "architecture",
     "use-cases",

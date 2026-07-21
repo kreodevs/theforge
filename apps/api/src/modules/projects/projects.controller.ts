@@ -491,6 +491,29 @@ export class ProjectsController {
     };
   }
 
+  /**
+   * Convergencia bajo demanda (Brechas SDD): auto-repair MDD + regen LLM de entregables afectados.
+   * No exige semáforo verde; gate MDD igual que otros generate* (`acknowledgeGaps` opcional).
+   */
+  @Post(":id/repair-sdd-gaps")
+  async repairSddGaps(
+    @Param("id") id: string,
+    @Query("acknowledgeGaps") acknowledgeGaps?: string,
+  ) {
+    const ack = acknowledgeGaps === "true";
+    await this.projects.assertDeliverablesAllowed(id, { acknowledgeGaps: ack });
+    const jobId = await this.deliverablesQueue.enqueue({
+      type: "repair-sdd-gaps",
+      projectId: id,
+      acknowledgeGaps: ack,
+    });
+    return {
+      queued: true,
+      jobId,
+      statusPath: `/projects/${id}/deliverables-jobs/${jobId}`,
+    };
+  }
+
   /** Aplica `complexityPending` a `complexity` y limpia HITL. */
   @Post(":id/confirm-complexity")
   confirmComplexity(@Param("id") id: string) {
@@ -749,7 +772,7 @@ export class ProjectsController {
       ...extra,
       acknowledgeGaps,
     });
-    if (type !== "agent-governance" && type !== "cascade" && type !== "cascade-delta") {
+    if (type !== "agent-governance" && type !== "cascade" && type !== "cascade-delta" && type !== "repair-sdd-gaps") {
       await this.projects.runPostRegenSddConflictSurfacing(projectId).catch((err) => {
         console.warn(
           `[queueOrSync] sddConflictSurfacing (${type}): ${err instanceof Error ? err.message : String(err)}`,
@@ -791,6 +814,11 @@ export class ProjectsController {
         return this.projects.generateUserStories(projectId);
       case "spec":
         return this.projects.generateSpec(projectId);
+      case "repair-sdd-gaps":
+        return this.projects.repairReadinessGaps(projectId);
+      case "cascade":
+      case "cascade-delta":
+        throw new Error(`Tipo ${type} no soporta sync directo; usa la cola`);
       default:
         return this.projects.generateBlueprint(projectId);
     }
@@ -810,7 +838,7 @@ export class ProjectsController {
     }
     try {
       await this.runGenerateJobSync(type, projectId, extra);
-      if (type !== "agent-governance" && type !== "cascade" && type !== "cascade-delta") {
+      if (type !== "agent-governance" && type !== "cascade" && type !== "cascade-delta" && type !== "repair-sdd-gaps") {
         await this.projects.runPostRegenSddConflictSurfacing(projectId).catch((err) => {
           console.warn(
             `[fire-and-forget] sddConflictSurfacing (${type}): ${err instanceof Error ? err.message : String(err)}`,

@@ -561,6 +561,12 @@ export class DeliverablesCascadeService {
    * Ciclo verify → reparación/regen dirigida → verify (máx. 3 iteraciones).
    * Cierra gaps auto-fixables y dispara regeneración LLM por artefacto.
    */
+  async repairReadinessGaps(projectId: string) {
+    await this.runCascadeConvergenceLoop(projectId);
+    await this.projects.refreshStageSemaphoreFromProject(projectId).catch(() => undefined);
+    return this.projects.findOne(projectId);
+  }
+
   private async runCascadeConvergenceLoop(projectId: string): Promise<void> {
     const MAX_ITERATIONS = 3;
 

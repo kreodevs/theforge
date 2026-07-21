@@ -33,6 +33,7 @@ const DELIVERABLES_CANCEL_KEY_PREFIX = "theforge:deliverables-cancel:";
 export type GenerateJobType =
   | "cascade"
   | "cascade-delta"
+  | "repair-sdd-gaps"
   | "spec"
   | "blueprint"
   | "api-contracts"
@@ -387,6 +388,10 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
           { acknowledgeGaps, signal },
         );
         break;
+      case "repair-sdd-gaps":
+        this.throwIfAborted(signal);
+        result = await this.projects.repairReadinessGaps(projectId);
+        break;
       case "blueprint":
         if (preview) {
           result = await this.projects.generateBlueprintPreview(projectId, gapsFeedback);
@@ -484,6 +489,8 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
 
     if (
       type !== "cascade" &&
+      type !== "cascade-delta" &&
+      type !== "repair-sdd-gaps" &&
       type !== "doc-reconcile-partial" &&
       type !== "agent-governance" &&
       !preview

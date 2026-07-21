@@ -64,6 +64,12 @@ export interface WorkshopState {
       llm: number;
       human: number;
       truncated: boolean;
+      items: Array<{
+        message: string;
+        kind: "auto" | "llm" | "human";
+        prefix: string;
+        targetDeliverable?: string;
+      }>;
     };
     compositeReadiness?: { reasons: string[] };
     consistencyScore?: number;
@@ -84,6 +90,7 @@ export interface WorkshopState {
     | "brd-from-dbga"
     | "legacy-deliverables"
     | "deliverables-cascade"
+    | "repair-sdd-gaps"
     | "agent-governance"
     | "converge"
     | "tasks-to-issues"
@@ -283,6 +290,11 @@ export interface WorkshopState {
   fetchAgentGovernanceExport: (projectId: string) => Promise<import("@theforge/shared-types").AgentGovernanceScaffold | null>;
   /** POST /projects/:id/generate-deliverables — cascada según complexity. */
   generateDeliverablesCascade: (
+    projectId: string,
+    options?: { acknowledgeGaps?: boolean },
+  ) => Promise<Project | null>;
+  /** POST /projects/:id/repair-sdd-gaps — convergencia Brechas SDD (auto + LLM). */
+  repairSddGaps: (
     projectId: string,
     options?: { acknowledgeGaps?: boolean },
   ) => Promise<Project | null>;
