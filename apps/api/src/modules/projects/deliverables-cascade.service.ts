@@ -51,6 +51,7 @@ import { buildExistingConformanceGapsMap } from "./deliverables-cascade-gaps.uti
 import {
   collectConformanceGaps,
 } from "./conformance-gaps.util.js";
+import { collectLowMediumReadinessGaps } from "../engine/low-medium-readiness.util.js";
 import { applyDeterministicMddRepairs } from "./mdd-deterministic-repair.util.js";
 import { buildConvergenceRetryPlan } from "@theforge/shared-types";
 import { storeMddMarkdownForPersist } from "../ai-analysis/utils/mdd-sanitize.js";
@@ -129,7 +130,12 @@ export class DeliverablesCascadeService {
 
     await this.projects.assertDeliverablesAllowed(projectId, options);
     const mddContent = buildConstitutionMarkdown(project);
-    const gapsMap = buildExistingConformanceGapsMap(project, mddContent, steps);
+    const gapsMap = buildExistingConformanceGapsMap(
+      project,
+      mddContent,
+      steps,
+      project.complexity ?? ComplexityLevel.HIGH,
+    );
     const completedSteps: string[] = [];
     let index = 0;
     const total = steps.length + 1;
@@ -225,7 +231,12 @@ export class DeliverablesCascadeService {
       const wave = waves[waveIndex]!;
       const projectFresh = await this.projects.findOne(projectId);
       const mddContent = buildConstitutionMarkdown(projectFresh);
-      const gapsMap = buildExistingConformanceGapsMap(projectFresh, mddContent, wave);
+      const gapsMap = buildExistingConformanceGapsMap(
+        projectFresh,
+        mddContent,
+        wave,
+        projectFresh.complexity ?? ComplexityLevel.HIGH,
+      );
 
       await Promise.allSettled(
         wave.map(async (step: DeliverableWaveStep) => {
@@ -555,23 +566,26 @@ export class DeliverablesCascadeService {
 
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
       const project = await this.projects.findOne(projectId);
+      const complexity = project.complexity ?? ComplexityLevel.HIGH;
       const stage = pickPrimaryStage(project.stages ?? []);
       const mdd = buildConstitutionMarkdown(project);
-      if (!mdd.trim()) return;
-
-      const inventory = resolveDomainInventory({
-        persisted: stage?.domainInventory as DomainInventory | null | undefined,
-        brdMarkdown: stage?.brdContent,
-        dbgaMarkdown: project.dbgaContent,
-        mddMarkdown: mdd,
-      });
-
-      const gaps = collectConformanceGaps(this.conformance, mdd, {
+      const source = {
         ...project,
         brdContent: stage?.brdContent ?? null,
         dbgaContent: project.dbgaContent ?? null,
         domainInventory: stage?.domainInventory ?? null,
-      });
+      };
+
+      const useLowMedium =
+        complexity === ComplexityLevel.LOW || complexity === ComplexityLevel.MEDIUM;
+
+      let gaps: string[];
+      if (useLowMedium) {
+        gaps = collectLowMediumReadinessGaps(complexity, source);
+      } else {
+        if (!mdd.trim()) return;
+        gaps = collectConformanceGaps(this.conformance, mdd, source);
+      }
 
       if (gaps.length === 0) {
         this.logger.log(`[Cascade] Convergence OK en iteración ${iteration + 1}`);
@@ -590,7 +604,13 @@ export class DeliverablesCascadeService {
         `[Cascade] Convergence iter ${iteration + 1}/${MAX_ITERATIONS}: ${gaps.length} gap(s), plan=${plan.deliverables.join(",") || "mdd-repair"}`,
       );
 
-      if (plan.autoRepairMdd && stage?.id) {
+      if (!useLowMedium && plan.autoRepairMdd && stage?.id) {
+        const inventory = resolveDomainInventory({
+          persisted: stage?.domainInventory as DomainInventory | null | undefined,
+          brdMarkdown: stage?.brdContent,
+          dbgaMarkdown: project.dbgaContent,
+          mddMarkdown: mdd,
+        });
         const repaired = applyDeterministicMddRepairs(mdd, {
           brdMarkdown: stage.brdContent,
           dbgaMarkdown: project.dbgaContent,

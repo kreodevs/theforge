@@ -1,4 +1,5 @@
-import type { Project } from "@theforge/database";
+import type { ComplexityLevel, Project } from "@theforge/database";
+import { ComplexityLevel as ComplexityLevelEnum } from "@theforge/database";
 import type { DeliverableWaveStep } from "@theforge/shared-types";
 import {
   checkApiVsMdd,
@@ -9,11 +10,30 @@ import {
   checkLogicFlowsVsMdd,
 } from "../engine/conformance.service.js";
 import { collectSddPrecisionGaps } from "../engine/sdd-precision-checks.util.js";
+import { lowMediumGapsForCascadeStep } from "../engine/low-medium-readiness.util.js";
+import type { ProjectDeliverableSource } from "./conformance-gaps.util.js";
 
 function formatGapsForStep(gaps: string[]): string | undefined {
   const trimmed = gaps.filter(Boolean);
   if (trimmed.length === 0) return undefined;
   return trimmed.slice(0, 24).join("\n");
+}
+
+function projectAsDeliverableSource(project: Project): ProjectDeliverableSource {
+  return {
+    blueprintContent: project.blueprintContent,
+    apiContractsContent: project.apiContractsContent,
+    logicFlowsContent: project.logicFlowsContent,
+    infraContent: project.infraContent,
+    architectureContent: project.architectureContent,
+    tasksContent: project.tasksContent,
+    useCasesContent: project.useCasesContent,
+    userStoriesContent: project.userStoriesContent,
+    uiScreensContent: project.uiScreensContent,
+    phase0SummaryContent: project.phase0SummaryContent,
+    specContent: project.specContent,
+    uxUiGuideContent: project.uxUiGuideContent,
+  };
 }
 
 function precisionGapsForDeliverable(
@@ -36,13 +56,14 @@ function precisionGapsForDeliverable(
   const map: Record<string, RegExp> = {
     architecture: /\[Architecture\]/i,
     blueprint: /\[Blueprint\]/i,
-    api_contracts: /\[API|\[Research M\*\]|\[Integración/i,
-    logic_flows: /\[Flujos\]|\[Scheduler\]/i,
+    api_contracts: /\[API|\[Research M\*\]|\[Integración|\[Spec↔API\]/i,
+    logic_flows: /\[Flujos\]|\[Scheduler\]|\[Spec↔UX\]/i,
     infra: /\[Infra\]/i,
-    tasks: /\[Tasks\]|\[Research→Tasks\]|\[Events\]|\[LLM JSON\]/i,
+    tasks: /\[Tasks\]|\[Research→Tasks\]|\[Events\]|\[HU↔Tasks\]|\[Entregables\].*Tasks/i,
     use_cases: /\[LLM JSON\]/i,
-    spec: /\[Spec↔MDD\]/i,
-    user_stories: /\[HU↔UC\]/i,
+    spec: /\[Spec↔MDD\]|\[Spec↔API\]|\[Spec↔UX\]|\[Entregables\].*Spec/i,
+    user_stories: /\[HU↔UC\]|\[Entregables\].*Historias/i,
+    ux_ui_guide: /\[Spec↔UX\]|\[Entregables\].*UX/i,
   };
   const re = map[step];
   if (!re) return [];
@@ -54,11 +75,24 @@ export function buildExistingConformanceGapsMap(
   projectFresh: Project,
   mddContent: string,
   steps: DeliverableWaveStep[],
+  complexity: ComplexityLevel = ComplexityLevelEnum.HIGH,
 ): Map<string, string> {
   const gapsMap = new Map<string, string>();
+  const useLowMedium =
+    complexity === ComplexityLevelEnum.LOW || complexity === ComplexityLevelEnum.MEDIUM;
+  const source = projectAsDeliverableSource(projectFresh);
+
   for (const step of steps) {
     if (step === "ui_screens_sync") continue;
     const stepKey = step as string;
+
+    if (useLowMedium) {
+      const lmGaps = lowMediumGapsForCascadeStep(complexity, stepKey, source);
+      const combined = formatGapsForStep(lmGaps);
+      if (combined) gapsMap.set(stepKey, combined);
+      continue;
+    }
+
     const precision = precisionGapsForDeliverable(step, mddContent, projectFresh);
     let heuristic: string[] = [];
 
@@ -86,7 +120,13 @@ export function buildExistingConformanceGapsMap(
       if (infra.trim().length > 80) {
         heuristic = checkInfraVsMdd(mddContent, infra).gaps;
       }
-    } else if (stepKey === "architecture" || stepKey === "tasks" || stepKey === "use_cases" || stepKey === "spec" || stepKey === "user_stories") {
+    } else if (
+      stepKey === "architecture" ||
+      stepKey === "tasks" ||
+      stepKey === "use_cases" ||
+      stepKey === "spec" ||
+      stepKey === "user_stories"
+    ) {
       heuristic = [];
     }
 

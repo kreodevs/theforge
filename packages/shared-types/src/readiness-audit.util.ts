@@ -27,6 +27,8 @@ export type CompositeReadinessInput = {
   crossArtifactGapCount?: number;
   consistencyScore?: number;
   humanRequiredGapCount?: number;
+  conformanceReason?: string;
+  traceReason?: string;
 };
 
 export type CompositeReadinessResult = {
@@ -73,7 +75,11 @@ const LLM_PREFIX_TO_DELIVERABLE: Array<{ re: RegExp; deliverable: string }> = [
   { re: /^\[LLM JSON\]/i, deliverable: "use_cases" },
   { re: /^\[Pantallas\]/i, deliverable: "ui_screens_sync" },
   { re: /^\[Spec↔MDD\]/i, deliverable: "spec" },
+  { re: /^\[Spec↔API\]/i, deliverable: "api_contracts" },
+  { re: /^\[Spec↔UX\]/i, deliverable: "ux_ui_guide" },
   { re: /^\[HU↔UC\]/i, deliverable: "user_stories" },
+  { re: /^\[HU↔Tasks\]/i, deliverable: "tasks" },
+  { re: /^\[Entregables\]/i, deliverable: "tasks" },
   { re: /^\[Phase0/i, deliverable: "spec" },
 ];
 
@@ -92,6 +98,15 @@ function isAutoGap(message: string): boolean {
 }
 
 function resolveDeliverable(message: string): string | undefined {
+  if (/^\[Entregables\]/i.test(message)) {
+    if (/Historias de usuario/i.test(message)) return "user_stories";
+    if (/Spec/i.test(message)) return "spec";
+    if (/Contratos API/i.test(message)) return "api_contracts";
+    if (/Guía UX|UX/i.test(message)) return "ux_ui_guide";
+    if (/Flujos/i.test(message)) return "logic_flows";
+    if (/Tasks/i.test(message)) return "tasks";
+    return "tasks";
+  }
   for (const { re, deliverable } of LLM_PREFIX_TO_DELIVERABLE) {
     if (re.test(message)) return deliverable;
   }
@@ -164,14 +179,18 @@ export function applyCompositeReadinessGates(
   if (!conformanceOk || crossGaps > 0) {
     status = "AMARILLO";
     precisionScore = Math.min(precisionScore, READINESS_CROSS_GAP_AMARILLO_CAP);
-    if (!conformanceOk) reasons.push("Conformidad MDD↔derivados incompleta");
+    if (!conformanceOk) {
+      reasons.push(input.conformanceReason ?? "Conformidad MDD↔derivados incompleta");
+    }
     if (crossGaps > 0) reasons.push(`${crossGaps} brecha(s) transversal(es) SDD`);
   }
 
   if (consistency != null && consistency < READINESS_CONSISTENCY_GREEN_MIN) {
     status = "AMARILLO";
     precisionScore = Math.min(precisionScore, READINESS_CONSISTENCY_AMARILLO_CAP);
-    reasons.push(`Trazabilidad BRD→MDD ${consistency}% (< ${READINESS_CONSISTENCY_GREEN_MIN}%)`);
+    reasons.push(
+      `${input.traceReason ?? "Trazabilidad BRD→MDD"} ${consistency}% (< ${READINESS_CONSISTENCY_GREEN_MIN}%)`,
+    );
   }
 
   if (

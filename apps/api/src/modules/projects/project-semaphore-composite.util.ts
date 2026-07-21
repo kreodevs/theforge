@@ -1,8 +1,9 @@
 /**
- * Contexto compuesto para evaluación de semáforo (conformance + gaps + BRD trace).
+ * Contexto compuesto para evaluación de semáforo (conformance + gaps + trazabilidad).
  */
 
 import type { Project, Stage } from "@theforge/database";
+import { ComplexityLevel } from "@theforge/database";
 import {
   applyCompositeReadinessGates,
   type CompositeReadinessResult,
@@ -14,6 +15,10 @@ import {
   collectConformanceGaps,
   type ProjectDeliverableSource,
 } from "./conformance-gaps.util.js";
+import {
+  buildLowMediumConformanceSummary,
+  collectLowMediumReadinessGaps,
+} from "../engine/low-medium-readiness.util.js";
 import { computeCrossDocumentConsistency } from "../ai-analysis/estimation/consistency.util.js";
 import type { PlanningDocumentFields } from "../ai-analysis/estimation/estimation.types.js";
 import { countSddPrecisionGaps } from "./project-semaphore.util.js";
@@ -28,6 +33,7 @@ export type CompositeSemaphoreEvaluation = {
   humanRequiredGapCount: number;
   conformanceOk: boolean;
   consistencyScore?: number;
+  readinessProfile: "high_mdd" | "low" | "medium";
 };
 
 export function buildProjectDeliverableSource(
@@ -35,7 +41,18 @@ export function buildProjectDeliverableSource(
   stage?: Stage | null,
 ): ProjectDeliverableSource {
   return {
-    ...project,
+    blueprintContent: project.blueprintContent,
+    apiContractsContent: project.apiContractsContent,
+    logicFlowsContent: project.logicFlowsContent,
+    infraContent: project.infraContent,
+    architectureContent: project.architectureContent,
+    tasksContent: project.tasksContent,
+    useCasesContent: project.useCasesContent,
+    userStoriesContent: project.userStoriesContent,
+    uiScreensContent: project.uiScreensContent,
+    phase0SummaryContent: project.phase0SummaryContent,
+    specContent: project.specContent,
+    uxUiGuideContent: project.uxUiGuideContent,
     brdContent: stage?.brdContent ?? null,
     dbgaContent: project.dbgaContent ?? null,
     domainInventory: stage?.domainInventory ?? null,
@@ -43,11 +60,22 @@ export function buildProjectDeliverableSource(
   };
 }
 
+function hasCanonicalMdd(source: ProjectDeliverableSource): boolean {
+  return (source.mddContent ?? "").trim().length >= 120;
+}
+
 export function collectFullCrossArtifactGaps(
   conformance: ConformanceService,
   mdd: string,
   source: ProjectDeliverableSource,
+  complexity: ComplexityLevel = ComplexityLevel.HIGH,
 ): string[] {
+  if (complexity === ComplexityLevel.LOW) {
+    return collectLowMediumReadinessGaps(ComplexityLevel.LOW, source);
+  }
+  if (complexity === ComplexityLevel.MEDIUM) {
+    return collectLowMediumReadinessGaps(ComplexityLevel.MEDIUM, source);
+  }
   if (!mdd.trim()) return ["MDD vacío: no se puede verificar conformidad"];
   return collectConformanceGaps(conformance, mdd, source);
 }
@@ -55,12 +83,21 @@ export function collectFullCrossArtifactGaps(
 export function computeConsistencyScoreForProject(
   mdd: string,
   source: ProjectDeliverableSource,
+  complexity: ComplexityLevel = ComplexityLevel.HIGH,
 ): number | undefined {
   const brd = source.brdContent?.trim();
-  if (!brd || brd.length < 200 || !mdd.trim()) return undefined;
+  if (!brd || brd.length < 200) return undefined;
+
+  const downstreamMarkdown =
+    complexity === ComplexityLevel.HIGH && hasCanonicalMdd(source)
+      ? mdd
+      : (source.specContent ?? source.dbgaContent ?? "").trim();
+
+  if (!downstreamMarkdown) return undefined;
+
   const docs: PlanningDocumentFields = {
     brdContent: source.brdContent ?? undefined,
-    mddContent: mdd,
+    mddContent: downstreamMarkdown,
     specContent: source.specContent ?? undefined,
     architectureContent: source.architectureContent ?? undefined,
     blueprintContent: source.blueprintContent ?? undefined,
@@ -74,7 +111,15 @@ export function computeConsistencyScoreForProject(
   return computeCrossDocumentConsistency(docs).score;
 }
 
-/** Evalúa semáforo base + puertas compuestas de readiness SDD. */
+function resolveReadinessProfile(
+  complexity: ComplexityLevel,
+): CompositeSemaphoreEvaluation["readinessProfile"] {
+  if (complexity === ComplexityLevel.LOW) return "low";
+  if (complexity === ComplexityLevel.MEDIUM) return "medium";
+  return "high_mdd";
+}
+
+/** Evalúa semáforo base + puertas compuestas según complejidad greenfield. */
 export function evaluateCompositeSemaphore(
   semaphore: SemaphoreService,
   input: SemaphoreEvaluationInput & {
@@ -90,15 +135,22 @@ export function evaluateCompositeSemaphore(
       | "apiContractsContent"
       | "uiScreensContent"
       | "phase0SummaryContent"
+      | "uxUiGuideContent"
+      | "specContent"
     >;
     conformance?: ConformanceService;
     deliverableSource?: ProjectDeliverableSource;
   },
 ): CompositeSemaphoreEvaluation {
+  const complexity = input.complexity ?? ComplexityLevel.HIGH;
   const mdd = input.mddMarkdown ?? "";
+  const source = input.deliverableSource;
+  const profile = source ? resolveReadinessProfile(complexity) : "high_mdd";
+  const useHighMddPath = profile === "high_mdd" && hasCanonicalMdd(source ?? {});
+
   const precisionGapCount =
     input.sddCrossArtifactGapCount ??
-    (input.project && mdd.trim().length >= 120
+    (useHighMddPath && input.project && mdd.trim().length >= 120
       ? countSddPrecisionGaps(input.project, mdd)
       : 0);
 
@@ -106,23 +158,37 @@ export function evaluateCompositeSemaphore(
   let conformanceOk = true;
   let consistencyScore: number | undefined;
   let humanRequiredGapCount = 0;
+  let conformanceReason = "Conformidad MDD↔derivados incompleta";
+  let traceReason = "Trazabilidad BRD→MDD";
 
-  if (input.conformance && input.deliverableSource && mdd.trim()) {
-    const allGaps = collectFullCrossArtifactGaps(
-      input.conformance,
-      mdd,
-      input.deliverableSource,
-    );
-    crossArtifactGapCount = allGaps.length;
-    humanRequiredGapCount = allGaps.filter((g) => classifyGap(g).kind === "human").length;
-    const summary = buildConformanceSummary(input.conformance, mdd, input.deliverableSource);
-    conformanceOk = summary.ok;
-    consistencyScore = computeConsistencyScoreForProject(mdd, input.deliverableSource);
+  if (input.conformance && source) {
+    if (useHighMddPath && mdd.trim()) {
+      const allGaps = collectConformanceGaps(input.conformance, mdd, source);
+      crossArtifactGapCount = allGaps.length;
+      humanRequiredGapCount = allGaps.filter((g) => classifyGap(g).kind === "human").length;
+      const summary = buildConformanceSummary(input.conformance, mdd, source);
+      conformanceOk = summary.ok;
+      consistencyScore = computeConsistencyScoreForProject(mdd, source, complexity);
+    } else if (profile === "low" || profile === "medium") {
+      const lmComplexity =
+        profile === "low" ? ComplexityLevel.LOW : ComplexityLevel.MEDIUM;
+      const allGaps = collectLowMediumReadinessGaps(lmComplexity, source);
+      crossArtifactGapCount = allGaps.length;
+      humanRequiredGapCount = allGaps.filter((g) => classifyGap(g).kind === "human").length;
+      const summary = buildLowMediumConformanceSummary(lmComplexity, source);
+      conformanceOk = summary.ok;
+      consistencyScore = computeConsistencyScoreForProject(mdd, source, complexity);
+      conformanceReason =
+        profile === "low"
+          ? "Conformidad HU↔Tasks incompleta"
+          : "Conformidad Spec↔API↔Tasks incompleta";
+      traceReason = profile === "low" ? "Trazabilidad BRD→Spec/HU" : "Trazabilidad BRD→Spec";
+    }
   }
 
   const base = semaphore.evaluate({
     ...input,
-    sddCrossArtifactGapCount: precisionGapCount,
+    sddCrossArtifactGapCount: useHighMddPath ? precisionGapCount : crossArtifactGapCount,
   });
 
   const composite = applyCompositeReadinessGates({
@@ -132,6 +198,8 @@ export function evaluateCompositeSemaphore(
     crossArtifactGapCount,
     consistencyScore,
     humanRequiredGapCount,
+    conformanceReason,
+    traceReason,
   });
 
   return {
@@ -142,5 +210,6 @@ export function evaluateCompositeSemaphore(
     humanRequiredGapCount,
     conformanceOk,
     consistencyScore,
+    readinessProfile: profile,
   };
 }

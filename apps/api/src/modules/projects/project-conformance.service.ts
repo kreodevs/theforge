@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { ComplexityLevel } from "@theforge/database";
 import {
   ConformanceService,
   type ApiConformanceResult,
@@ -12,6 +13,8 @@ import { buildConstitutionMarkdown } from "./constitution-markdown.util.js";
 import {
   buildConformanceSummary,
 } from "./conformance-gaps.util.js";
+import { buildLowMediumConformanceSummary } from "../engine/low-medium-readiness.util.js";
+import type { ConformanceSummary } from "../engine/mdd-quality-audit.util.js";
 import { pickPrimaryStage } from "./stage-helpers.js";
 import { buildUnifiedAuditReport, type UnifiedAuditReport } from "./unified-audit.util.js";
 import {
@@ -78,11 +81,21 @@ export class ProjectConformanceService {
     const project = await loadAccessibleProjectWithStages(this.prisma, projectId);
     const stage = pickPrimaryStage(project.stages ?? []);
     const mdd = buildConstitutionMarkdown(project);
+    const complexity = project.complexity ?? ComplexityLevel.HIGH;
     const deliverableSource = buildProjectDeliverableSource(project, stage);
     const conformance = await this.resolveConformanceHeuristicOrLlm(projectId, mdd, project, options);
-    const conformanceSummary = buildConformanceSummary(this.conformance, mdd, deliverableSource);
-    const crossArtifactGaps = collectFullCrossArtifactGaps(this.conformance, mdd, deliverableSource);
-    const consistencyScore = computeConsistencyScoreForProject(mdd, deliverableSource);
+    const useLowMediumPath =
+      complexity === ComplexityLevel.LOW || complexity === ComplexityLevel.MEDIUM;
+    const conformanceSummary = useLowMediumPath
+      ? lowMediumConformanceSummaryAsUnified(complexity, deliverableSource)
+      : buildConformanceSummary(this.conformance, mdd, deliverableSource);
+    const crossArtifactGaps = collectFullCrossArtifactGaps(
+      this.conformance,
+      mdd,
+      deliverableSource,
+      complexity,
+    );
+    const consistencyScore = computeConsistencyScoreForProject(mdd, deliverableSource, complexity);
     const compositeEval = evaluateCompositeSemaphore(this.semaphore, {
       ...buildSemaphoreBaseFromProject(project),
       mddJsonString: mddJsonStringForSemaphore(mdd),
@@ -155,4 +168,18 @@ export class ProjectConformanceService {
             : p.infraContent;
     return this.ai.verifyDeliverable(buildConstitutionMarkdown(p), doc ?? "", deliverable);
   }
+}
+
+function lowMediumConformanceSummaryAsUnified(
+  complexity: Extract<ComplexityLevel, "LOW" | "MEDIUM">,
+  source: ReturnType<typeof buildProjectDeliverableSource>,
+): ConformanceSummary {
+  const lm = buildLowMediumConformanceSummary(complexity, source);
+  return {
+    ok: lm.ok,
+    api: { ok: lm.apiOk, missingCount: 0, extraCount: 0, aliasWarnings: [] },
+    infra: { ok: true, gapCount: 0, gaps: [] },
+    blueprint: { ok: true },
+    logicFlows: { ok: lm.uxOrFlowsOk },
+  };
 }

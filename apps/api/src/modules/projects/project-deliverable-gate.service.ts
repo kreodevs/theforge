@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, forwardRef } from "@nestjs/common";
 import { ComplexityLevel, type Project, type Stage } from "@theforge/database";
 import type { Estimation } from "@theforge/database";
 import type { MddDeliveryGateResult } from "@theforge/shared-types";
@@ -31,6 +31,7 @@ export class ProjectDeliverableGateService {
     private readonly semaphore: SemaphoreService,
     private readonly conformance: ConformanceService,
     private readonly estimationRecalc: ProjectEstimationRecalcService,
+    @Inject(forwardRef(() => ProjectMddPersistService))
     private readonly mddPersist: ProjectMddPersistService,
   ) {}
 

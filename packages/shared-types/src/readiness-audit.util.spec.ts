@@ -31,7 +31,28 @@ test("applyCompositeReadinessGates: VERDE + cross gaps → AMARILLO cap 82", () 
   assert.ok(r.reasons.some((x) => x.includes("5 brecha")));
 });
 
-test("buildConvergenceRetryPlan: mezcla auto + llm", () => {
+test("classifyGap: HU↔Tasks → llm tasks", () => {
+  const g = classifyGap("[HU↔Tasks] HU_01 sin task trazable");
+  assert.equal(g.kind, "llm");
+  assert.equal(g.targetDeliverable, "tasks");
+});
+
+test("classifyGap: Entregables Spec → spec", () => {
+  const g = classifyGap("[Entregables] Spec ausente (< 48 caracteres)");
+  assert.equal(g.targetDeliverable, "spec");
+});
+
+test("buildConvergenceRetryPlan: LOW/MEDIUM Spec↔API", () => {
+  const plan = buildConvergenceRetryPlan([
+    "[Spec↔API] «facturación» del Spec sin endpoint trazable",
+    "[Entregables] Tasks ausentes (< 48 caracteres)",
+  ]);
+  assert.ok(plan.deliverables.includes("api_contracts"));
+  assert.ok(plan.deliverables.includes("tasks"));
+  assert.equal(plan.autoRepairMdd, false);
+});
+
+test("buildConvergenceRetryPlan HIGH: mezcla auto + llm", () => {
   const plan = buildConvergenceRetryPlan([
     "[Inventario] Entidades sugeridas ausentes en §3: foo",
     "[API falta] GET /api/v1/foo",

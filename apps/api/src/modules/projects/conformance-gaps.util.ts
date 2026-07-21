@@ -26,6 +26,7 @@ export interface ProjectDeliverableSource {
   uiScreensContent?: string | null;
   phase0SummaryContent?: string | null;
   specContent?: string | null;
+  uxUiGuideContent?: string | null;
   mddContent?: string | null;
   dbgaContent?: string | null;
   brdContent?: string | null;
