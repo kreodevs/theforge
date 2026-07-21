@@ -471,6 +471,26 @@ export class ProjectsController {
     };
   }
 
+  /** Cascada parcial según `pendingCascadeDelta` tras edición/regeneración MDD. */
+  @Post(":id/generate-deliverables-delta")
+  async generateDeliverablesDelta(
+    @Param("id") id: string,
+    @Query("acknowledgeGaps") acknowledgeGaps?: string,
+  ) {
+    const ack = acknowledgeGaps === "true";
+    await this.projects.assertDeliverablesAllowed(id, { acknowledgeGaps: ack });
+    const jobId = await this.deliverablesQueue.enqueue({
+      type: "cascade-delta",
+      projectId: id,
+      acknowledgeGaps: ack,
+    });
+    return {
+      queued: true,
+      jobId,
+      statusPath: `/projects/${id}/deliverables-jobs/${jobId}`,
+    };
+  }
+
   /** Aplica `complexityPending` a `complexity` y limpia HITL. */
   @Post(":id/confirm-complexity")
   confirmComplexity(@Param("id") id: string) {
@@ -729,7 +749,7 @@ export class ProjectsController {
       ...extra,
       acknowledgeGaps,
     });
-    if (type !== "agent-governance" && type !== "cascade") {
+    if (type !== "agent-governance" && type !== "cascade" && type !== "cascade-delta") {
       await this.projects.runPostRegenSddConflictSurfacing(projectId).catch((err) => {
         console.warn(
           `[queueOrSync] sddConflictSurfacing (${type}): ${err instanceof Error ? err.message : String(err)}`,
@@ -790,7 +810,7 @@ export class ProjectsController {
     }
     try {
       await this.runGenerateJobSync(type, projectId, extra);
-      if (type !== "agent-governance" && type !== "cascade") {
+      if (type !== "agent-governance" && type !== "cascade" && type !== "cascade-delta") {
         await this.projects.runPostRegenSddConflictSurfacing(projectId).catch((err) => {
           console.warn(
             `[fire-and-forget] sddConflictSurfacing (${type}): ${err instanceof Error ? err.message : String(err)}`,

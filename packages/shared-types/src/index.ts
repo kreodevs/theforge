@@ -81,3 +81,6 @@ export * from "./plugin.js";
 export * from "./plugin-packaging.js";
 export * from "./document-ast/index.js";
 export * from "./system-config.js";
+export * from "./readiness-audit.util.js";
+export * from "./external-integration-registry.js";
+export * from "./mdd-cascade-delta.util.js";

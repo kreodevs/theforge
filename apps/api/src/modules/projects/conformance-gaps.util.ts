@@ -25,6 +25,7 @@ export interface ProjectDeliverableSource {
   userStoriesContent?: string | null;
   uiScreensContent?: string | null;
   phase0SummaryContent?: string | null;
+  specContent?: string | null;
   mddContent?: string | null;
   dbgaContent?: string | null;
   brdContent?: string | null;

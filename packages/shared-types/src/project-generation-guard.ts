@@ -52,6 +52,7 @@ export type MddUpstreamSyncStatus = Pick<
 /** Tipos de job de generación soportados por la cola BullMQ / in-memory. */
 export type GenerationJobType =
   | "cascade"
+  | "cascade-delta"
   | "spec"
   | "blueprint"
   | "api-contracts"
@@ -67,6 +68,7 @@ export type GenerationJobType =
 
 export const GENERATION_JOB_TYPE_LABELS: Record<GenerationJobType, string> = {
   cascade: "Cascada de entregables",
+  "cascade-delta": "Cascada delta (MDD)",
   spec: "Spec",
   blueprint: "Blueprint",
   "api-contracts": "Contratos API",
@@ -107,6 +109,7 @@ export function generationJobToDeliverableKind(
     case "agent-governance":
       return "agent_governance";
     case "cascade":
+    case "cascade-delta":
       return "cascade";
     case "doc-reconcile-partial":
       return "doc_reconcile";
@@ -236,7 +239,7 @@ export function evaluateGenerationGate(params: {
     };
   }
 
-  if (activeJobs.some((j) => j.type === "cascade")) {
+  if (activeJobs.some((j) => j.type === "cascade" || j.type === "cascade-delta")) {
     return {
       allowed: false,
       blockReason: "project_busy",
@@ -302,6 +305,7 @@ export function buildGenerationGates(params: {
 }): Partial<Record<GenerationJobType, GenerationGateEntry>> {
   const types: GenerationJobType[] = [
     "cascade",
+    "cascade-delta",
     "spec",
     "architecture",
     "use-cases",

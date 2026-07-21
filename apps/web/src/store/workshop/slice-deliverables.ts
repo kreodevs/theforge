@@ -662,16 +662,36 @@ export const createDeliverablesSlice: StateCreator<
           api: ApiConformanceResult;
           logicFlows: ConformanceResult;
           infra: ConformanceResult;
+          readiness?: {
+            gapSummary: {
+              total: number;
+              auto: number;
+              llm: number;
+              human: number;
+              truncated: boolean;
+            };
+            compositeReadiness?: { reasons: string[] };
+            consistencyScore?: number;
+            conformanceOk: boolean;
+          };
         };
         set({
           conformance: {
             ...data,
             blueprintDataModel: data.blueprintDataModel ?? { ok: true, gaps: [] },
           },
+          readinessAudit: data.readiness
+            ? {
+                gapSummary: data.readiness.gapSummary,
+                compositeReadiness: data.readiness.compositeReadiness,
+                consistencyScore: data.readiness.consistencyScore,
+                conformanceOk: data.readiness.conformanceOk,
+              }
+            : null,
         });
       }
     } catch {
-      set({ conformance: null });
+      set({ conformance: null, readinessAudit: null });
     }
   },
   verifyDeliverable: async (projectId, deliverable) => {

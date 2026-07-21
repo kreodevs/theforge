@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger, forwardRef } from "@nestjs/common";
 import { Prisma, type Status } from "@theforge/database";
 import type { MddDeliveryGateResult } from "@theforge/shared-types";
+import { computeMddCascadeDelta } from "@theforge/shared-types";
 import {
   enforceMddGovernancePatternsOnPersist,
   selectedPatternIdsFromMdd,
@@ -29,6 +30,10 @@ import {
   type SemaphoreProjectFields,
 } from "./project-mdd-persist.util.js";
 import { ProjectEstimationRecalcService } from "./project-estimation-recalc.service.js";
+import { ProjectDeliverableGateService } from "./project-deliverable-gate.service.js";
+import { applyDeterministicMddRepairs } from "./mdd-deterministic-repair.util.js";
+import { resolveDomainInventory } from "../engine/domain-inventory-persist.util.js";
+import type { DomainInventory } from "@theforge/shared-types";
 import { pickPrimaryStage, type StageWithEstimation } from "./stage-helpers.js";
 
 export type PersistMddFromPatchInput = {
@@ -59,6 +64,8 @@ export class ProjectMddPersistService {
     private readonly changeLog: ChangeLogService,
     private readonly mddUpdatePipeline: MddUpdatePipelineService,
     private readonly estimationRecalc: ProjectEstimationRecalcService,
+    @Inject(forwardRef(() => ProjectDeliverableGateService))
+    private readonly deliverableGate: ProjectDeliverableGateService,
   ) {}
 
   async persistMddDeliveryGateSnapshot(
@@ -153,8 +160,23 @@ export class ProjectMddPersistService {
     }
 
     const mergedForSemaphore = mergeProjectFieldsForSemaphore(existing, {});
+    const previousMdd = targetStage.mddContent ?? "";
+    const inventory = resolveDomainInventory({
+      persisted: targetStage.domainInventory as DomainInventory | null | undefined,
+      brdMarkdown: targetStage.brdContent,
+      dbgaMarkdown: existing.dbgaContent,
+      mddMarkdown: mddForPipeline,
+    });
+    const repaired = applyDeterministicMddRepairs(mddForPipeline, {
+      brdMarkdown: targetStage.brdContent,
+      dbgaMarkdown: existing.dbgaContent,
+      inventory,
+      specMarkdown: existing.specContent,
+    });
+    const pipelineInput = repaired.changed ? repaired.markdown : mddForPipeline;
+
     const result = await this.mddUpdatePipeline.process(
-      mddForPipeline,
+      pipelineInput,
       buildSemaphoreBaseFromProject(mergedForSemaphore),
       { projectId, stageId: targetStage.id },
     );
@@ -170,12 +192,23 @@ export class ProjectMddPersistService {
     }
 
     const finalMdd = applyLockedPatterns(result.sanitizedMdd);
+    const cascadeDelta = computeMddCascadeDelta(previousMdd, finalMdd);
+    const prevCtx =
+      targetStage.shortTermContext &&
+      typeof targetStage.shortTermContext === "object" &&
+      !Array.isArray(targetStage.shortTermContext)
+        ? (targetStage.shortTermContext as Record<string, unknown>)
+        : {};
+
     await this.prisma.stage.update({
       where: { id: targetStage.id },
       data: {
         mddContent: storeMddMarkdownForPersist(finalMdd),
-        status: result.status,
-        precisionScore: result.precisionScore,
+        shortTermContext: {
+          ...prevCtx,
+          pendingCascadeDelta:
+            cascadeDelta.affectedDeliverables.length > 0 ? cascadeDelta : null,
+        } as Prisma.InputJsonValue,
       },
     });
     await this.changeLog.log(projectId, "mddContent", finalMdd);
@@ -183,10 +216,15 @@ export class ProjectMddPersistService {
       targetStage.id,
       await evaluateMddDeliveryGatePrepared(finalMdd),
     );
+    await this.deliverableGate.refreshStageSemaphoreFromProject(projectId);
+    const refreshed = await this.prisma.stage.findUnique({
+      where: { id: targetStage.id },
+      select: { status: true, precisionScore: true },
+    });
     await this.estimationRecalc.recalcAndUpsert(targetStage.id, {
       mddContent: finalMdd,
       infraContent: existing.infraContent ?? null,
-      status: result.status,
+      status: refreshed?.status ?? result.status,
     });
   }
 
@@ -218,8 +256,36 @@ export class ProjectMddPersistService {
       };
     }
 
-    const result = await this.mddUpdatePipeline.process(
+    const stageRow = await this.prisma.stage.findUnique({
+      where: { id: stageId },
+      select: {
+        mddContent: true,
+        brdContent: true,
+        domainInventory: true,
+        shortTermContext: true,
+      },
+    });
+    const projectRow = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { dbgaContent: true, specContent: true },
+    });
+    const inventory = resolveDomainInventory({
+      persisted: stageRow?.domainInventory as DomainInventory | null | undefined,
+      brdMarkdown: stageRow?.brdContent,
+      dbgaMarkdown: projectRow?.dbgaContent,
       mddMarkdown,
+    });
+    const repaired = applyDeterministicMddRepairs(mddMarkdown, {
+      brdMarkdown: stageRow?.brdContent,
+      dbgaMarkdown: projectRow?.dbgaContent,
+      inventory,
+      specMarkdown: projectRow?.specContent,
+    });
+    const pipelineInput = repaired.changed ? repaired.markdown : mddMarkdown;
+    const previousMdd = stageRow?.mddContent ?? "";
+
+    const result = await this.mddUpdatePipeline.process(
+      pipelineInput,
       buildSemaphoreBaseFromProject(mergedForSemaphore),
       { projectId, stageId },
     );
@@ -228,13 +294,24 @@ export class ProjectMddPersistService {
     }
 
     const ok = result;
+    const cascadeDelta = computeMddCascadeDelta(previousMdd, ok.sanitizedMdd);
+    const prevCtx =
+      stageRow?.shortTermContext &&
+      typeof stageRow.shortTermContext === "object" &&
+      !Array.isArray(stageRow.shortTermContext)
+        ? (stageRow.shortTermContext as Record<string, unknown>)
+        : {};
+
     await this.prisma.stage.update({
       where: { id: stageId },
       data: {
         mddContent: storeMddMarkdownForPersist(ok.sanitizedMdd),
-        status: ok.status,
-        precisionScore: ok.precisionScore,
         ...documentData,
+        shortTermContext: {
+          ...prevCtx,
+          pendingCascadeDelta:
+            cascadeDelta.affectedDeliverables.length > 0 ? cascadeDelta : null,
+        } as Prisma.InputJsonValue,
       },
     });
     await this.changeLog.log(projectId, "mddContent", ok.sanitizedMdd);
@@ -242,10 +319,15 @@ export class ProjectMddPersistService {
       stageId,
       await evaluateMddDeliveryGatePrepared(ok.sanitizedMdd),
     );
+    await this.deliverableGate.refreshStageSemaphoreFromProject(projectId);
+    const refreshed = await this.prisma.stage.findUnique({
+      where: { id: stageId },
+      select: { status: true, precisionScore: true },
+    });
     return {
       sanitizedMdd: ok.sanitizedMdd,
-      status: ok.status,
-      precisionScore: ok.precisionScore,
+      status: refreshed?.status ?? ok.status,
+      precisionScore: refreshed?.precisionScore ?? ok.precisionScore,
     };
   }
 

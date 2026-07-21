@@ -6,6 +6,7 @@ import {
   forwardRef,
 } from "@nestjs/common";
 import { ComplexityLevel } from "@theforge/database";
+import { Prisma } from "@theforge/database";
 import {
   DELIVERABLE_WAVES_BY_COMPLEXITY,
   TASKS_PREFLIGHT_DOC_ACCURACY_BLOCK_THRESHOLD,
@@ -42,10 +43,17 @@ import {
 } from "../engine/sdd-precision-checks.util.js";
 import { UiMcpClientService } from "../ui-mcp/ui-mcp-client.service.js";
 import { UiScreensService } from "../ui-mcp/ui-screens.service.js";
+import { ConformanceService } from "../engine/conformance.service.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { loadAccessibleProjectWithStages } from "./project-access.util.js";
 import { buildConstitutionMarkdown } from "./constitution-markdown.util.js";
 import { buildExistingConformanceGapsMap } from "./deliverables-cascade-gaps.util.js";
+import {
+  collectConformanceGaps,
+} from "./conformance-gaps.util.js";
+import { applyDeterministicMddRepairs } from "./mdd-deterministic-repair.util.js";
+import { buildConvergenceRetryPlan } from "@theforge/shared-types";
+import { storeMddMarkdownForPersist } from "../ai-analysis/utils/mdd-sanitize.js";
 import { syncDomainInventoryForStage } from "./sync-domain-inventory-stage.util.js";
 import { persistStageDeliverableSnapshotFromProject } from "./stage-deliverable-snapshot.util.js";
 import {
@@ -74,6 +82,7 @@ export class DeliverablesCascadeService {
     private readonly projects: ProjectsService,
     private readonly uiMcpClient: UiMcpClientService,
     private readonly uiScreens: UiScreensService,
+    private readonly conformance: ConformanceService,
   ) {}
 
   /** Sync pantallas tras W2; no falla la cascada si no hay MCP activo. */
@@ -88,6 +97,81 @@ export class DeliverablesCascadeService {
       const message = e instanceof Error ? e.message : String(e);
       this.logger.warn(`[Cascade] ui_screens_sync saltado: ${message}`);
     }
+  }
+
+  /** Cascada parcial: solo entregables afectados por el último delta MDD (shortTermContext.pendingCascadeDelta). */
+  async generateDeliverablesDelta(
+    projectId: string,
+    onProgress?: (p: DeliverablesCascadeProgress) => void,
+    options?: { acknowledgeGaps?: boolean; signal?: AbortSignal },
+  ) {
+    const project = await loadAccessibleProjectWithStages(this.prisma, projectId);
+    const stage = pickPrimaryStage(project.stages ?? []);
+    const ctx = stage?.shortTermContext;
+    const rawDelta =
+      ctx &&
+      typeof ctx === "object" &&
+      !Array.isArray(ctx) &&
+      (ctx as { pendingCascadeDelta?: { affectedDeliverables?: DeliverableWaveStep[] } | null })
+        .pendingCascadeDelta;
+    const delta =
+      rawDelta && typeof rawDelta === "object" ? rawDelta : null;
+
+    const steps = delta?.affectedDeliverables?.length
+      ? delta.affectedDeliverables
+      : null;
+
+    if (!steps || steps.length === 0) {
+      throw new BadRequestException(
+        "No hay delta de cascada pendiente. Edita el MDD o ejecuta cascada completa.",
+      );
+    }
+
+    await this.projects.assertDeliverablesAllowed(projectId, options);
+    const mddContent = buildConstitutionMarkdown(project);
+    const gapsMap = buildExistingConformanceGapsMap(project, mddContent, steps);
+    const completedSteps: string[] = [];
+    let index = 0;
+    const total = steps.length + 1;
+
+    for (const step of steps) {
+      if (options?.signal?.aborted) throw new Error("Cancelado por el usuario");
+      const stepGaps = gapsMap.get(step);
+      await this.runDeliverableWaveStep(
+        step,
+        projectId,
+        stepGaps,
+        options?.acknowledgeGaps === true,
+      ).catch((e) =>
+        this.logger.warn(`[CascadeDelta] ${step}: ${e instanceof Error ? e.message : e}`),
+      );
+      completedSteps.push(step);
+      onProgress?.({ step, completedSteps: [...completedSteps], index, total });
+      index++;
+    }
+
+    await this.runCascadePostPassRetry(projectId).catch(() => undefined);
+    await this.runCascadeConformanceRetry(projectId).catch(() => undefined);
+    await this.runCascadeConvergenceLoop(projectId).catch(() => undefined);
+    await this.projects.refreshStageSemaphoreFromProject(projectId).catch(() => undefined);
+
+    if (stage?.id) {
+      const prev =
+        stage.shortTermContext &&
+        typeof stage.shortTermContext === "object" &&
+        !Array.isArray(stage.shortTermContext)
+          ? (stage.shortTermContext as Record<string, unknown>)
+          : {};
+      await this.prisma.stage.update({
+        where: { id: stage.id },
+        data: {
+          shortTermContext: { ...prev, pendingCascadeDelta: null } as Prisma.InputJsonValue,
+        },
+      });
+    }
+
+    onProgress?.({ step: "done", completedSteps, index: total - 1, total });
+    return this.projects.findOne(projectId);
   }
 
   /**
@@ -194,6 +278,12 @@ export class DeliverablesCascadeService {
     await this.runCascadeConformanceRetry(projectId).catch((err) =>
       this.logger.warn(
         `[Cascade] conformance retry: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
+
+    await this.runCascadeConvergenceLoop(projectId).catch((err) =>
+      this.logger.warn(
+        `[Cascade] convergence loop: ${err instanceof Error ? err.message : String(err)}`,
       ),
     );
 
@@ -453,6 +543,86 @@ export class DeliverablesCascadeService {
       }
       if (retries.length === 0) return;
       await Promise.allSettled(retries);
+    }
+  }
+
+  /**
+   * Ciclo verify → reparación/regen dirigida → verify (máx. 3 iteraciones).
+   * Cierra gaps auto-fixables y dispara regeneración LLM por artefacto.
+   */
+  private async runCascadeConvergenceLoop(projectId: string): Promise<void> {
+    const MAX_ITERATIONS = 3;
+
+    for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+      const project = await this.projects.findOne(projectId);
+      const stage = pickPrimaryStage(project.stages ?? []);
+      const mdd = buildConstitutionMarkdown(project);
+      if (!mdd.trim()) return;
+
+      const inventory = resolveDomainInventory({
+        persisted: stage?.domainInventory as DomainInventory | null | undefined,
+        brdMarkdown: stage?.brdContent,
+        dbgaMarkdown: project.dbgaContent,
+        mddMarkdown: mdd,
+      });
+
+      const gaps = collectConformanceGaps(this.conformance, mdd, {
+        ...project,
+        brdContent: stage?.brdContent ?? null,
+        dbgaContent: project.dbgaContent ?? null,
+        domainInventory: stage?.domainInventory ?? null,
+      });
+
+      if (gaps.length === 0) {
+        this.logger.log(`[Cascade] Convergence OK en iteración ${iteration + 1}`);
+        return;
+      }
+
+      const plan = buildConvergenceRetryPlan(gaps);
+      if (!plan.autoRepairMdd && plan.deliverables.length === 0) {
+        this.logger.debug(
+          `[Cascade] Convergence detenida — ${gaps.length} gap(s) requieren HITL o sin plan`,
+        );
+        return;
+      }
+
+      this.logger.warn(
+        `[Cascade] Convergence iter ${iteration + 1}/${MAX_ITERATIONS}: ${gaps.length} gap(s), plan=${plan.deliverables.join(",") || "mdd-repair"}`,
+      );
+
+      if (plan.autoRepairMdd && stage?.id) {
+        const repaired = applyDeterministicMddRepairs(mdd, {
+          brdMarkdown: stage.brdContent,
+          dbgaMarkdown: project.dbgaContent,
+          inventory,
+          specMarkdown: project.specContent,
+        });
+        if (repaired.changed) {
+          await this.prisma.stage.update({
+            where: { id: stage.id },
+            data: { mddContent: storeMddMarkdownForPersist(repaired.markdown) },
+          });
+          await this.projects.refreshStageSemaphoreFromProject(projectId).catch(() => undefined);
+        }
+      }
+
+      const regenSteps = [...new Set(plan.deliverables)].filter(
+        (s) => s !== "mdd_canonical" && s !== "ui_screens_sync",
+      );
+
+      await Promise.allSettled(
+        regenSteps.map((step) =>
+          this.projects
+            .generateDocument(step as DeliverableKind, projectId, {
+              gapsFeedback: plan.feedback || undefined,
+            })
+            .catch((e) =>
+              this.logger.warn(
+                `[Cascade] Convergence regen ${step}: ${e instanceof Error ? e.message : e}`,
+              ),
+            ),
+        ),
+      );
     }
   }
 }

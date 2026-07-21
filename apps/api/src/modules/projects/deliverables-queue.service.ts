@@ -32,6 +32,7 @@ const DELIVERABLES_CANCEL_KEY_PREFIX = "theforge:deliverables-cancel:";
 /** Tipos de job soportados por la cola. */
 export type GenerateJobType =
   | "cascade"
+  | "cascade-delta"
   | "spec"
   | "blueprint"
   | "api-contracts"
@@ -368,6 +369,16 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
     switch (type) {
       case "cascade":
         result = await this.projects.generateDeliverablesCascade(
+          projectId,
+          (p) => {
+            this.throwIfAborted(signal);
+            onProgress(p);
+          },
+          { acknowledgeGaps, signal },
+        );
+        break;
+      case "cascade-delta":
+        result = await this.projects.generateDeliverablesDelta(
           projectId,
           (p) => {
             this.throwIfAborted(signal);

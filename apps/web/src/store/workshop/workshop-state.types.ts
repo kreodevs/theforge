@@ -56,6 +56,19 @@ export interface WorkshopState {
     logicFlows: ConformanceResult;
     infra: ConformanceResult;
   } | null;
+  /** Auditoría unificada SDD (gaps clasificados auto/LLM/humano). */
+  readinessAudit: {
+    gapSummary: {
+      total: number;
+      auto: number;
+      llm: number;
+      human: number;
+      truncated: boolean;
+    };
+    compositeReadiness?: { reasons: string[] };
+    consistencyScore?: number;
+    conformanceOk: boolean;
+  } | null;
   /** Vista previa de entregable eliminada — regeneración directa sin modal */
   loading: boolean;
   /** Razón del loading para mostrar mensajes específicos (ej. deep research tarda más) */

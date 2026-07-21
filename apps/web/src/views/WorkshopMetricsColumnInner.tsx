@@ -201,6 +201,7 @@ export function WorkshopMetricsColumnInner({
   ]);
 
   const conformanceRaw = useWorkshopStore((s) => s.conformance);
+  const readinessAudit = useWorkshopStore((s) => s.readinessAudit);
   const conformance = useMemo(() => conformanceRaw, [conformanceRaw]);
   const documentCompleteness = useWorkshopStore((s) => s.documentCompleteness);
   const consistencyScore = useWorkshopStore((s) => s.consistencyScore);
@@ -505,6 +506,28 @@ export function WorkshopMetricsColumnInner({
                 ) : null}
               </div>
             </div>
+            {readinessAudit && readinessAudit.gapSummary.total > 0 ? (
+              <div
+                className={cn(
+                  WORKSHOP_METRICS_CARD,
+                  "space-y-1.5 p-2.5 text-[11px] leading-snug text-[color-mix(in_oklch,var(--muted-foreground)_96%,var(--foreground))]",
+                )}
+              >
+                <p className="font-semibold text-[var(--foreground)]">Brechas SDD</p>
+                <p>
+                  {readinessAudit.gapSummary.auto} auto · {readinessAudit.gapSummary.llm} LLM ·{" "}
+                  {readinessAudit.gapSummary.human} humano
+                  {readinessAudit.gapSummary.truncated ? " (+ más)" : ""}
+                </p>
+                {readinessAudit.compositeReadiness?.reasons?.length ? (
+                  <ul className="list-disc space-y-0.5 pl-4 text-[10px]">
+                    {readinessAudit.compositeReadiness.reasons.slice(0, 3).map((reason) => (
+                      <li key={reason}>{reason}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
             {deliveryGate && !deliveryGate.ok ? (
               <div
                 role="status"

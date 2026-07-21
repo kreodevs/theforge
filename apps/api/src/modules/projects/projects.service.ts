@@ -396,6 +396,19 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     return this.deliverablesCascade.generateDeliverablesCascade(projectId, onProgress, options);
   }
 
+  async generateDeliverablesDelta(
+    projectId: string,
+    onProgress?: (p: {
+      step: string;
+      completedSteps: string[];
+      index: number;
+      total: number;
+    }) => void,
+    options?: { acknowledgeGaps?: boolean; signal?: AbortSignal },
+  ) {
+    return this.deliverablesCascade.generateDeliverablesDelta(projectId, onProgress, options);
+  }
+
   async runPostRegenSddConflictSurfacing(projectId: string): Promise<void> {
     return this.projectSddReconcile.runPostRegenSddConflictSurfacing(projectId);
   }

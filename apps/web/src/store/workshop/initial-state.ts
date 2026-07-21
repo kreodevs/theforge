@@ -45,6 +45,18 @@ export const workshopInitialState = {
     logicFlows: ConformanceResult;
     infra: ConformanceResult;
   } | null,
+  readinessAudit: null as {
+    gapSummary: {
+      total: number;
+      auto: number;
+      llm: number;
+      human: number;
+      truncated: boolean;
+    };
+    compositeReadiness?: { reasons: string[] };
+    consistencyScore?: number;
+    conformanceOk: boolean;
+  } | null,
   loading: false,
   loadingReason: null as
     | "benchmark"

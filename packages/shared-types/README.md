@@ -22,6 +22,9 @@ DTOs e interfaces compartidas (Zod).
 - **`deliverable-bundle.ts`:** `buildDeliverableBundleVersion` — versión atómica US+pantallas+API+tasks.
 - **`tasks-parse.ts`:** parseo spec-kit de `tasks.md` (`[P]`, rutas, checkpoints); `getNextOpenTask` para MCP.
 - **`sdd-analyze.ts`:** tipos del reporte `GET /projects/:id/analyze`.
+- **`readiness-audit.util.ts`:** semáforo compuesto, clasificación de gaps (auto/LLM/humano), plan de convergencia post-cascada.
+- **`external-integration-registry.ts`:** registro extensible de integraciones externas (WebSocket, Banxico, Polygon, Stripe, RabbitMQ).
+- **`mdd-cascade-delta.util.ts`:** delta de entregables tras cambio MDD (`pendingCascadeDelta` en etapa).
 - **`mermaid.ts`:** normalización/reparación de diagramas (erDiagram PK/FK, **erDiagram BRD con viñetas/`###` dentro del fence**, fences partidos, cabeceras duplicadas, `subgraph ID["…"]`, secuencia sin cabecera, flechas/participantes, `resolveMermaidBlockForRender` para preview); `assessMermaidFixStrategy` prioriza reparación local si `validateMermaid` pasa tras el fix. Consumido por `normalizeMermaidInDocument`, `MarkdownMermaid` y `MddViewer`.
 - **`sdd-integrations.ts`:** Zod `convergeBodySchema`, `tasksToIssuesBodySchema`.
 - **`plugin.ts`:** `ArtifactTypeDefinition` (con `pluginId`, `generatable`, `requires`, `contentType`), `PluginArtifactContext`, `PluginArtifactResult`; job `plugin-artifact` en `project-generation-guard.ts` (incl. gate `project_busy`).
