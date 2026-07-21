@@ -409,8 +409,8 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     return this.deliverablesCascade.generateDeliverablesDelta(projectId, onProgress, options);
   }
 
-  async repairReadinessGaps(projectId: string) {
-    return this.deliverablesCascade.repairReadinessGaps(projectId);
+  async repairReadinessGaps(projectId: string, options?: { signal?: AbortSignal }) {
+    return this.deliverablesCascade.repairReadinessGaps(projectId, options);
   }
 
   async runPostRegenSddConflictSurfacing(projectId: string): Promise<void> {

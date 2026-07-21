@@ -129,6 +129,9 @@ export class DeliverablesCascadeService {
     }
 
     await this.projects.assertDeliverablesAllowed(projectId, options);
+    const throwIfAbortedDelta = () => {
+      if (options?.signal?.aborted) throw new Error("Cancelado por el usuario");
+    };
     const mddContent = buildConstitutionMarkdown(project);
     const gapsMap = buildExistingConformanceGapsMap(
       project,
@@ -156,9 +159,18 @@ export class DeliverablesCascadeService {
       index++;
     }
 
-    await this.runCascadePostPassRetry(projectId).catch(() => undefined);
-    await this.runCascadeConformanceRetry(projectId).catch(() => undefined);
-    await this.runCascadeConvergenceLoop(projectId).catch(() => undefined);
+    await this.runCascadePostPassRetry(projectId, options?.signal).catch((err) => {
+      if (err instanceof Error && err.message.includes("Cancelado por el usuario")) throw err;
+    });
+    throwIfAbortedDelta();
+    await this.runCascadeConformanceRetry(projectId, options?.signal).catch((err) => {
+      if (err instanceof Error && err.message.includes("Cancelado por el usuario")) throw err;
+    });
+    throwIfAbortedDelta();
+    await this.runCascadeConvergenceLoop(projectId, options?.signal).catch((err) => {
+      if (err instanceof Error && err.message.includes("Cancelado por el usuario")) throw err;
+    });
+    throwIfAbortedDelta();
     await this.projects.refreshStageSemaphoreFromProject(projectId).catch(() => undefined);
 
     if (stage?.id) {
@@ -190,6 +202,9 @@ export class DeliverablesCascadeService {
     options?: { acknowledgeGaps?: boolean; signal?: AbortSignal },
   ) {
     await this.projects.assertDeliverablesAllowed(projectId, options);
+    const throwIfAborted = () => {
+      if (options?.signal?.aborted) throw new Error("Cancelado por el usuario");
+    };
     const project = await loadAccessibleProjectWithStages(this.prisma, projectId);
     await syncDomainInventoryForStage(this.prisma, project).catch((err) =>
       this.logger.warn(
@@ -225,9 +240,7 @@ export class DeliverablesCascadeService {
     };
 
     for (let waveIndex = 0; waveIndex < waves.length; waveIndex++) {
-      if (options?.signal?.aborted) {
-        throw new Error("Cancelado por el usuario");
-      }
+      throwIfAborted();
       const wave = waves[waveIndex]!;
       const projectFresh = await this.projects.findOne(projectId);
       const mddContent = buildConstitutionMarkdown(projectFresh);
@@ -241,6 +254,7 @@ export class DeliverablesCascadeService {
       await Promise.allSettled(
         wave.map(async (step: DeliverableWaveStep) => {
           try {
+            throwIfAborted();
             const stepGaps = step !== "ui_screens_sync" ? gapsMap.get(step) : undefined;
             await this.runDeliverableWaveStep(
               step,
@@ -249,6 +263,7 @@ export class DeliverablesCascadeService {
               options?.acknowledgeGaps === true,
             );
           } catch (e) {
+            if (e instanceof Error && e.message.includes("Cancelado por el usuario")) return;
             const message = e instanceof Error ? e.message : "Error desconocido";
             this.logger.warn(`[Cascade] Paso ${step} saltado: ${message}.`);
             errors.push({ step, error: message });
@@ -256,6 +271,7 @@ export class DeliverablesCascadeService {
           reportProgress(step);
         }),
       );
+      throwIfAborted();
     }
 
     const projectAfterWaves = await this.projects.findOne(projectId);
@@ -280,24 +296,31 @@ export class DeliverablesCascadeService {
       total,
     });
 
-    await this.runCascadePostPassRetry(projectId).catch((err) =>
+    throwIfAborted();
+    await this.runCascadePostPassRetry(projectId, options?.signal).catch((err) => {
+      if (err instanceof Error && err.message.includes("Cancelado por el usuario")) throw err;
       this.logger.warn(
         `[Cascade] post-pass W4: ${err instanceof Error ? err.message : String(err)}`,
-      ),
-    );
+      );
+    });
 
-    await this.runCascadeConformanceRetry(projectId).catch((err) =>
+    throwIfAborted();
+    await this.runCascadeConformanceRetry(projectId, options?.signal).catch((err) => {
+      if (err instanceof Error && err.message.includes("Cancelado por el usuario")) throw err;
       this.logger.warn(
         `[Cascade] conformance retry: ${err instanceof Error ? err.message : String(err)}`,
-      ),
-    );
+      );
+    });
 
-    await this.runCascadeConvergenceLoop(projectId).catch((err) =>
+    throwIfAborted();
+    await this.runCascadeConvergenceLoop(projectId, options?.signal).catch((err) => {
+      if (err instanceof Error && err.message.includes("Cancelado por el usuario")) throw err;
       this.logger.warn(
         `[Cascade] convergence loop: ${err instanceof Error ? err.message : String(err)}`,
-      ),
-    );
+      );
+    });
 
+    throwIfAborted();
     await this.projects.refreshStageSemaphoreFromProject(projectId).catch((err) =>
       this.logger.warn(
         `[Cascade] refresh semaphore: ${err instanceof Error ? err.message : String(err)}`,
@@ -346,7 +369,8 @@ export class DeliverablesCascadeService {
   }
 
   /** W4: reintenta artefactos con gaps de precisión SDD o TaskAccuracy < 90. */
-  private async runCascadePostPassRetry(projectId: string): Promise<void> {
+  private async runCascadePostPassRetry(projectId: string, signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw new Error("Cancelado por el usuario");
     const project = await this.projects.findOne(projectId);
     const mdd = buildConstitutionMarkdown(project);
     const stage = pickPrimaryStage(project.stages ?? []);
@@ -455,6 +479,7 @@ export class DeliverablesCascadeService {
       ...brdLogGaps,
     ];
     if (allGaps.length === 0) return;
+    if (signal?.aborted) throw new Error("Cancelado por el usuario");
 
     const feedback = formatPrecisionGapsFeedback(allGaps);
     const flags = precisionGapsForPostPassRetry(precisionGaps);
@@ -496,6 +521,7 @@ export class DeliverablesCascadeService {
     if (upstreamRetries.length > 0) {
       await Promise.allSettled(upstreamRetries);
     }
+    if (signal?.aborted) throw new Error("Cancelado por el usuario");
 
     if (flags.retryTasks) {
       const docAcc = computeCascadeAccuracy({
@@ -521,8 +547,9 @@ export class DeliverablesCascadeService {
   }
 
   /** Reintenta API e Infra cuando conformance heurístico falla tras la cascada (máx. 2 iteraciones). */
-  private async runCascadeConformanceRetry(projectId: string): Promise<void> {
+  private async runCascadeConformanceRetry(projectId: string, signal?: AbortSignal): Promise<void> {
     for (let attempt = 0; attempt < 2; attempt++) {
+      if (signal?.aborted) throw new Error("Cancelado por el usuario");
       const project = await this.projects.findOne(projectId);
       const mdd = buildConstitutionMarkdown(project);
       if (!mdd.trim()) return;
@@ -561,16 +588,18 @@ export class DeliverablesCascadeService {
    * Ciclo verify → reparación/regen dirigida → verify (máx. 3 iteraciones).
    * Cierra gaps auto-fixables y dispara regeneración LLM por artefacto.
    */
-  async repairReadinessGaps(projectId: string) {
-    await this.runCascadeConvergenceLoop(projectId);
+  async repairReadinessGaps(projectId: string, options?: { signal?: AbortSignal }) {
+    await this.runCascadeConvergenceLoop(projectId, options?.signal);
+    if (options?.signal?.aborted) throw new Error("Cancelado por el usuario");
     await this.projects.refreshStageSemaphoreFromProject(projectId).catch(() => undefined);
     return this.projects.findOne(projectId);
   }
 
-  private async runCascadeConvergenceLoop(projectId: string): Promise<void> {
+  private async runCascadeConvergenceLoop(projectId: string, signal?: AbortSignal): Promise<void> {
     const MAX_ITERATIONS = 3;
 
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+      if (signal?.aborted) throw new Error("Cancelado por el usuario");
       const project = await this.projects.findOne(projectId);
       const complexity = project.complexity ?? ComplexityLevel.HIGH;
       const stage = pickPrimaryStage(project.stages ?? []);
@@ -637,8 +666,11 @@ export class DeliverablesCascadeService {
       );
 
       await Promise.allSettled(
-        regenSteps.map((step) =>
-          this.projects
+        regenSteps.map((step) => {
+          if (signal?.aborted) {
+            return Promise.reject(new Error("Cancelado por el usuario"));
+          }
+          return this.projects
             .generateDocument(step as DeliverableKind, projectId, {
               gapsFeedback: plan.feedback || undefined,
             })
@@ -646,9 +678,10 @@ export class DeliverablesCascadeService {
               this.logger.warn(
                 `[Cascade] Convergence regen ${step}: ${e instanceof Error ? e.message : e}`,
               ),
-            ),
-        ),
+            );
+        }),
       );
+      if (signal?.aborted) throw new Error("Cancelado por el usuario");
     }
   }
 }

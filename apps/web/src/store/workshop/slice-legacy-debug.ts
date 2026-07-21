@@ -18,6 +18,7 @@ import { primaryMddJob } from "../../utils/projectGenerationGate";
 import { shouldApplyWorkshopUpdate } from "./helpers/workshop-scope";
 import { friendlyFetchError } from "./helpers/store-errors";
 import {
+  clearCancelledJobFromGenerationStatus,
   generationStatusPoll,
   stopGenerationStatusPolling,
 } from "./helpers/generation-status";
@@ -109,10 +110,7 @@ export const createLegacyDebugSlice: StateCreator<
     const pid = projectId.trim();
     const jid = jobId.trim();
     if (!pid || !jid) return false;
-    
-    // Detenemos el polling inmediatamente para liberar la UI
-    stopGenerationStatusPolling();
-    
+
     try {
       const r = await apiFetch(`${API_BASE}/projects/${pid}/mdd-jobs/${jid}`, { method: "DELETE" });
       if (!r.ok) {
@@ -125,6 +123,7 @@ export const createLegacyDebugSlice: StateCreator<
         loading: false,
         loadingReason: null,
         agentProgress: [],
+        generationStatus: clearCancelledJobFromGenerationStatus(get().generationStatus, jid),
         notice:
           "Generación MDD cancelada. El pipeline puede tardar unos segundos en detenerse entre nodos.",
       });
@@ -140,10 +139,7 @@ export const createLegacyDebugSlice: StateCreator<
     const pid = projectId.trim();
     const jid = jobId.trim();
     if (!pid || !jid) return false;
-    
-    // Detenemos el polling inmediatamente para liberar la UI
-    stopGenerationStatusPolling();
-    
+
     try {
       const r = await apiFetch(`${API_BASE}/projects/${pid}/deliverables-jobs/${jid}`, {
         method: "DELETE",
@@ -159,8 +155,9 @@ export const createLegacyDebugSlice: StateCreator<
         loadingReason: null,
         activeDeliverablesJobId: null,
         agentProgress: [],
+        generationStatus: clearCancelledJobFromGenerationStatus(get().generationStatus, jid),
         notice:
-          "Generación cancelada. El job puede tardar unos segundos en detenerse si ya estaba en ejecución.",
+          "Generación cancelada. Si el worker aún cerraba un paso LLM, puede tardar unos segundos en liberar el proyecto para una nueva generación.",
       });
       await get().fetchGenerationStatus(pid);
       return true;
