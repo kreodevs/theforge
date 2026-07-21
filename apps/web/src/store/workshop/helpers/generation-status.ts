@@ -19,6 +19,29 @@ export function mergeGenerationStatusWithMddUpstreamSync(
   return { ...status, mddUpstreamSync: sync };
 }
 
+/** Quita un job cancelado del estado visible para liberar el banner de inmediato. */
+export function clearCancelledJobFromGenerationStatus(
+  status: ProjectGenerationStatus | null | undefined,
+  jobId: string,
+): ProjectGenerationStatus | null {
+  if (!status) return null;
+  const jid = jobId.trim();
+  if (!jid) return status;
+  const activeJob = status.activeJob?.jobId === jid ? null : status.activeJob;
+  const queuedJobs = status.queuedJobs.filter((j) => j.jobId !== jid);
+  const mddJobs = (status.mddJobs ?? []).filter((j) => j.jobId !== jid);
+  const busy = Boolean(
+    status.mddStreamActive || activeJob || queuedJobs.length > 0 || mddJobs.some((j) => j.status === "active" || j.status === "queued"),
+  );
+  return {
+    ...status,
+    busy,
+    activeJob,
+    queuedJobs,
+    mddJobs,
+  };
+}
+
 export const generationStatusPoll = {
   timer: null as ReturnType<typeof setInterval> | null,
   projectId: null as string | null,

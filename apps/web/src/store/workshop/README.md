@@ -31,7 +31,7 @@ Extracción incremental de `workshopStore.ts` (Fase 5a del [GOD-REFACTOR](../../
 | **workshop-scope.ts** | `workshopScopeProjectId`, `shouldApplyWorkshopUpdate`. |
 | **store-errors.ts** | Errores de fetch/stream amigables (`friendlyFetchError`, `streamErrorPatch`, …). |
 | **delivery-gate.ts** | Gate MDD ≥9/10 desde eventos SSE. |
-| **generation-status.ts** | Polling de `generation-status` + merge upstream sync. |
+| **helpers/generation-status.ts** | Polling de `generation-status` + merge upstream sync; `clearCancelledJobFromGenerationStatus` libera el banner al cancelar. |
 | **mdd-editor.ts** | Baseline MDD, persist desde stream, cola `enqueueMddPersist`. |
 | **stage-focus.ts** | Alinear store con etapa activa (`workshopStateFromProjectStage`, …). |
 | **session-message.ts** | `sessionMessageBody`, helpers de chat MDD. |

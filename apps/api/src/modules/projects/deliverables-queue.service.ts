@@ -10,7 +10,7 @@ import {
   forwardRef,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { Queue, Worker, type Job } from "bullmq";
+import { Queue, UnrecoverableError, Worker, type Job } from "bullmq";
 import type { AffectedArtifact } from "@theforge/shared-types";
 import { getRequestUserId, runWithRequestUserAsync } from "../../common/request-user.store.js";
 import {
@@ -28,6 +28,20 @@ export const DELIVERABLES_QUEUE_NAME = "theforge-deliverables";
 
 /** Clave Redis compartida API ↔ worker para cancelar jobs activos en BullMQ. */
 const DELIVERABLES_CANCEL_KEY_PREFIX = "theforge:deliverables-cancel:";
+
+function isUserCancellationError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes("Cancelado por el usuario");
+}
+
+/** Evita reintentos BullMQ cuando el usuario canceló el job. */
+function toDeliverablesJobError(err: unknown): Error {
+  if (isUserCancellationError(err)) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return new UnrecoverableError(msg);
+  }
+  return err instanceof Error ? err : new Error(String(err));
+}
 
 /** Tipos de job soportados por la cola. */
 export type GenerateJobType =
@@ -124,6 +138,8 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly inMemoryRunningProjects = new Set<string>();
   private readonly inMemoryPendingByProject = new Map<string, string[]>();
   private readonly jobAbortControllers = new Map<string, AbortController>();
+  /** Cancelación solicitada de jobs in-memory (mismo proceso; BullMQ usa Redis). */
+  private readonly cancelRequestedJobIds = new Set<string>();
 
   /** Intentos máximos por job (BullMQ reintenta automáticamente con backoff). */
   private readonly MAX_ATTEMPTS = 4;
@@ -226,6 +242,19 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /** True si el usuario pidió cancelar y el worker aún no terminó de abortar. */
+  async isCancelRequested(jobId: string): Promise<boolean> {
+    if (this.cancelRequestedJobIds.has(jobId)) return true;
+    if (!this.queue) return false;
+    try {
+      const client = await this.queue.client;
+      const val = await client.get(`${DELIVERABLES_CANCEL_KEY_PREFIX}${jobId}`);
+      return Boolean(val);
+    } catch {
+      return false;
+    }
+  }
+
   private async markCancelRequested(jobId: string): Promise<void> {
     if (!this.queue) return;
     const client = await this.queue.client;
@@ -233,6 +262,7 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async clearCancelRequested(jobId: string): Promise<void> {
+    this.cancelRequestedJobIds.delete(jobId);
     if (!this.queue) return;
     const client = await this.queue.client;
     await client.del(`${DELIVERABLES_CANCEL_KEY_PREFIX}${jobId}`);
@@ -285,6 +315,7 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
         return { cancelled: true, status: "cancelled" };
       }
       if (mem.status === "active") {
+        this.cancelRequestedJobIds.add(jobId);
         this.jobAbortControllers.get(jobId)?.abort();
         this.logger.log(`In-memory deliverables job ${jobId} cancelación solicitada (active)`);
         return { cancelled: true, status: "cancelling" };
@@ -335,7 +366,12 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
     this.jobAbortControllers.set(jobId, abortController);
     const stopCancelPoll = this.startCancelPoll(jobId, abortController);
     try {
+      if (await this.isCancelRequested(jobId)) {
+        abortController.abort();
+      }
       return await this.runJob(data, onProgress, abortController.signal);
+    } catch (err) {
+      throw toDeliverablesJobError(err);
     } finally {
       stopCancelPoll();
       this.jobAbortControllers.delete(jobId);
@@ -390,7 +426,7 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
         break;
       case "repair-sdd-gaps":
         this.throwIfAborted(signal);
-        result = await this.projects.repairReadinessGaps(projectId);
+        result = await this.projects.repairReadinessGaps(projectId, { signal });
         break;
       case "blueprint":
         if (preview) {

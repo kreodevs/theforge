@@ -102,8 +102,21 @@ export class ProjectGenerationGuardService {
     const mddJobs = await this.mddQueue.listJobsForProject(projectId);
 
     const merged = [...queueJobs, ...bgSnapshots];
-    const activeJob = merged.find((j) => j.status === "active") ?? merged.find((j) => j.status === "retrying") ?? null;
-    const queuedJobs = merged.filter((j) => j.status === "queued");
+    const cancellingIds = new Set<string>();
+    await Promise.all(
+      merged.map(async (j) => {
+        if (await this.deliverablesQueue.isCancelRequested(j.jobId)) {
+          cancellingIds.add(j.jobId);
+        }
+      }),
+    );
+    /** Jobs aún vivos en worker, pero el usuario ya canceló → no mantener el banner "en ejecución". */
+    const visibleJobs = merged.filter((j) => !cancellingIds.has(j.jobId));
+    const activeJob =
+      visibleJobs.find((j) => j.status === "active") ??
+      visibleJobs.find((j) => j.status === "retrying") ??
+      null;
+    const queuedJobs = visibleJobs.filter((j) => j.status === "queued");
 
     const activeJobsForGates = merged.filter(
       (j) => j.status === "queued" || j.status === "active" || j.status === "retrying",
@@ -116,7 +129,7 @@ export class ProjectGenerationGuardService {
       activeJobs: activeJobsForGates,
     });
 
-    const busy = mddStreamActive || activeJobsForGates.length > 0;
+    const busy = mddStreamActive || visibleJobs.length > 0;
 
     let mddUpstreamSync = null;
     try {
