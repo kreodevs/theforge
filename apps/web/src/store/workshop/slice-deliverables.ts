@@ -920,6 +920,21 @@ export const createDeliverablesSlice: StateCreator<
         ...(crossDocumentGaps != null ? { crossDocumentGaps } : {}),
         ...(consistencyScore != null ? { consistencyScore } : {}),
         ...(auditTrail?.length ? { auditTrail } : {}),
+        // Alinea project.status/precisionScore con el semáforo integral (listado ↔ panel).
+        ...(get().project
+          ? {
+              project: {
+                ...get().project!,
+                status:
+                  metrics.status === "green"
+                    ? "VERDE"
+                    : metrics.status === "yellow"
+                      ? "AMARILLO"
+                      : "ROJO",
+                precisionScore: Math.min(100, Math.max(0, Math.round(metrics.precision))),
+              },
+            }
+          : {}),
       });
       return metrics;
     } catch {
