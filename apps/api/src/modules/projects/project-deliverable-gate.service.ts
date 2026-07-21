@@ -6,21 +6,15 @@ import {
   buildMddDeliveryGateConflictBody,
   evaluateMddDeliveryGatePrepared,
 } from "../ai-analysis/utils/mdd-delivery-gate-guard.util.js";
-import { SemaphoreService } from "../engine/semaphore.service.js";
-import { ConformanceService } from "../engine/conformance.service.js";
+import { EstimationService } from "../ai-analysis/estimation/estimation.service.js";
+import { liveSemaphoreToDbStatus } from "../ai-analysis/estimation/live-semaphore-status.util.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { loadAccessibleProjectWithStages } from "./project-access.util.js";
-import { pickMddFromStages, buildConstitutionMarkdown } from "./constitution-markdown.util.js";
-import { buildSemaphoreBaseFromProject } from "./project-mdd-persist.util.js";
+import { pickMddFromStages } from "./constitution-markdown.util.js";
 import { ProjectEstimationRecalcService } from "./project-estimation-recalc.service.js";
 import { ProjectMddPersistService } from "./project-mdd-persist.service.js";
 import { syncDomainInventoryForStage as persistDomainInventoryForStage } from "./sync-domain-inventory-stage.util.js";
 import { pickPrimaryStage } from "./stage-helpers.js";
-import { mddJsonStringForSemaphore } from "./project-semaphore.util.js";
-import {
-  buildProjectDeliverableSource,
-  evaluateCompositeSemaphore,
-} from "./project-semaphore-composite.util.js";
 
 type StageWithEst = Stage & { estimation: Estimation | null };
 
@@ -28,14 +22,16 @@ type StageWithEst = Stage & { estimation: Estimation | null };
 export class ProjectDeliverableGateService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly semaphore: SemaphoreService,
-    private readonly conformance: ConformanceService,
+    private readonly estimation: EstimationService,
     private readonly estimationRecalc: ProjectEstimationRecalcService,
     @Inject(forwardRef(() => ProjectMddPersistService))
     private readonly mddPersist: ProjectMddPersistService,
   ) {}
 
-  /** Recalcula semáforo de la etapa principal cuando cambian entregables/complejidad sin tocar el MDD. */
+  /**
+   * Recalcula semáforo de la etapa principal con la métrica integral (misma que Workshop)
+   * cuando cambian entregables/complejidad sin tocar el MDD.
+   */
   async refreshStageSemaphoreFromProject(projectId: string): Promise<void> {
     const project = await this.prisma.project.findFirst({
       where: { id: projectId },
@@ -45,23 +41,13 @@ export class ProjectDeliverableGateService {
     const targetStage = pickPrimaryStage(project.stages);
     if (!targetStage) return;
 
-    const mddMarkdown = buildConstitutionMarkdown(project);
-    const stage = targetStage;
-    const deliverableSource = buildProjectDeliverableSource(project, stage);
-    const compositeEval = evaluateCompositeSemaphore(this.semaphore, {
-      ...buildSemaphoreBaseFromProject(project),
-      mddJsonString: mddJsonStringForSemaphore(mddMarkdown),
-      mddMarkdown,
-      project,
-      conformance: this.conformance,
-      deliverableSource,
-    });
-    const { status, precisionScore } = compositeEval;
-
-    await this.prisma.stage.update({
-      where: { id: targetStage.id },
-      data: { status, precisionScore },
-    });
+    // Fuente única con el panel Semáforo: EstimationService (docs + BRD→MDD + calidad MDD).
+    const metrics = await this.estimation.getLiveMetricsForProject(
+      projectId,
+      undefined,
+      targetStage.id,
+    );
+    const status = liveSemaphoreToDbStatus(metrics.status);
 
     const mddForRecalc = targetStage.mddContent ?? null;
     if (mddForRecalc != null) {

@@ -13,6 +13,7 @@ import type {
   PrecisionBreakdown,
   SemaphoreStatusLive,
 } from "./estimation.types.js";
+import { liveSemaphoreToDbStatus } from "./live-semaphore-status.util.js";
 import {
   MARKET_HOUR_RATE,
   PRECISION_GREEN_MIN,
@@ -783,19 +784,51 @@ export class EstimationService {
   }
 
   /**
+   * Persiste en `Stage` el semáforo integral (misma fuente que el panel Workshop)
+   * para que el listado de proyectos no quede en VERDE/95 por buckets de SemaphoreService.
+   */
+  private async syncStageSemaphoreFromLiveMetrics(
+    stageId: string,
+    status: SemaphoreStatusLive,
+    precision: number,
+  ): Promise<void> {
+    const dbStatus = liveSemaphoreToDbStatus(status);
+    const precisionScore = Math.min(100, Math.max(0, Math.round(precision)));
+    const current = await this.prisma.stage.findUnique({
+      where: { id: stageId },
+      select: { status: true, precisionScore: true },
+    });
+    if (
+      current &&
+      current.status === dbStatus &&
+      current.precisionScore === precisionScore
+    ) {
+      return;
+    }
+    await this.prisma.stage.update({
+      where: { id: stageId },
+      data: { status: dbStatus, precisionScore },
+    });
+  }
+
+  /**
    * Métricas para un proyecto. Si se pasa mddContent, se usa ese; sino liveDraft o DB.
    * Cuando no hay override y hay gaps del Auditor guardados para el proyecto, se usan para precisión/semáforo.
+   * Sin live draft de streaming, sincroniza `Stage.status` / `precisionScore` con la métrica integral
+   * (misma fuente que el panel Semáforo del Workshop).
    */
   async getLiveMetricsForProject(
     projectId: string,
     mddContentOverride?: string,
     stageId?: string | null,
   ): Promise<LiveMetricsResult> {
+    const key = this.draftKey(projectId, stageId);
+    const liveDraft = this.liveDraftByProject.get(key);
+    const hasLiveDraft = (liveDraft?.trim().length ?? 0) > 0;
     const content =
       mddContentOverride != null && mddContentOverride.length > 0
         ? mddContentOverride
         : (await this.getMddContentForProject(projectId, stageId)) ?? "";
-    const key = this.draftKey(projectId, stageId);
     const useStoredGaps = !mddContentOverride && this.auditorGapsByProject.has(key);
     const useLegacyGaps =
       !mddContentOverride &&
@@ -950,7 +983,24 @@ export class EstimationService {
       }
     }
 
-    return { ...metrics, status, deliveryGate, ...(conformanceSummary ? { conformanceSummary } : {}) };
+    const result: LiveMetricsResult = {
+      ...metrics,
+      status,
+      deliveryGate,
+      ...(conformanceSummary ? { conformanceSummary } : {}),
+    };
+
+    // Sincroniza Stage aunque venga override del editor: el listado debe reflejar el
+    // semáforo del panel. Solo se omite con borrador en streaming (live draft).
+    const shouldSyncStage = !hasLiveDraft && content.trim().length > 0;
+    if (shouldSyncStage) {
+      const sid = await this.resolveStageId(projectId, stageId);
+      if (sid) {
+        await this.syncStageSemaphoreFromLiveMetrics(sid, result.status, result.precision);
+      }
+    }
+
+    return result;
   }
 
   /** Desglose por sección/agente (0–100) para mostrar en la tabla del chat tras auditar. */
