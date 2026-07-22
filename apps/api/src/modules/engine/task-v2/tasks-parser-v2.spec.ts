@@ -28,6 +28,63 @@ Cuerpo de la tarea.
     assert.equal(result.tasks[0]?.id, "T-001");
   });
 
+  it("parses canonical v2 YAML with context, scope, requirements, verification", () => {
+    const md = `# Tasks
+
+## Backend tasks
+
+---
+id: T-001
+section: Backend
+title: Bootstrap API NestJS + ORM + PostgreSQL
+status: pending
+change_type: create
+parallel: true
+depends_on: []
+
+context:
+  mdd_ref: "§2 Arquitectura"
+  story_ref: US-JRN-CAP_3_1
+  why: "Base del monolito modular"
+
+scope:
+  include:
+    - apps/backend/src/main.ts
+    - apps/backend/src/app.module.ts
+  exclude:
+    - apps/web/**
+
+requirements:
+  - Prefijo global api/v1
+  - GET /api/v1/health → 200
+
+constraints:
+  - Usar TypeORM según MDD
+
+verification:
+  - run: yarn workspace @mkt-agency/backend build
+    expect_exit: 0
+
+done_when:
+  - Build sin errores TS
+---
+
+- [ ] [P] T-001 — Bootstrap API NestJS + ORM + PostgreSQL
+  - Crear ConfigModule global
+`;
+    const result = parseTasksV2(md);
+    assert.equal(result.tasks.length, 1);
+    const task = result.tasks[0]!;
+    assert.equal(task.id, "T-001");
+    assert.equal(task.status, "pending");
+    assert.equal(task.dependencies[0] ?? "none", "none");
+    assert.ok(task.targetFiles.includes("apps/backend/src/main.ts"));
+    assert.equal(task.mddRef, "§2 Arquitectura");
+    assert.equal(task.storyRef, "US-JRN-CAP_3_1");
+    assert.ok(task.requirements.length >= 2);
+    assert.ok(task.doneWhen.length >= 1);
+  });
+
   it("strips nested consecutive --- blocks from rawMarkdown", () => {
     const md = `---
 id: T-002

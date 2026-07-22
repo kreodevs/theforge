@@ -8,14 +8,21 @@ export interface ParsedTaskV2 {
   id: string;
   title: string;
   description: string;
+  status?: "pending" | "in_progress" | "done" | "blocked";
   changeType: "create" | "modify" | "delete" | "append" | "insert" | "replace" | "run" | "configure" | "generate" | "install" | "rename" | "merge";
   targetFiles: string[];
+  scopeInclude: string[];
+  scopeExclude: string[];
   language?: string;
   dependencies: string[];
   parallel: boolean;
   estimatedMinutes?: number;
   mddRef?: string;
   storyRef?: string;
+  contextWhy?: string;
+  requirements: string[];
+  constraints: string[];
+  doneWhen: string[];
   entity?: string;
   operations?: string[];
   insertAfter?: string;
@@ -26,12 +33,13 @@ export interface ParsedTaskV2 {
   lintCommand?: string;
   codeExpected?: string; // bloque de código completo esperado
   diffExpected?: string; // diff esperado (| git diff style)
-  inferenceRules: string[]; // reglas de inferencia como ["crud-auto", "soft-delete"]
+  inferenceRules: string[]; // solo reglas documentadas en repo; preferir requirements[]
   typeContext?: Record<string, unknown>; // contexto de tipos (json)
   verification: {
     command?: string;
     expectedOutput?: string;
     checklist?: string[];
+    steps?: Array<Record<string, unknown>>;
   };
   dependenciesResolved?: Array<{ taskId: string; taskTitle: string; provides: string[] }>;
   section: string; // "Backend", "Frontend", "Infra", etc.
@@ -218,8 +226,10 @@ function parseTaskBlock(
   i++; // saltar --- final
 
   let fm: Record<string, any>;
+  const yamlRaw = yamlLines.join("\n");
   try {
-    fm = parseSimpleYaml(yamlLines.join("\n"));
+    fm = parseSimpleYaml(yamlRaw);
+    fm = enrichFrontMatterFromRaw(yamlRaw, fm);
   } catch (e) {
     errors.push({ line: startIdx, message: `YAML inválido: ${e}`, severity: "error" });
     return { errors, endLine: i };
@@ -229,9 +239,20 @@ function parseTaskBlock(
   if (!fm.id) errors.push({ line: startIdx, message: "Task sin 'id'", severity: "error" });
   if (!fm.title) errors.push({ line: startIdx, message: "Task sin 'title'", severity: "error" });
   if (!fm.change_type) errors.push({ line: startIdx, message: "Task sin 'change_type'", severity: "error" });
-  if (!Array.isArray(fm.target_files) || fm.target_files.length === 0) {
-    errors.push({ line: startIdx, message: "Task sin 'target_files'", severity: "warning" });
+
+  const scopeInclude = extractScopeInclude(fm);
+  const scopeExclude = extractScopeExclude(fm);
+  const targetFiles = resolveTargetFiles(fm, scopeInclude);
+  if (targetFiles.length === 0) {
+    errors.push({ line: startIdx, message: "Task sin scope.include ni target_files", severity: "warning" });
   }
+
+  const context = extractContext(fm);
+  const requirements = extractStringArray(fm.requirements);
+  const constraints = extractStringArray(fm.constraints);
+  const doneWhen = extractStringArray(fm.done_when ?? fm.doneWhen);
+  const dependencies = resolveDependencies(fm);
+  const verificationFromFm = normalizeVerificationFromFm(fm.verification);
 
   // Cuerpo markdown hasta siguiente task o final de sección
   const bodyLines: string[] = [];
@@ -254,22 +275,35 @@ function parseTaskBlock(
   const codeExpected = extractCodeBlock(body, "Código Esperado");
   const diffExpected = extractCodeBlock(body, "Diff Esperado");
   const inferenceRules = extractInferenceRules(body);
-  const verification = extractVerification(body);
+  const verificationBody = extractVerification(body);
   const typeContext = extractTypeContext(body);
   const description = extractDescription(body);
+
+  const verification = {
+    ...verificationFromFm,
+    ...(verificationBody ?? {}),
+    steps: verificationFromFm.steps ?? verificationBody?.steps,
+  };
 
   const task: ParsedTaskV2 = {
     id: String(fm.id ?? ""),
     title: String(fm.title ?? ""),
     description: description || String(fm.title ?? ""),
+    status: parseTaskStatus(fm.status),
     changeType: (fm.change_type ?? "create") as ParsedTaskV2["changeType"],
-    targetFiles: Array.isArray(fm.target_files) ? fm.target_files.map(String) : [],
+    targetFiles,
+    scopeInclude,
+    scopeExclude,
     language: fm.language ? String(fm.language) : undefined,
-    dependencies: Array.isArray(fm.dependencies) ? fm.dependencies.map(String) : [],
+    dependencies,
     parallel: Boolean(fm.parallel ?? false),
     estimatedMinutes: fm.estimated_minutes ? Number(fm.estimated_minutes) : undefined,
-    mddRef: fm.mdd_ref ? String(fm.mdd_ref) : undefined,
-    storyRef: fm.story_ref ? String(fm.story_ref) : undefined,
+    mddRef: context.mddRef ?? (fm.mdd_ref ? String(fm.mdd_ref) : undefined),
+    storyRef: context.storyRef ?? (fm.story_ref ? String(fm.story_ref) : undefined),
+    contextWhy: context.why,
+    requirements,
+    constraints,
+    doneWhen,
     entity: fm.entity ? String(fm.entity) : undefined,
     operations: Array.isArray(fm.operations) ? fm.operations.map(String) : undefined,
     insertAfter: fm.insert_after ? String(fm.insert_after) : undefined,
@@ -279,7 +313,7 @@ function parseTaskBlock(
     lintCommand: fm.lint_command ? String(fm.lint_command) : undefined,
     codeExpected: codeExpected || undefined,
     diffExpected: diffExpected || undefined,
-    inferenceRules,
+    inferenceRules: Array.isArray(fm.inference_rules) ? fm.inference_rules.map(String) : inferenceRules,
     typeContext,
     verification: verification || {},
     section: fm.section ? String(fm.section).trim() : section,
@@ -323,8 +357,13 @@ function parseV1Task(
     description: title,
     changeType: "create", // fallback
     targetFiles: filePaths,
+    scopeInclude: filePaths,
+    scopeExclude: [],
     dependencies: [],
     parallel: isParallel,
+    requirements: [],
+    constraints: [],
+    doneWhen: [],
     entity: undefined,
     operations: undefined,
     inferenceRules: [],
@@ -398,6 +437,88 @@ function extractDescription(body: string): string {
   return match ? match[1].trim() : "";
 }
 
+function extractStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(String).filter((s) => s.trim().length > 0);
+}
+
+function extractScopeInclude(fm: Record<string, any>): string[] {
+  if (fm.scope && typeof fm.scope === "object" && Array.isArray(fm.scope.include)) {
+    return fm.scope.include.map(String);
+  }
+  return [];
+}
+
+function extractScopeExclude(fm: Record<string, any>): string[] {
+  if (fm.scope && typeof fm.scope === "object" && Array.isArray(fm.scope.exclude)) {
+    return fm.scope.exclude.map(String);
+  }
+  return [];
+}
+
+function resolveTargetFiles(fm: Record<string, any>, scopeInclude: string[]): string[] {
+  if (scopeInclude.length > 0) return scopeInclude;
+  if (Array.isArray(fm.target_files)) return fm.target_files.map(String);
+  if (Array.isArray(fm.targetFiles)) return fm.targetFiles.map(String);
+  return [];
+}
+
+function resolveDependencies(fm: Record<string, any>): string[] {
+  if (Array.isArray(fm.depends_on)) return fm.depends_on.map(String);
+  if (Array.isArray(fm.dependencies)) return fm.dependencies.map(String);
+  return [];
+}
+
+function extractContext(fm: Record<string, any>): { mddRef?: string; storyRef?: string; why?: string } {
+  if (fm.context && typeof fm.context === "object") {
+    const ctx = fm.context as Record<string, unknown>;
+    return {
+      mddRef: ctx.mdd_ref ? String(ctx.mdd_ref) : undefined,
+      storyRef: ctx.story_ref ? String(ctx.story_ref) : undefined,
+      why: ctx.why ? String(ctx.why) : undefined,
+    };
+  }
+  return {};
+}
+
+function parseTaskStatus(value: unknown): ParsedTaskV2["status"] | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "pending" || normalized === "in_progress" || normalized === "done" || normalized === "blocked") {
+    return normalized;
+  }
+  return undefined;
+}
+
+function normalizeVerificationFromFm(value: unknown): ParsedTaskV2["verification"] {
+  if (value == null) return {};
+
+  if (typeof value === "object" && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>;
+    return {
+      command: obj.command ? String(obj.command) : undefined,
+      expectedOutput: obj.expectedOutput
+        ? String(obj.expectedOutput)
+        : obj.expected_output
+          ? String(obj.expected_output)
+          : undefined,
+      checklist: extractStringArray(obj.checklist),
+      steps: undefined,
+    };
+  }
+
+  if (Array.isArray(value)) {
+    const steps = value.filter((s) => s && typeof s === "object") as Array<Record<string, unknown>>;
+    const firstRun = steps.find((s) => typeof s.run === "string");
+    return {
+      command: firstRun?.run ? String(firstRun.run) : undefined,
+      expectedOutput: firstRun?.expect_exit != null ? String(firstRun.expect_exit) : undefined,
+      steps,
+    };
+  }
+
+  return {};
+}
 /** Strip YAML front-matter from raw markdown (handles nested/consecutive --- blocks). */
 function stripFrontMatterFromRaw(raw: string): string {
   let trimmed = raw.trim();
@@ -486,6 +607,165 @@ function parseSimpleYaml(yaml: string): Record<string, any> {
   if (currentKey && currentObject !== null) result[currentKey] = currentObject;
 
   return result;
+}
+
+function enrichFrontMatterFromRaw(yamlRaw: string, fm: Record<string, any>): Record<string, any> {
+  const out = { ...fm };
+
+  if (!out.context || typeof out.context !== "object") {
+    const context = parseNestedKeyBlock(yamlRaw, "context");
+    if (Object.keys(context).length > 0) out.context = context;
+  }
+
+  if (!out.scope || typeof out.scope !== "object") {
+    const scope = parseScopeBlock(yamlRaw);
+    if (scope.include.length > 0 || scope.exclude.length > 0) out.scope = scope;
+  }
+
+  for (const key of ["requirements", "constraints", "done_when"] as const) {
+    if (!Array.isArray(out[key]) || out[key].length === 0) {
+      const items = parseTopLevelList(yamlRaw, key);
+      if (items.length > 0) out[key] = items;
+    }
+  }
+
+  if (out.verification == null || (typeof out.verification === "object" && Object.keys(out.verification).length === 0)) {
+    const steps = parseVerificationSteps(yamlRaw);
+    if (steps.length > 0) out.verification = steps;
+  }
+
+  if (!Array.isArray(out.depends_on) && !Array.isArray(out.dependencies)) {
+    const depends = parseInlineArray(yamlRaw, "depends_on");
+    if (depends.length >= 0 && /^depends_on:\s*\[\s*\]/m.test(yamlRaw)) {
+      out.depends_on = [];
+    }
+  }
+
+  return out;
+}
+
+function parseNestedKeyBlock(yamlRaw: string, key: string): Record<string, string> {
+  const lines = yamlRaw.split("\n");
+  const out: Record<string, string> = {};
+  let inBlock = false;
+  for (const line of lines) {
+    if (/^\s*$/.test(line) || line.trim().startsWith("#")) continue;
+    if (new RegExp(`^${key}:\\s*$`).test(line.trim())) {
+      inBlock = true;
+      continue;
+    }
+    if (inBlock) {
+      if (/^\S/.test(line)) break;
+      const m = line.match(/^\s+([a-zA-Z0-9_]+):\s*(.*)$/);
+      if (m) out[m[1]] = parseYamlValue(m[2]);
+    }
+  }
+  return out;
+}
+
+function parseScopeBlock(yamlRaw: string): { include: string[]; exclude: string[] } {
+  const lines = yamlRaw.split("\n");
+  const out = { include: [] as string[], exclude: [] as string[] };
+  let inScope = false;
+  let listKey: "include" | "exclude" | null = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^scope:\s*$/.test(trimmed)) {
+      inScope = true;
+      listKey = null;
+      continue;
+    }
+    if (!inScope) continue;
+    if (/^\S/.test(line) && !/^\s+/.test(line)) break;
+
+    if (/^include:\s*$/.test(trimmed)) {
+      listKey = "include";
+      continue;
+    }
+    if (/^exclude:\s*$/.test(trimmed)) {
+      listKey = "exclude";
+      continue;
+    }
+    const item = trimmed.match(/^- (.+)$/);
+    if (item && listKey) {
+      out[listKey].push(String(parseYamlValue(item[1])));
+    }
+  }
+  return out;
+}
+
+function parseTopLevelList(yamlRaw: string, key: string): string[] {
+  const lines = yamlRaw.split("\n");
+  const out: string[] = [];
+  let inList = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (new RegExp(`^${key}:\\s*$`).test(trimmed)) {
+      inList = true;
+      continue;
+    }
+    if (inList) {
+      if (/^\S/.test(line) && !trimmed.startsWith("- ")) break;
+      const item = trimmed.match(/^- (.+)$/);
+      if (item) out.push(String(parseYamlValue(item[1])));
+    }
+  }
+  return out;
+}
+
+function parseVerificationSteps(yamlRaw: string): Array<Record<string, unknown>> {
+  const lines = yamlRaw.split("\n");
+  const steps: Array<Record<string, unknown>> = [];
+  let inVerification = false;
+  let current: Record<string, unknown> | null = null;
+  let httpBlock = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^verification:\s*$/.test(trimmed)) {
+      inVerification = true;
+      continue;
+    }
+    if (!inVerification) continue;
+    if (/^[a-z_]+:\s*$/i.test(trimmed) && !trimmed.startsWith("- ")) {
+      if (trimmed !== "http:" && !/^run:/.test(trimmed)) break;
+    }
+
+    if (trimmed.startsWith("- run:")) {
+      if (current) steps.push(current);
+      current = { run: String(parseYamlValue(trimmed.slice("- run:".length).trim())) };
+      httpBlock = false;
+      continue;
+    }
+    if (trimmed === "- http:") {
+      if (current) steps.push(current);
+      current = { http: {} as Record<string, unknown> };
+      httpBlock = true;
+      continue;
+    }
+    if (current && httpBlock && /^\S/.test(line) && /^\s+/.test(line)) {
+      const m = line.match(/^\s+([a-z_]+):\s*(.*)$/);
+      if (m && current.http && typeof current.http === "object") {
+        (current.http as Record<string, unknown>)[m[1]] = parseYamlValue(m[2]);
+      }
+      continue;
+    }
+    if (current && !httpBlock && /^\s+expect_exit:/.test(line)) {
+      const m = line.match(/expect_exit:\s*(.*)/);
+      if (m) current.expect_exit = parseYamlValue(m[1].trim());
+    }
+  }
+  if (current) steps.push(current);
+  return steps;
+}
+
+function parseInlineArray(yamlRaw: string, key: string): string[] {
+  const m = yamlRaw.match(new RegExp(`^${key}:\\s*\\[(.*?)\\]`, "m"));
+  if (!m) return [];
+  const inner = m[1].trim();
+  if (!inner) return [];
+  return inner.split(",").map((v) => String(parseYamlValue(v.trim())));
 }
 
 function parseYamlValue(val: string): any {

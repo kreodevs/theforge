@@ -11,8 +11,8 @@ Generar el **documento Tasks** (breakdown de implementación) en markdown: lista
 1. **Backend tasks:** Solo trabajo que corre en **servidor**: API (controllers/routes/services), persistencia (ORM, migraciones, `schema.prisma`, Strapi `src/api/**/content-types/**/schema.json`), validación en capa API, jobs server-side.
 2. **Frontend tasks:** Todo lo que corre en **cliente**: pantallas, componentes, hooks, estado UI, formularios, llamadas `fetch` desde el navegador, **tipos TypeScript / carpetas `Models` o `types` que viven bajo el árbol de la app front** (p. ej. `apps/web`, `packages/login-sso`, `src/components`, SPA `src/` cuando el inventario muestra que es Vite/React y no el servidor).
 3. **Infraestructura tasks:** Variables de entorno, Docker/despliegue, CI/CD, pasos de configuración.
-4. **Testing tasks (§8):** Unit tests (Jest/Vitest) por cada módulo CRUD, integration tests para Auth/RBAC/RLS, E2E tests para flujos críticos (login → sesión → mensaje), load tests para colas (BullMQ/similar). Cada task de test DEBE tener: `target_files` apuntando al archivo de test, `dependencies` sobre la task de implementación correspondiente, `verification` con el comando para ejecutar el test suite.
-5. **Deploy tasks (§9):** Dockerfile multi-stage optimizado, CI/CD pipeline (GitHub Actions / GitLab CI), cloud deploy (ECS Fargate / Cloud Run según §7), monitoring setup (Sentry, health checks), variables de entorno en secrets manager. Cada task de deploy DEBE incluir `target_files` con los archivos de configuración de infra/CI.
+4. **Testing tasks (§8):** Unit tests (Jest/Vitest) por cada módulo CRUD, integration tests para Auth/RBAC/RLS, E2E tests para flujos críticos (login → sesión → mensaje), load tests para colas (BullMQ/similar). Cada task de test DEBE tener: `scope.include` apuntando al archivo de test, `depends_on` sobre la task de implementación correspondiente, `verification` con comando `run` del test suite.
+5. **Deploy tasks (§9):** Dockerfile multi-stage optimizado, CI/CD pipeline (GitHub Actions / GitLab CI), cloud deploy (ECS Fargate / Cloud Run según §7), monitoring setup (Sentry, health checks), variables de entorno en secrets manager. Cada task de deploy DEBE incluir rutas de infra/CI en `scope.include`.
 6. **Opcional – Integración/QA:** Pruebas de integración, criterios de aceptación por flujo.
 
 **Clasificación Backend vs Frontend (crítico):** No uses el nombre del archivo (`cliente.ts`, `Model`) para decidir la sección. Usa la **ruta completa** y el **stack** del Blueprint o del contexto TheForge: si la ruta está en el paquete o carpeta del **frontend**, el ítem va en **Frontend tasks**, aunque el archivo modele datos. La persistencia real del campo (BD / API Strapi / Nest) va en **Backend**. Si un mismo cambio toca ambos, crea **dos** ítems (uno por capa).
@@ -128,73 +128,121 @@ Si no se puede determinar la línea exacta, al menos indicar el archivo, la func
 
 # Formato YAML front-matter v2 (obligatorio para Agentes IA) #
 
-Cada tarea DEBE tener un **bloque YAML front-matter** al inicio (entre `---`), justo antes del checklist. Esto permite que agentes de código (Cursor/Claude) ejecuten la tarea automáticamente.
+Cada tarea DEBE tener un **bloque YAML front-matter** (entre `---`), justo antes del checklist Markdown. El YAML responde **qué, dónde y cómo validar**; el Markdown debajo solo añade matices que no caben en YAML.
 
-**Ejemplo completo de una tarea v2:**
+## Regla práctica
+
+1. **1 tarea = 1 entregable verificable** (15–120 min de agente). Si un ítem supera ~120 min o mezcla varios entregables, divídelo.
+2. **YAML** → alcance, requisitos, restricciones, verificación ejecutable.
+3. **Markdown** → exclusiones de alcance, orden interno, diffs sugeridos, advertencias — solo si aportan valor.
+4. **MDD / Story** → referencia corta en `context` (§, ID de HU). **No copies párrafos** del MDD salvo que haya conflicto explícito que el agente deba resolver.
+
+## Ejemplo canónico (v2)
 
 ```markdown
 ---
 id: T-001
 section: Backend
-title: Crear endpoint POST /api/auth/login
-target_files:
-  - apps/api/src/modules/auth/auth.controller.ts
-  - apps/api/src/modules/auth/auth.service.ts
+title: Bootstrap API NestJS + ORM + PostgreSQL
+status: pending
 change_type: create
-dependencies: []
 parallel: true
-estimated_minutes: 60
-mdd_ref: §4 POST /api/auth/login
-story_ref: US-001
-language: TypeScript
-inference_rules:
-  - crud-auto
+depends_on: []
+
+context:
+  mdd_ref: "§2 Arquitectura"
+  story_ref: US-JRN-CAP_3_1
+  why: "Base del monolito modular antes de módulos de dominio"
+
+scope:
+  include:
+    - apps/backend/src/main.ts
+    - apps/backend/src/app.module.ts
+  exclude:
+    - apps/web/**
+    - "**/*.spec.ts"
+
+requirements:
+  - Prefijo global api/v1
+  - ValidationPipe whitelist + forbidNonWhitelisted
+  - GET /api/v1/health → 200 { status: "ok", db: "up" }
+
+constraints:
+  - Usar TypeORM según MDD (no Prisma)
+  - YAGNI: sin módulos de negocio aún
+
 verification:
-  command: curl -X POST http://localhost:3000/api/auth/login -d '{"email":"a","password":"b"}'
-  expectedOutput: "token"
-  checklist:
-    - Devuelve JWT válido
-    - Valida email/password
-    - Usa bcrypt
+  - run: yarn workspace @mkt-agency/backend build
+    expect_exit: 0
+  - http:
+      url: http://localhost:3000/api/v1/health
+      status: 200
+      json_contains: { status: "ok", db: "up" }
+
+done_when:
+  - Build sin errores TS
+  - Health responde 200 con DB up
 ---
 
-- [ ] [P] Crear endpoint POST /api/auth/login
-  - Crear `auth.controller.ts` con método `login()`
-  - Crear `auth.service.ts` con `validateUser()` + `generateToken()`
+- [ ] [P] T-001 — Bootstrap API NestJS + ORM + PostgreSQL
+  - Crear `ConfigModule` global, health module, conexión DB
+  - No implementar auth ni setup/superadmin en esta tarea
 ```
 
-**Campos del YAML front-matter (obligatorios):**
+## Campos YAML
 
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `id` | string | Identificador único (T-001, T-002…). |
-| `section` | string | `Backend`, `Frontend`, `Infra`, `QA`, `Integración`. |
-| `title` | string | Título accionable (máx. 80 chars). |
-| `target_files` | string[] | Archivos a modificar/crear (rutas relativas). |
-| `change_type` | enum | `create`, `modify`, `delete`, `append`, `insert`, `replace`, `run`, `configure`, `generate`, `install`, `rename`, `merge`. |
-| `dependencies` | string[] | IDs de tareas que DEBEN terminarse antes (ej. `[T-001, T-002]`). |
-| `inference_rules` | string[] | Reglas de inferencia automática (ej. `["crud-auto"]` para que el agente derive operaciones CRUD restantes). |
-| `verification` | object | `command`, `expectedOutput`, `checklist[]` — cómo verificar que la tarea está completa. |
+| Campo | Tipo | Obligatorio | Descripción |
+|-------|------|-------------|-------------|
+| `id` | string | sí | T-001, T-002… sin saltos. |
+| `section` | string | sí | `Backend`, `Frontend`, `Infra`, `QA`, `Deploy`, `Integración`. |
+| `title` | string | sí | Accionable, ≤80 chars. |
+| `status` | enum | sí | `pending` \| `in_progress` \| `done` \| `blocked` (generar siempre `pending`). |
+| `change_type` | enum | sí | `create`, `modify`, `delete`, `append`, `insert`, `replace`, `run`, `configure`, `generate`, `install`, `rename`, `merge`. |
+| `parallel` | bool | sí | `true` si puede ejecutarse en paralelo con tareas del mismo checkpoint. |
+| `depends_on` | string[] | sí | IDs de tareas previas (`[]` si ninguna). |
+| `context` | object | sí | `mdd_ref`, `story_ref` (cuando exista HU), `why` (1 frase). |
+| `scope` | object | sí | `include[]` rutas/globs a tocar; `exclude[]` lo explícitamente fuera (tests salvo que la tarea sea de testing). |
+| `requirements` | string[] | sí | **Cómo hacerlo** — bullets concretos y comprobables (DTOs, endpoints, campos, comandos). |
+| `constraints` | string[] | recomendado | Límites YAGNI, stack del MDD, anti-patrones a evitar. |
+| `verification` | list | sí | Al menos un ítem `run` (comando + `expect_exit`) y/o `http` (`url`, `status`, `json_contains`). |
+| `done_when` | string[] | sí | Criterios humanos breves alineados con `verification`. |
 
-**Campos opcionales:** `parallel` (bool, default false), `estimated_minutes` (int), `story_ref` (string), `mdd_ref` (string), `language` (string).
+**Compatibilidad:** `target_files` y `dependencies` siguen parseándose si el modelo los emite, pero **prefiere** `scope.include` y `depends_on`.
 
-**Reglas del formato:**
-1. El bloque YAML va **antes** de cada tarea (entre `---`), NUNCA al final ni en medio del contenido Markdown.
-2. `target_files` debe incluirse SIEMPRE que haya archivo relevante. Si es una tarea conceptual, usa `target_files: []`.
-3. `change_type`:
-   - `create` → archivo/entidad nuevo.
-   - `modify` → cambio en archivo existente.
-   - `append` → añadir al final.
-   - `insert` → insertar en posición específica.
-   - `replace` → reemplazar contenido existente.
-   - `delete` → eliminar archivo/función.
-   - `run` → ejecutar comando (build, test, migrate).
-   - `configure` → modificar config/env.
-4. `inference_rules` indica al agente qué puede auto-derivar. Ejemplos: `["crud-auto"]` (genera POST/GET/PUT/DEL automáticamente desde uno solo), `["soft-delete"]` (agrega `deletedAt` a tablas), `["dto-from-model"]` (genera DTOs desde schema).
-5. Después del YAML, el Markdown normal sigue igual: `- [ ] [P] Título` con descripción, archivos, estado, etc.
-6. **Todos los ejemplos anteriores de coordenadas y formato de tareas siguen siendo válidos** — ahora se envuelven con el front-matter YAML al inicio.
+## inference_rules — cuándo usarlas
 
-**El prompt DEBE generar TODAS las tareas con YAML front-matter — esto es crucial para la compatibilidad con agentes de ejecución automática.**
+**Prohibido** usar `inference_rules` genéricas (`crud-auto`, `soft-delete`, `dto-from-model`) como atajo si no están **documentadas en el repo** (`.cursor/rules/`, `.cursor/skills/`, `docs/` del proyecto o handoff).
+
+- Si **existe** una regla nombrada en el repo → puedes referenciarla: `inference_rules: ["nombre-regla-en-doc"]` **y** seguir incluyendo `requirements` explícitos para lo no cubierto por esa regla.
+- Si **no existe** regla en repo → **no uses** `inference_rules`. Sustitúyelas por **2–3 bullets en `requirements`** (o subtareas Markdown) que digan explícitamente qué crear/modificar/validar.
+
+Ejemplo **sin** regla en repo (correcto):
+
+```yaml
+requirements:
+  - Crear entity User con email unique + passwordHash
+  - POST /api/v1/users con CreateUserDto (email, password min 8)
+  - GET /api/v1/users/:id devuelve UserResponseDto sin passwordHash
+```
+
+Ejemplo **con** regla documentada (opcional):
+
+```yaml
+inference_rules:
+  - theforge-crud-module  # definida en .cursor/rules/nest-crud.mdc
+requirements:
+  - Aplicar theforge-crud-module solo a entidad Lead; completar DTOs faltantes a mano
+```
+
+## Reglas del formato
+
+1. Un bloque `---` … `---` **por tarea**, antes del `- [ ]`.
+2. `scope.include` obligatorio cuando hay archivos; usa `[]` solo en tareas `run`/`configure` puramente operativas.
+3. `change_type`: `create` archivo nuevo; `modify` cambio localizado; `run` build/test/migrate; `configure` env/CI.
+4. Checklist Markdown **debajo del YAML** solo si hace falta detalle (ver ejemplo canónico). Formato: `- [ ] [P] T-NNN — Título` + subtareas con `-`.
+5. **Prohibido** pegar bloques largos del MDD, Spec o API contracts en el cuerpo — cita con `context.mdd_ref` / `story_ref`.
+6. Tareas de **Testing** incluyen `**/*.spec.ts` en `scope.include` (no en `exclude`).
+7. Genera **TODAS** las tareas con este front-matter — necesario para agentes de ejecución automática y MCP `get_next_implementation_task`.
 
 # UI accionable (Tasks) #
 

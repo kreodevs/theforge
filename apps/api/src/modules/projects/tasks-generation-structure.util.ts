@@ -133,13 +133,13 @@ export function evaluateTasksStructure(params: {
 
   const orphans = parsed.tasks.filter(
     (t) =>
-      (t.targetFiles.length === 0 || Object.keys(t.verification).length === 0) &&
+      (!taskHasScopeInStructure(t) || !taskHasVerificationInStructure(t)) &&
       t.changeType !== "run" &&
       t.changeType !== "configure",
   );
   if (orphans.length > 0) {
     gaps.push(
-      `${orphans.length} tarea(s) huérfana(s) sin target_files o verification: ${orphans.map((t) => t.id).slice(0, 5).join(", ")}`,
+      `${orphans.length} tarea(s) huérfana(s) sin scope.include o verification/done_when: ${orphans.map((t) => t.id).slice(0, 5).join(", ")}`,
     );
   }
 
@@ -152,4 +152,23 @@ export function evaluateTasksStructure(params: {
     pantallaRoutes,
     truncated,
   };
+}
+
+function taskHasScopeInStructure(t: {
+  targetFiles: string[];
+  scopeInclude?: string[];
+}): boolean {
+  return t.targetFiles.length > 0 || (t.scopeInclude?.length ?? 0) > 0;
+}
+
+function taskHasVerificationInStructure(t: {
+  verification: { command?: string; checklist?: string[]; steps?: unknown[] };
+  doneWhen?: string[];
+  testCommand?: string;
+}): boolean {
+  const v = t.verification;
+  if (t.testCommand || v.command || (v.checklist?.length ?? 0) > 0 || (v.steps?.length ?? 0) > 0) {
+    return true;
+  }
+  return (t.doneWhen?.length ?? 0) > 0;
 }

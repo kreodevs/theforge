@@ -42,12 +42,12 @@ const RULES = {
   HAS_ID: { id: "T-AUD-001", weight: 5, message: "Tarea debe tener id" },
   HAS_TITLE: { id: "T-AUD-002", weight: 5, message: "Tarea debe tener título" },
   HAS_CHANGE_TYPE: { id: "T-AUD-003", weight: 10, message: "Tarea debe especificar change_type" },
-  HAS_TARGET_FILES: { id: "T-AUD-004", weight: 10, message: "Tarea debe tener al menos un target_file" },
+  HAS_TARGET_FILES: { id: "T-AUD-004", weight: 10, message: "Tarea debe tener scope.include o target_files" },
 
   // Calidad de ejecución
-  HAS_VERIFICATION: { id: "T-AUD-005", weight: 10, message: "Tarea debería tener test_command o verification" },
-  HAS_CODE_EXPECTED: { id: "T-AUD-006", weight: 5, message: "Tarea debería incluir Código Esperado" },
-  HAS_INFERENCE_RULES: { id: "T-AUD-007", weight: 5, message: "Tarea debería tener al menos una regla de inferencia" },
+  HAS_VERIFICATION: { id: "T-AUD-005", weight: 10, message: "Tarea debería tener verification (run/http) o done_when" },
+  HAS_REQUIREMENTS: { id: "T-AUD-006", weight: 10, message: "Tarea debería tener ≥2 requirements explícitos o inference_rules documentadas en repo" },
+  GENERIC_INFERENCE_RULES: { id: "T-AUD-007", weight: 5, message: "inference_rules genéricas sin doc en repo — usar requirements explícitos" },
 
   // Consistencia
   DEPENDENCIES_EXIST: { id: "T-AUD-008", weight: 10, message: "Las dependencias deben referenciar tasks existentes" },
@@ -62,6 +62,20 @@ const RULES = {
   DOMAIN_ENTITY_TASK: { id: "T-AUD-013", weight: 15, message: "Cada entidad de dominio del inventario debe tener ≥1 task" },
   DOMAIN_CAPABILITY_TASK: { id: "T-AUD-014", weight: 15, message: "Cada capacidad BRD de dominio debe anclarse en ≥1 task" },
 };
+
+const GENERIC_INFERENCE_RULE_IDS = new Set(["crud-auto", "soft-delete", "dto-from-model"]);
+
+function taskHasExecutableVerification(task: ParsedTaskV2): boolean {
+  const v = task.verification;
+  if (task.testCommand || v.command || (v.checklist?.length ?? 0) > 0 || (v.steps?.length ?? 0) > 0) {
+    return true;
+  }
+  return task.doneWhen.length > 0;
+}
+
+function taskHasScope(task: ParsedTaskV2): boolean {
+  return task.targetFiles.length > 0 || task.scopeInclude.length > 0;
+}
 
 const BASE_SCORE = 100;
 const GREEN_THRESHOLD = 90;
@@ -176,7 +190,7 @@ function checkStructure(
     });
   }
 
-  if (!task.targetFiles || task.targetFiles.length === 0) {
+  if (!taskHasScope(task)) {
     warnings.push({
       taskId: task.id,
       message: RULES.HAS_TARGET_FILES.message,
@@ -184,7 +198,7 @@ function checkStructure(
     });
   }
 
-  if (!task.testCommand && !task.verification?.command && !task.verification?.checklist?.length) {
+  if (!taskHasExecutableVerification(task)) {
     warnings.push({
       taskId: task.id,
       message: RULES.HAS_VERIFICATION.message,
@@ -192,20 +206,24 @@ function checkStructure(
     });
   }
 
-  if (!task.codeExpected && !task.diffExpected) {
+  const hasExplicitRequirements = task.requirements.length >= 2;
+  const hasDocumentedInference = task.inferenceRules.some((r) => !GENERIC_INFERENCE_RULE_IDS.has(r));
+  if (!hasExplicitRequirements && task.inferenceRules.length === 0) {
     warnings.push({
       taskId: task.id,
-      message: RULES.HAS_CODE_EXPECTED.message,
-      rule: RULES.HAS_CODE_EXPECTED.id,
+      message: RULES.HAS_REQUIREMENTS.message,
+      rule: RULES.HAS_REQUIREMENTS.id,
     });
   }
 
-  if (task.inferenceRules.length === 0) {
-    warnings.push({
-      taskId: task.id,
-      message: RULES.HAS_INFERENCE_RULES.message,
-      rule: RULES.HAS_INFERENCE_RULES.id,
-    });
+  for (const rule of task.inferenceRules) {
+    if (GENERIC_INFERENCE_RULE_IDS.has(rule)) {
+      warnings.push({
+        taskId: task.id,
+        message: `${RULES.GENERIC_INFERENCE_RULES.message}: ${rule}`,
+        rule: RULES.GENERIC_INFERENCE_RULES.id,
+      });
+    }
   }
 
   if (!task.mddRef && isImplementation) {

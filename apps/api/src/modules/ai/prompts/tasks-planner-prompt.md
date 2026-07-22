@@ -32,7 +32,8 @@ A partir del MDD (constitución §1–§7), Blueprint, Spec, HU, API, flujos, in
       "storyRefs": ["US-001"],
       "upstreamRefs": ["api-contracts:POST /api/v1/users"],
       "dependsOn": [],
-      "targetFilesHint": ["apps/api/src/modules/users/users.controller.ts"]
+      "targetFilesHint": ["apps/api/src/modules/users/users.controller.ts"],
+      "scopeHint": { "include": ["apps/api/src/modules/users/users.controller.ts"], "exclude": ["**/*.spec.ts"] }
     }
   ]
 }

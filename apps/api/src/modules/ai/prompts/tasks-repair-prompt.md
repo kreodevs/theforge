@@ -10,7 +10,7 @@ Devuelve el **documento Tasks completo corregido** (markdown), incorporando solo
 
 1. Respeta el plan JSON: no elimines ítems del plan salvo duplicado exacto.
 2. **Si el documento tiene menos tareas que el plan, añade las faltantes.** Cada ítem del plan JSON debe tener una tarea correspondiente en el documento. Si falta T-NNN del plan, créala.
-3. Mantén formato v2 (`T-NNN`, YAML blocks, `- [ ]` checklist).
-4. Cada tarea reparada debe incluir `MDD:` y `Story:` cuando aplique.
+3. Mantén formato v2 (`T-NNN`, YAML con `context`, `scope`, `requirements`, `verification`, `done_when`; checklist Markdown solo para matices).
+4. Cada tarea reparada debe incluir `context.mdd_ref` y `context.story_ref` cuando aplique. Sustituye `inference_rules` genéricas por bullets en `requirements` si no hay regla documentada en repo.
 5. No inventes stack, endpoints ni rutas fuera del contexto upstream.
 6. Salida: **solo markdown** del documento Tasks; primer carácter `#`.
