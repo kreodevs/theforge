@@ -21,7 +21,7 @@ Prompts del módulo AI. Están estructurados según marcos de ingeniería de pro
 | **infra-prompt.md** | Infra / Docker / env / volúmenes al MDD; cobertura exhaustiva §7; `buildMddContextForInfra`. Pie **Proyecto legacy**. |
 | **logic-flows-prompt.md** | Flujos Mermaid al MDD §4–§5; `buildMddContextForLogicFlows`. Guardas flowchart (etiquetas con `<br/>` / `:` / `?` entrecomilladas, no truncar nodos). **Legacy etapa 1 AS-IS:** `legacy-as-is-logic-flows.util`. Pie **Proyecto legacy**. |
 | **mermaid-regenerate-prompt.ts** | Botón Regenerar del Workshop: reescribe diagramas rotos/truncados (flowchart + sequence). |
-| **tasks-prompt.md** | Breakdown Backend / Front / Infra / QA; alineación MDD §1–§7 con trazabilidad **MDD:** / **Story:**; cobertura exhaustiva; `buildMddContextForTasks` + artefactos Spec/HU/API/Flujos/Infra en `generateTasks`. Pie **Proyecto legacy**. |
+| **tasks-prompt.md** | Breakdown Backend / Front / Infra / QA; alineación MDD §1–§7 con trazabilidad **MDD:** / **Story:**; cobertura exhaustiva; modo **Context Anchor** (manifiesto JSON + map-reduce por capa). Pie **Proyecto legacy**. |
 | **tasks-planner-prompt.md** | Plan JSON (`T-NNN`, capas, dependsOn) — **Tasks Planner** vía `generateAuditorResponse` (`auditorChatModel`). |
 | **tasks-auditor-prompt.md** | Auditor LLM de Tasks (score, gaps) — mismo runtime auditor/planner. |
 | **tasks-repair-prompt.md** | Parche dirigido tras fallo de gates. |

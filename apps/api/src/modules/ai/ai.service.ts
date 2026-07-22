@@ -248,6 +248,10 @@ export interface LegacyGenerateOptions {
   tasksPlanJson?: string | null;
   /** Feedback del Auditor LLM de Tasks para reparación. */
   tasksAuditorFeedback?: string | null;
+  /** Manifiesto + context anchors (modo contratos — sustituye dump de documentos). */
+  tasksContractContext?: string | null;
+  /** Capa map-reduce activa (Backend | Frontend | Infra | QA | Integración). */
+  tasksGenerationLayer?: string | null;
   /** Pre-fetched Technology Docs MCP block (Context7). When absent, AiService may resolve from MDD. */
   techDocsContext?: string | null;
   /** BRD stage — domain inventory injection in greenfield checklists. */
@@ -771,6 +775,8 @@ export class AiService {
     },
   ): Promise<string> {
     const techDocsContext = await this.resolveTechDocsContext(mddContent, blueprintContent, options);
+    const contractMode = Boolean(options?.tasksContractContext?.trim());
+
     const mdd = buildMddContextForTasks(mddContent?.trim() ?? "", mddDeliverableCtx(options));
     const blueprint = capTextForLegacyBaseline(blueprintContent ?? "", 15000, options?.legacyBaselineStage);
     const navMap = capTextForLegacyBaseline(options?.navigationMap ?? "", 8000, options?.legacyBaselineStage);
@@ -783,47 +789,63 @@ export class AiService {
     const architecture = capTextForLegacyBaseline(options?.architectureContent ?? "", 12000, options?.legacyBaselineStage);
     const designSystem = capTextForLegacyBaseline(options?.uxUiGuideContent ?? "", 10000, options?.legacyBaselineStage);
     const pantallas = capTextForLegacyBaseline(options?.uiScreensContent ?? "", 20000, options?.legacyBaselineStage);
-    let prompt =
-      mdd.length > 0
-        ? "Genera el documento Tasks según las instrucciones del system prompt. " +
+
+    let prompt: string;
+    if (contractMode) {
+      const layerHint = options?.tasksGenerationLayer?.trim()
+        ? `Capa activa: **${options.tasksGenerationLayer.trim()}**. `
+        : "";
+      prompt =
+        layerHint +
+        "Genera el documento Tasks según las instrucciones del system prompt. " +
+        "Usa ÚNICAMENTE el manifiesto de contratos y context anchors — no inventes fuera del JSON.\n\n" +
+        options!.tasksContractContext!.trim();
+    } else if (mdd.length > 0) {
+      prompt =
+        "Genera el documento Tasks según las instrucciones del system prompt. " +
         "Deriva tareas comprobables para **cada** capacidad MVP, entidad §3, endpoint §4, flujo §5, control §6 e ítem §7 del MDD; recorre el CHECKLIST DE COBERTURA si aparece en el mensaje. " +
         "Incluye trazabilidad **MDD:** y **Story:** en cada ítem.\n\nMDD:\n---\n" +
         mdd +
         "\n---\n\n" +
-        (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---\n\n" : "")
-        : "No hay MDD. Genera un documento Tasks genérico (Backend, Frontend, Infra) con ítems comprobables.";
-    if (spec.length > 0) {
-      prompt += "Spec (alcance what/why — alinear user stories):\n---\n" + spec + "\n---\n\n";
+        (blueprint ? "Blueprint:\n---\n" + blueprint + "\n---\n\n" : "");
+    } else {
+      prompt = "No hay MDD. Genera un documento Tasks genérico (Backend, Frontend, Infra) con ítems comprobables.";
     }
-    if (useCases.length > 0) {
-      prompt += "Casos de uso (flujos actor-sistema — alinear tasks por UC):\n---\n" + useCases + "\n---\n\n";
-    }
-    if (userStories.length > 0) {
-      prompt += "User Stories (backlog — una sección ## por HU cuando aplique):\n---\n" + userStories + "\n---\n\n";
-    }
-    if (apiContracts.length > 0) {
-      prompt += "Contratos API (generar tarea Backend por endpoint listado):\n---\n" + apiContracts + "\n---\n\n";
-    }
-    if (logicFlows.length > 0) {
-      prompt += "Flujos de lógica (generar tareas por flujo Mermaid o regla):\n---\n" + logicFlows + "\n---\n\n";
-    }
-    if (infra.length > 0) {
-      prompt += "Infraestructura (generar tareas Infra por servicio/env):\n---\n" + infra + "\n---\n\n";
-    }
-    if (architecture.length > 0) {
-      prompt += "Arquitectura (módulos, capas, convenciones — alinear rutas target_files):\n---\n" + architecture + "\n---\n\n";
-    }
-    if (designSystem.length > 0) {
-      prompt += "Design system / UX guide (tokens y componentes autorizados para Frontend tasks):\n---\n" + designSystem + "\n---\n\n";
-    }
-    if (pantallas.length > 0) {
-      prompt +=
-        "Pantallas MCP (OBLIGATORIO: una Frontend task por vista/ruta; componentes y binding API reales):\n---\n" +
-        pantallas +
-        "\n---\n\n";
-    }
-    if (navMap.length > 0) {
-      prompt += "\n\n## Mapa de Navegación del Proyecto\n\n" + navMap;
+
+    if (!contractMode) {
+      if (spec.length > 0) {
+        prompt += "Spec (alcance what/why — alinear user stories):\n---\n" + spec + "\n---\n\n";
+      }
+      if (useCases.length > 0) {
+        prompt += "Casos de uso (flujos actor-sistema — alinear tasks por UC):\n---\n" + useCases + "\n---\n\n";
+      }
+      if (userStories.length > 0) {
+        prompt += "User Stories (backlog — una sección ## por HU cuando aplique):\n---\n" + userStories + "\n---\n\n";
+      }
+      if (apiContracts.length > 0) {
+        prompt += "Contratos API (generar tarea Backend por endpoint listado):\n---\n" + apiContracts + "\n---\n\n";
+      }
+      if (logicFlows.length > 0) {
+        prompt += "Flujos de lógica (generar tareas por flujo Mermaid o regla):\n---\n" + logicFlows + "\n---\n\n";
+      }
+      if (infra.length > 0) {
+        prompt += "Infraestructura (generar tareas Infra por servicio/env):\n---\n" + infra + "\n---\n\n";
+      }
+      if (architecture.length > 0) {
+        prompt += "Arquitectura (módulos, capas, convenciones — alinear rutas target_files):\n---\n" + architecture + "\n---\n\n";
+      }
+      if (designSystem.length > 0) {
+        prompt += "Design system / UX guide (tokens y componentes autorizados para Frontend tasks):\n---\n" + designSystem + "\n---\n\n";
+      }
+      if (pantallas.length > 0) {
+        prompt +=
+          "Pantallas MCP (OBLIGATORIO: una Frontend task por vista/ruta; componentes y binding API reales):\n---\n" +
+          pantallas +
+          "\n---\n\n";
+      }
+      if (navMap.length > 0) {
+        prompt += "\n\n## Mapa de Navegación del Proyecto\n\n" + navMap;
+      }
     }
     if (options?.fileCoordinatesContext?.trim()) {
       prompt += "\n\n" + options.fileCoordinatesContext.trim() + "\n";

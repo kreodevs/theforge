@@ -219,3 +219,11 @@ verification:
 2. **CRUD:** Por cada entidad MVP de §3 que no sea glue (`outbox_events`, `sessions`), incluye tasks de persistencia + API + (si aplica) UI.
 3. **Procesos:** Cada flujo crítico de §5 / Logic Flows → al menos una task Backend con edge cases.
 4. **Pantallas complejas:** Si pantallas.md o el dominio piden chat/HITL/MCP wizard, crea tasks Frontend específicas (no solo DataTable genérica).
+
+# Modo contratos (Context Anchor — pipeline Tasks) #
+
+Cuando el mensaje incluye **Manifiesto de contratos** y/o **Context Anchors** (JSON), **no** pidas documentos completos: deriva tareas solo del JSON.
+
+- **Context Anchor** por HU: `story_id`, `feature`, `business_rules[]`, `tech_stack`, `contracts.endpoints[]`, `contracts.ui_components[]`, `acceptance_criteria[]`.
+- **Map-reduce por capa:** Backend (API+Spec+MDD), Frontend (Pantallas+DS+Flujos+HU), Infra (Blueprint+Infra+Gobernanza), QA (Casos+Flujos+HU), Integración (API+Spec+externos).
+- Cada tarea debe citar `story_ref` del anchor cuando aplique y endpoints exactos de `contracts.endpoints` (no inventar rutas).

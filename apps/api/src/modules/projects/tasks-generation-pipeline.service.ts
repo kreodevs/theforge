@@ -3,7 +3,9 @@ import {
   tasksGenerationPlanSchema,
   tasksLlmAuditorOutputSchema,
   TASKS_LLM_AUDITOR_PASS_THRESHOLD,
+  type TasksGenerationLayer,
   type TasksGenerationPlan,
+  type TasksContractManifest,
   type TasksLlmAuditorOutput,
   type TasksPipelineProgress,
   type TasksPipelineQualitySnapshot,
@@ -47,6 +49,20 @@ import {
   resolveTasksRedactorConcurrency,
   resolveTasksRepairStagnantDelta,
 } from "./tasks-pipeline-tuning.util.js";
+import {
+  extractTasksContractManifest,
+  type TasksContractExtractionInput,
+} from "./tasks-contract-layers.util.js";
+import {
+  buildTasksContextAnchors,
+  partitionPlanItemsByGenerationLayer,
+  selectContextAnchorsForPlanItems,
+  TASKS_GENERATION_LAYER_ORDER,
+} from "./tasks-context-anchor.util.js";
+import {
+  buildTasksLayerPromptContext,
+  buildTasksPlannerContractContext,
+} from "./tasks-layer-context.util.js";
 
 export type TasksPipelineInput = {
   mddMarkdown: string;
@@ -126,7 +142,13 @@ export class TasksGenerationPipelineService {
       );
     }
 
-    const plannerContext = this.buildPlannerContext(input);
+    const contractManifest = this.extractContractManifest(input);
+    const contextAnchors = buildTasksContextAnchors(contractManifest);
+    this.logger.log(
+      `[Tasks pipeline] contratos: ${contractManifest.layers.length} capas, ${contextAnchors.length} context anchors`,
+    );
+
+    const plannerContext = this.buildPlannerContext(input, contractManifest);
     this.reportProgress(input, {
       phase: "planner",
       message: "Planificando cobertura Tasks (JSON)…",
@@ -142,7 +164,7 @@ export class TasksGenerationPipelineService {
       `[Tasks pipeline] plan ${plan.items.length} items → redactor max_tokens=${redactorMaxTokens} (global ceiling llm_max_tokens)`,
     );
 
-    let tasksMarkdown = await this.runRedactor(plan, input, input.gapsFeedback);
+    let tasksMarkdown = await this.runRedactor(plan, input, input.gapsFeedback, contractManifest, contextAnchors);
 
     this.reportProgress(input, {
       phase: "auditor",
@@ -207,7 +229,7 @@ export class TasksGenerationPipelineService {
         llmOnlyFailure:
           quality.ok &&
           (!llmAuditor.passed || llmAuditor.score < TASKS_LLM_AUDITOR_PASS_THRESHOLD),
-      });
+      }, contractManifest, contextAnchors);
       llmAuditor = await this.runLlmAuditor(tasksMarkdown, input);
       quality = this.evaluateQuality(tasksMarkdown, input);
       if (
@@ -274,7 +296,35 @@ export class TasksGenerationPipelineService {
     };
   }
 
-  private buildPlannerContext(input: TasksPipelineInput): string {
+  private extractContractManifest(input: TasksPipelineInput): TasksContractManifest {
+    const extraction: TasksContractExtractionInput = {
+      mddMarkdown: input.mddMarkdown,
+      brdMarkdown: input.brdMarkdown,
+      dbgaMarkdown: input.dbgaMarkdown,
+      specMarkdown: input.taskOpts.specContent,
+      blueprintMarkdown: input.blueprintMarkdown,
+      architectureMarkdown: input.taskOpts.architectureContent,
+      infraMarkdown: input.taskOpts.infraContent,
+      userStoriesMarkdown: input.taskOpts.userStoriesContent,
+      useCasesMarkdown: input.taskOpts.useCasesContent,
+      apiContractsMarkdown: input.taskOpts.apiContractsContent,
+      logicFlowsMarkdown: input.taskOpts.logicFlowsContent,
+      uxUiGuideMarkdown: input.taskOpts.uxUiGuideContent,
+      uiScreensMarkdown: input.taskOpts.uiScreensContent,
+    };
+    return extractTasksContractManifest(extraction);
+  }
+
+  private buildPlannerContext(input: TasksPipelineInput, manifest: TasksContractManifest): string {
+    return buildTasksPlannerContractContext({
+      manifest,
+      mddMarkdown: input.mddMarkdown,
+      blueprintMarkdown: input.blueprintMarkdown,
+    });
+  }
+
+  /** @deprecated Reservado como fallback legacy si el planner por contratos falla. */
+  private buildPlannerContextLegacyDump(input: TasksPipelineInput): string {
     const parts: string[] = [
       "Genera el plan JSON de Tasks según el system prompt. " +
       "Cada fase/roadmap del blueprint debe generar al menos una sección de tasks con ítems por hito.",
@@ -306,11 +356,13 @@ export class TasksGenerationPipelineService {
     return parts.join("");
   }
 
-  /** Redacta tasks.md desde el plan; lotes por journey o por tamaño (evita truncado). */
+  /** Redacta tasks.md desde el plan; map-reduce por capa + lotes por journey/tamaño. */
   private async runRedactor(
     plan: TasksGenerationPlan,
     input: TasksPipelineInput,
     gapsFeedback?: string | null,
+    manifest?: TasksContractManifest,
+    contextAnchors?: ReturnType<typeof buildTasksContextAnchors>,
     tasksAuditorFeedback?: string | null,
   ): Promise<string> {
     const batchSize = resolveTasksRedactorBatchSize();
@@ -348,6 +400,8 @@ export class TasksGenerationPipelineService {
           ji === 0,
           tasksAuditorFeedback,
           { batch: ji + 1, totalBatches: journeyPartitions.length },
+          manifest,
+          contextAnchors,
         );
         parts.push(chunk);
         const accumulated = parts.filter(Boolean).join("\n\n");
@@ -366,7 +420,144 @@ export class TasksGenerationPipelineService {
     return this.redactorSlice(plan, input, gapsFeedback, true, tasksAuditorFeedback, {
       batch: 1,
       totalBatches,
+    }, manifest, contextAnchors);
+  }
+
+  private buildLayerContractContext(
+    layer: TasksGenerationLayer,
+    input: TasksPipelineInput,
+    manifest: TasksContractManifest,
+    anchors: ReturnType<typeof buildTasksContextAnchors>,
+    planItems: TasksGenerationPlan["items"],
+  ): string {
+    return buildTasksLayerPromptContext({
+      manifest,
+      layer,
+      anchors: selectContextAnchorsForPlanItems(anchors, planItems),
+      mddMarkdown: input.mddMarkdown,
+      specMarkdown: input.taskOpts.specContent,
+      apiContractsMarkdown: input.taskOpts.apiContractsContent,
+      blueprintMarkdown: input.blueprintMarkdown,
+      infraMarkdown: input.taskOpts.infraContent,
+      uxUiGuideMarkdown: input.taskOpts.uxUiGuideContent,
+      uiScreensMarkdown: input.taskOpts.uiScreensContent,
+      logicFlowsMarkdown: input.taskOpts.logicFlowsContent,
+      useCasesMarkdown: input.taskOpts.useCasesContent,
+      userStoriesMarkdown: input.taskOpts.userStoriesContent,
+      architectureMarkdown: input.taskOpts.architectureContent,
     });
+  }
+
+  /** Map-reduce: un prompt por capa (Backend / Frontend / Infra / QA / Integración). */
+  private async redactorMapReduceByLayer(
+    plan: TasksGenerationPlan,
+    input: TasksPipelineInput,
+    gapsFeedback: string | null | undefined,
+    isFirstChunk: boolean,
+    tasksAuditorFeedback: string | null | undefined,
+    manifest: TasksContractManifest,
+    contextAnchors: ReturnType<typeof buildTasksContextAnchors>,
+  ): Promise<string> {
+    const byLayer = partitionPlanItemsByGenerationLayer(plan.items);
+    const parts: string[] = [];
+    let layerIndex = 0;
+
+    for (const layer of TASKS_GENERATION_LAYER_ORDER) {
+      const layerItems = byLayer.get(layer);
+      if (!layerItems?.length) continue;
+      layerIndex += 1;
+      const slicePlan: TasksGenerationPlan = { sections: plan.sections, items: layerItems };
+      const contractContext = this.buildLayerContractContext(
+        layer,
+        input,
+        manifest,
+        contextAnchors,
+        layerItems,
+      );
+
+      this.reportProgress(input, {
+        phase: "redactor",
+        batch: layerIndex,
+        totalBatches: byLayer.size,
+        message: `Redactando capa ${layer} (${layerItems.length} ítems)…`,
+      });
+
+      const chunk = await this.ai.generateTasks(input.mddMarkdown, input.blueprintMarkdown ?? null, {
+        ...input.taskOpts,
+        tasksPlanJson: JSON.stringify(slicePlan, null, 2),
+        tasksContractContext: contractContext,
+        tasksGenerationLayer: layer,
+        gapsFeedback:
+          layerIndex === 1
+            ? gapsFeedback
+            : [
+                gapsFeedback?.trim(),
+                `Continúa documento Tasks — sección ## ${layer} tasks. No repitas título # Tasks ni secciones ya generadas.`,
+              ]
+                .filter(Boolean)
+                .join("\n\n"),
+        tasksAuditorFeedback: layerIndex === 1 ? tasksAuditorFeedback : undefined,
+      });
+
+      const trimmed = chunk.trim();
+      const normalized =
+        layerIndex === 1 && isFirstChunk
+          ? trimmed
+          : trimmed.replace(/^#\s*Tasks\s*\n+/im, "").trim();
+      if (normalized) parts.push(normalized);
+    }
+
+    return parts.join("\n\n");
+  }
+
+  private buildRedactorGenerateOptions(
+    input: TasksPipelineInput,
+    plan: TasksGenerationPlan,
+    opts: {
+      gapsFeedback?: string | null;
+      tasksAuditorFeedback?: string | null;
+      manifest?: TasksContractManifest;
+      contextAnchors?: ReturnType<typeof buildTasksContextAnchors>;
+      layer?: TasksGenerationLayer;
+    },
+  ): Parameters<AiService["generateTasks"]>[2] {
+    const base = {
+      ...input.taskOpts,
+      tasksPlanJson: JSON.stringify(plan, null, 2),
+      gapsFeedback: opts.gapsFeedback,
+      tasksAuditorFeedback: opts.tasksAuditorFeedback,
+    };
+    if (opts.manifest && opts.layer) {
+      return {
+        ...base,
+        tasksContractContext: this.buildLayerContractContext(
+          opts.layer,
+          input,
+          opts.manifest,
+          opts.contextAnchors ?? [],
+          plan.items,
+        ),
+        tasksGenerationLayer: opts.layer,
+      };
+    }
+    if (opts.manifest && opts.contextAnchors) {
+      const layerItems = plan.items;
+      const layer = normalizeSingleLayer(layerItems);
+      if (layer) {
+        return {
+          ...base,
+          tasksContractContext: this.buildLayerContractContext(
+            layer,
+            input,
+            opts.manifest,
+            opts.contextAnchors,
+            layerItems,
+          ),
+          tasksGenerationLayer: layer,
+        };
+      }
+    }
+    return base;
   }
 
   private async redactorSlice(
@@ -376,9 +567,24 @@ export class TasksGenerationPipelineService {
     isFirstChunk = true,
     tasksAuditorFeedback?: string | null,
     batchInfo?: { batch: number; totalBatches: number },
+    manifest?: TasksContractManifest,
+    contextAnchors?: ReturnType<typeof buildTasksContextAnchors>,
   ): Promise<string> {
+    if (manifest && contextAnchors && plan.items.length > 0) {
+      const byLayer = partitionPlanItemsByGenerationLayer(plan.items);
+      if (byLayer.size > 1) {
+        return this.redactorMapReduceByLayer(
+          plan,
+          input,
+          gapsFeedback,
+          isFirstChunk,
+          tasksAuditorFeedback,
+          manifest,
+          contextAnchors,
+        );
+      }
+    }
     const batchSize = resolveTasksRedactorBatchSize();
-    const planJson = JSON.stringify(plan, null, 2);
     const totalBatches =
       batchInfo?.totalBatches ??
       Math.max(1, Math.ceil(plan.items.length / batchSize));
@@ -389,12 +595,16 @@ export class TasksGenerationPipelineService {
         totalBatches,
         message: `Redactando lote ${batchInfo?.batch ?? 1}/${totalBatches}…`,
       });
-      const chunk = await this.ai.generateTasks(input.mddMarkdown, input.blueprintMarkdown ?? null, {
-        ...input.taskOpts,
-        tasksPlanJson: planJson,
-        gapsFeedback,
-        tasksAuditorFeedback,
-      });
+      const chunk = await this.ai.generateTasks(
+        input.mddMarkdown,
+        input.blueprintMarkdown ?? null,
+        this.buildRedactorGenerateOptions(input, plan, {
+          gapsFeedback,
+          tasksAuditorFeedback,
+          manifest,
+          contextAnchors,
+        }),
+      );
       const trimmed = isFirstChunk ? chunk.trim() : chunk.trim().replace(/^#\s*Tasks\s*\n+/im, "").trim();
       this.reportProgress(input, {
         phase: "redactor",
@@ -439,12 +649,16 @@ export class TasksGenerationPipelineService {
               .filter(Boolean)
               .join("\n\n");
 
-      const chunk = await this.ai.generateTasks(input.mddMarkdown, input.blueprintMarkdown ?? null, {
-        ...input.taskOpts,
-        tasksPlanJson: JSON.stringify(slicePlan, null, 2),
-        gapsFeedback: batchFeedback,
-        tasksAuditorFeedback: offset === 0 ? tasksAuditorFeedback : undefined,
-      });
+      const chunk = await this.ai.generateTasks(
+        input.mddMarkdown,
+        input.blueprintMarkdown ?? null,
+        this.buildRedactorGenerateOptions(input, slicePlan, {
+          gapsFeedback: batchFeedback,
+          tasksAuditorFeedback: offset === 0 ? tasksAuditorFeedback : undefined,
+          manifest,
+          contextAnchors,
+        }),
+      );
       const trimmed = chunk.trim();
       const normalized =
         offset === 0 && isFirstChunk
@@ -499,7 +713,7 @@ export class TasksGenerationPipelineService {
       buildHeuristicTasksPlan(this.heuristicPlanInput(input));
 
     const contexts: Array<{ label: string; prompt: string }> = [
-      { label: "full", prompt: context },
+      { label: "contracts", prompt: context },
       {
         label: "slim",
         prompt: buildSlimTasksPlannerContext(
@@ -511,6 +725,7 @@ export class TasksGenerationPipelineService {
           input.inventory,
         ),
       },
+      { label: "legacy-dump", prompt: this.buildPlannerContextLegacyDump(input) },
     ];
 
     for (const { label, prompt } of contexts) {
@@ -810,6 +1025,8 @@ export class TasksGenerationPipelineService {
       deterministicOk: boolean;
       llmOnlyFailure: boolean;
     },
+    manifest?: TasksContractManifest,
+    contextAnchors?: ReturnType<typeof buildTasksContextAnchors>,
   ): Promise<string> {
     const usePatchFirst =
       !options.documentTruncated &&
@@ -844,6 +1061,8 @@ export class TasksGenerationPipelineService {
       plan,
       input,
       retryFeedback.gapsFeedback,
+      manifest,
+      contextAnchors,
       retryFeedback.tasksAuditorFeedback,
     );
 
@@ -914,4 +1133,16 @@ export class TasksGenerationPipelineService {
       blueprintMarkdown: input.blueprintMarkdown,
     });
   }
+}
+
+function normalizeSingleLayer(items: TasksGenerationPlan["items"]): TasksGenerationLayer | null {
+  if (items.length === 0) return null;
+  const layers = new Set(items.map((i) => i.layer));
+  if (layers.size !== 1) return null;
+  const only = [...layers][0] ?? "";
+  if (/^frontend$/i.test(only)) return "Frontend";
+  if (/^infra/i.test(only)) return "Infra";
+  if (/^qa$/i.test(only)) return "QA";
+  if (/integraci/i.test(only)) return "Integración";
+  return "Backend";
 }
