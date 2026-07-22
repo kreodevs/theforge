@@ -17,10 +17,10 @@ error TS2305: Module '"@theforge/shared-types"' has no exported member 'X'.
 
 | Tarea | Comando |
 |---|---|
-| Antes de `tsc` directo (`npx tsc --noEmit`) | `pnpm --filter @theforge/shared-types run build` |
+| Build manual (rebuild `dist/` cuando toques `src/`) | `pnpm --filter @theforge/shared-types run build` |
 | Antes de commit (ya lo hace el githook) | `pnpm setup:githooks` (una vez) |
-| Typecheck completo del repo | `pnpm typecheck` (turbo `^build` + `test:types`) |
-| CI | ver `.github/workflows/ci.yml` — corre `pnpm install && pnpm -r build && pnpm test` |
+| Verificar todo el repo | `pnpm typecheck` (turbo `^build` + `test:types`) |
+| **Deployment** (Dokploy / Docker) | Automático — el `Dockerfile` corre `pnpm install` y `pnpm build` durante el build de imagen, así que en prod/staging nunca verás tipos stale. CI no enforza un typecheck adicional; la responsabilidad de rebuild local queda en el dev (githook + comando manual arriba). |
 
 El githook `.githooks/pre-commit` detecta cambios en `apps/api/**` o
 `packages/shared-types/**` y dispara `pnpm turbo run build --filter=...{./apps/api}`

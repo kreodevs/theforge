@@ -16,6 +16,7 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 ### Changed
 
 - **`AiOrchestratorService.tryPersistMddContent`:** antes de persistir el MDD devuelve por la IA, hace `findOne(projectId)` para obtener el MDD actual, ejecuta `mergeMddBySection(currentMdd, incomingMdd)`, y persiste el resultado. Loggea `[Orchestrator] mddContent merge defensivo (incoming posiblemente truncado)` con `mode`, `truncatedIncoming`, `sectionsReplaced`, `sectionsKept`, `sectionsAdded` y longitudes, para que un futuro debug del flujo Workshop pueda auditar por qué se preservó X sección. Si el merge lanza (BD no accesible, etc.) cae al comportamiento anterior (replace) en lugar de bloquear el chat.
+- **Decisión de devx: sin step de typecheck en CI.** El deployment de Dokploy ya rebuild-ea `@theforge/shared-types` durante el `Dockerfile` build (pnpm install + pnpm build), así que en prod/staging nunca llega un `dist/` stale. Enforzar un `pnpm typecheck` en CI duplica ese trabajo y añade un gate que rompe PRs legítimos cuando el dev olvidó rebuild-ear localmente. La responsabilidad de mantener `dist/` fresco en local queda en el dev: el githook `pre-commit` lo cubre en commits, y `pnpm --filter @theforge/shared-types build` o `pnpm typecheck` lo cubren en cualquier otro momento. Si el dev olvida y ve `TS2305` falsos positivos, ya sabe qué comando correr.
 
 ### Added
 
@@ -23,7 +24,7 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 - **Migración `20260722100000_move_langgraph_checkpoints_to_dedicated_schema`:** mueve los datos de `public.checkpoint_*` a `langgraph.checkpoint_*` (idempotente, seguro en BD fresca y vieja). Marca v=0..4 en `langgraph.checkpoint_migrations` para que `ensureLangGraphCheckpointSchema` arranque como no-op.
 - **Script raíz `typecheck` (`package.json`):** `turbo run build && turbo run test:types`. Asegura que los `dist/*.d.ts` de `@theforge/shared-types` están frescos antes del `tsc --noEmit` de las apps, eliminando los falsos positivos `TS2305: Module '@theforge/shared-types' has no exported member 'X'` que aparecían cuando `src/` avanzaba más rápido que su build.
 - **Githook `.githooks/pre-commit`:** detecta cambios staged en `apps/api/**` o `packages/shared-types/**` y dispara `pnpm turbo run build --filter=...{./apps/api}`. Resuelve el grafo `^build` de `turbo.json` (rebuild sólo lo necesario, cache hit si nada cambió). Re-stage-a `dist/`/`dist-cjs/` para que el commit los incluya. Activado por `pnpm setup:githooks`.
-- **Sección "Build antes de tsc" en `packages/shared-types/README.md`:** explica por qué `dist/` puede quedar stale y la matriz de comandos (build, typecheck, githook, CI) para cada caso.
+- **Sección "Build antes de tsc" en `packages/shared-types/README.md`:** explica por qué `dist/` puede quedar stale y la matriz de comandos (build, typecheck, githook, deployment) para cada caso. La responsabilidad de rebuild local queda en el dev (githook + comando manual); CI no enforza un typecheck porque el deployment (Dokploy) ya rebuild-ea al construir la imagen.
 - **Documentación para devs:**
   - `README.md` raíz: bloque `pnpm run setup:githooks` en la sección "Desarrollo".
   - `CONTRIBUTING.md`: sub-sección "Githooks (recomendado)" en "Local development" + nota en "Tests and lint" sobre `pnpm typecheck` vs `pnpm test:types`.

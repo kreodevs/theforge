@@ -54,8 +54,8 @@ Docker: see [`README.md`](README.md) **Docker** section.
 
 - `pnpm run lint` at root (Turbo).
 - **`pnpm run test`** at root: smoke y unit tests en API, web (utilidades puras) y `business-rules`.
-- **`pnpm run test:types`**: `tsc --noEmit` en API y web (detecta imports rotos y tipos antes de desplegar). **Requiere que `packages/shared-types/dist/` esté actualizado** — usa `pnpm typecheck` (ver abajo) si no estás seguro.
-- **`pnpm run typecheck`** (raíz): hace `turbo run build && turbo run test:types`. Equivale a lo que corre CI. Úsalo antes de abrir PR si modificas `@theforge/shared-types`, `apps/api/**` o `apps/web/**`.
+- **`pnpm run test:types`**: `tsc --noEmit` en API y web (detecta imports rotos y tipos antes de desplegar). **Requiere que `packages/shared-types/dist/` esté actualizado** — usa `pnpm typecheck` (ver abajo) si no estás seguro. En deployment (Dokploy) el Dockerfile rebuild-ea automáticamente, así que CI no enforza un typecheck.
+- **`pnpm run typecheck`** (raíz): hace `turbo run build && turbo run test:types`. Úsalo antes de abrir PR si modificas `@theforge/shared-types`, `apps/api/**` o `apps/web/**`. El githook `pre-commit` ya corre esto por ti al commitear; este script es para tu tranquilidad local.
 - API: `pnpm --filter @theforge/api test` — incluye `src/smoke/cross-module-imports.smoke.spec.ts` (imports entre módulos Nest).
 - Web: `pnpm --filter @theforge/web test` — utilidades NDJSON, errores HTTP, markdown, design tokens.
 - MCP alignment (API): `pnpm --filter @theforge/api run test:mcp-alignment`.
