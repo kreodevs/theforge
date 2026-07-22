@@ -2,6 +2,31 @@
 
 DTOs e interfaces compartidas (Zod).
 
+## ⚠️ Build antes de tsc
+
+Este paquete publica tipos en `dist/*.d.ts` (vía `package.json#types`). Las
+apps (`@theforge/api`, `@theforge/web`, plugins) **leen tipos desde `dist/`,
+no desde `src/`**. Si cambias un export en `src/` y no rebuild-eas, las apps
+ven tipos stale y `tsc` emite falsos positivos:
+
+```
+error TS2305: Module '"@theforge/shared-types"' has no exported member 'X'.
+```
+
+**Cómo evitarlo:**
+
+| Tarea | Comando |
+|---|---|
+| Antes de `tsc` directo (`npx tsc --noEmit`) | `pnpm --filter @theforge/shared-types run build` |
+| Antes de commit (ya lo hace el githook) | `pnpm setup:githooks` (una vez) |
+| Typecheck completo del repo | `pnpm typecheck` (turbo `^build` + `test:types`) |
+| CI | ver `.github/workflows/ci.yml` — corre `pnpm install && pnpm -r build && pnpm test` |
+
+El githook `.githooks/pre-commit` detecta cambios en `apps/api/**` o
+`packages/shared-types/**` y dispara `pnpm turbo run build --filter=...{./apps/api}`
+automáticamente, que respeta el grafo `^build` de `turbo.json` y reconstruye
+sólo lo necesario (turbo cache hit si no cambió nada).
+
 - Status, ChecklistResult, **MddJson** (`mddConstitutionSchema`, `constitution` opcional; `.passthrough()` para campos extra).
 - **`mdd-pipeline-limits.ts`:** constantes de tamaño (brief, plan, goals, aviso de pegado largo en Workshop).
 - **`markdown-repair.ts`:** export también vía subpath `@theforge/shared-types/markdown-repair` (MddViewer / limpieza de fences).

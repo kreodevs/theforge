@@ -23,6 +23,11 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 - **Migración `20260722100000_move_langgraph_checkpoints_to_dedicated_schema`:** mueve los datos de `public.checkpoint_*` a `langgraph.checkpoint_*` (idempotente, seguro en BD fresca y vieja). Marca v=0..4 en `langgraph.checkpoint_migrations` para que `ensureLangGraphCheckpointSchema` arranque como no-op.
 - **Script raíz `typecheck` (`package.json`):** `turbo run build && turbo run test:types`. Asegura que los `dist/*.d.ts` de `@theforge/shared-types` están frescos antes del `tsc --noEmit` de las apps, eliminando los falsos positivos `TS2305: Module '@theforge/shared-types' has no exported member 'X'` que aparecían cuando `src/` avanzaba más rápido que su build.
 - **Githook `.githooks/pre-commit`:** detecta cambios staged en `apps/api/**` o `packages/shared-types/**` y dispara `pnpm turbo run build --filter=...{./apps/api}`. Resuelve el grafo `^build` de `turbo.json` (rebuild sólo lo necesario, cache hit si nada cambió). Re-stage-a `dist/`/`dist-cjs/` para que el commit los incluya. Activado por `pnpm setup:githooks`.
+- **Sección "Build antes de tsc" en `packages/shared-types/README.md`:** explica por qué `dist/` puede quedar stale y la matriz de comandos (build, typecheck, githook, CI) para cada caso.
+- **Documentación para devs:**
+  - `README.md` raíz: bloque `pnpm run setup:githooks` en la sección "Desarrollo".
+  - `CONTRIBUTING.md`: sub-sección "Githooks (recomendado)" en "Local development" + nota en "Tests and lint" sobre `pnpm typecheck` vs `pnpm test:types`.
+  - `README-LOCAL.md`: paso 6 "Githooks (recomendado)" tras los pasos de Docker / dev.
 
 ## [v1.6.3] — 2026-07-21
 

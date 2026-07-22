@@ -90,6 +90,19 @@ pnpm run dev
 - **Web:** http://localhost:5173  
 - **API:** http://localhost:3000 (Vite proxy `/api` → API)
 
+### 6. Githooks (recomendado)
+
+```bash
+pnpm run setup:githooks
+```
+
+Activa `prepare-commit-msg` (limpia trailers `Co-authored-by:` de agentes IA) y
+`pre-commit` (rebuild automático de `@theforge/shared-types` cuando cambian
+`apps/api/**` o `packages/shared-types/**`). Sin él, un `tsc --noEmit` puede
+emitir falsos positivos `TS2305` porque las apps leen tipos desde `dist/*.d.ts`,
+no desde `src/`. Si necesitas forzar el rebuild a mano:
+`pnpm typecheck` (turbo `^build` + `test:types`).
+
 ### Parar contenedores de infra
 
 ```bash

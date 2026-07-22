@@ -56,6 +56,20 @@ corepack enable
 pnpm install
 ```
 
+Activa los githooks (recomendado, una vez):
+
+```bash
+pnpm run setup:githooks
+```
+
+Activa `prepare-commit-msg` (limpia trailers `Co-authored-by:` de agentes IA) y
+`pre-commit` (rebuild automático de `@theforge/shared-types` cuando cambian
+`apps/api/**` o `packages/shared-types/**`). Sin el pre-commit, el
+`tsc --noEmit` puede emitir falsos positivos `TS2305: has no exported member`
+porque las apps leen tipos desde `dist/*.d.ts`. Si lo necesitas a mano:
+`pnpm typecheck` (turbo `^build` + `test:types`). Detalle en
+[`packages/shared-types/README.md`](./packages/shared-types/README.md).
+
 Configura la base de datos:
 
 ```bash
