@@ -3,6 +3,8 @@ import {
   peelDocumentBodyForPersist,
   repairApiContractJsonFences,
   repairApiResponse204NoContent,
+  repairCollapsedPipeTables,
+  repairGluedMarkdownHeadings,
   repairOrphanFenceBeforeContractLabels,
   repairUnclosedJsonBeforeApiEndpoint,
 } from "@theforge/shared-types";
@@ -156,6 +158,8 @@ export function applyPreDeliveryGateFixes(draft: string): string {
   out = closeUnclosedCodeFencesInDraft(out);
   out = applyMddQualityAutoRepairs(out).markdown;
   out = applyDeterministicCrossConsistencyFixes(out);
+  out = repairGluedMarkdownHeadings(out);
+  out = repairCollapsedPipeTables(out);
   out = sanitizeMermaidInDraft(out);
   out = ensureTechnicalMetadataBlockInDraft(out);
   if (mddHasDuplicateSectionHeadings(out)) {

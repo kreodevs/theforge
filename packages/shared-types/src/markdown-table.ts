@@ -313,3 +313,32 @@ export function normalizeAllTables(document: string): string {
 
   return result.join("\n");
 }
+
+/**
+ * Expande tablas markdown colapsadas en una sola línea
+ * (`| H1 | H2 | | :--- | :--- | | fila | datos |` → filas reales).
+ * Típico del Clarifier/Architect en §1 (tabla de dolores).
+ */
+export function repairCollapsedPipeTables(document: string): string {
+  if (!document?.trim()) return document ?? "";
+  return document
+    .split("\n")
+    .map((line) => {
+      const pipeCount = (line.match(/\|/g) ?? []).length;
+      if (pipeCount < 8) return line;
+      if (!/\|\s*\|/.test(line)) return line;
+
+      const firstPipe = line.indexOf("|");
+      const prefix = firstPipe > 0 ? line.slice(0, firstPipe) : "";
+      const tablePart = line.slice(firstPipe);
+      const rows = tablePart.split(/(?<=\|)\s*(?=\|)/).map((chunk) => {
+        let s = chunk.trim();
+        if (!s.startsWith("|")) s = `| ${s}`;
+        if (!s.endsWith("|")) s = `${s} |`;
+        return s.replace(/\|\s+\|/g, "| |").replace(/^\|\s+\|/, "|");
+      });
+      if (rows.length < 2) return line;
+      return prefix + rows.join("\n");
+    })
+    .join("\n");
+}

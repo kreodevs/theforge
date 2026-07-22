@@ -2,6 +2,10 @@
  * Diagrama de componentes propuesto (greenfield): Mermaid determinista desde §2–§4 del MDD canónico.
  */
 
+import {
+  mermaidBlockHasUsableStructure,
+} from "../../engine/mdd-pre-render.js";
+
 export type GreenfieldStackSignals = {
   frontend?: string;
   backend?: string;
@@ -129,6 +133,18 @@ function section2HasDetailedComponentDiagram(section2Body: string): boolean {
     /###\s*2\.\d+\s*Diagrama de componentes/i.test(section2Body) ||
     /Microservicios|Auth Service|Kong|RabbitMQ|API Gateway/i.test(section2Body)
   );
+}
+
+/** True si §2 ya tiene un diagrama de componentes Mermaid usable (aristas o erDiagram). */
+export function section2HasValidComponentDiagram(section2Body: string): boolean {
+  if (!section2HasDetailedComponentDiagram(section2Body)) return false;
+  const blocks = section2Body.match(/```mermaid\s*([\s\S]*?)```/gi) ?? [];
+  if (blocks.length === 0) return false;
+  for (const block of blocks) {
+    const inner = block.replace(/^```mermaid\s*/i, "").replace(/```$/i, "").trim();
+    if (!mermaidBlockHasUsableStructure(inner)) return false;
+  }
+  return true;
 }
 
 const NO_UI_SURFACE_PATTERN =
@@ -310,7 +326,7 @@ export function injectProposedComponentDiagramIntoSection2(draft: string): strin
   if (!mdd || hasLegacyComponentDiagramSection(mdd)) return draft;
 
   const section2 = getSectionBody(mdd, /^##\s*2\.\s*Arquitectura[^\n]*/im);
-  if (section2?.body && section2HasDetailedComponentDiagram(section2.body)) {
+  if (section2?.body && section2HasValidComponentDiagram(section2.body)) {
     return draft;
   }
 

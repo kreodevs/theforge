@@ -91,6 +91,9 @@ function fixGluedPlainTitleMermaidSuffix(draft: string): string {
 
 /** Despega prosa pegada al título en la misma línea (`### Título Este sistema…`). */
 function splitHeadingTitleFromInlineProse(draft: string): string {
+  const numberedTitle =
+    /^(\d+\.\d+(?:\.\d+)?\s+(?:Propósito|Problema(?:\s+de\s+negocio)?|Objetivos(?:\s+comerciales)?|Alcance(?:\s+y\s+[Ff]ronteras)?|Visión|Contexto|Requisitos(?:\s+funcionales)?|Fronteras|Monetización|Arquitectura(?:\s+técnica)?|Backend|Frontend|Base de datos|Seguridad|Infraestructura)(?:\s+(?:del|de la|de)\s+\w+)?)(?:\s+)(.+)$/u;
+
   return draft
     .split("\n")
     .map((line) => {
@@ -99,11 +102,20 @@ function splitHeadingTitleFromInlineProse(draft: string): string {
       const m = trimmed.match(/^(#{2,4}\s+)(.+)$/);
       if (!m) return line;
       const [, prefix, rest = ""] = m;
+      const indent = line.match(/^(\s*)/)?.[1] ?? "";
+
+      const numbered = rest.match(numberedTitle);
+      if (numbered && numbered[1]!.trim().length >= 5 && numbered[2]!.trim().length >= 12) {
+        const prose = numbered[2]!.trim();
+        if (/^[A-ZÁÉÍÓÚÑ0-9]/.test(prose)) {
+          return `${indent}${prefix}${numbered[1]!.trim()}\n\n${indent}${prose}`;
+        }
+      }
+
       const body = rest.match(
-        /^(.+?)\s+((?:Este|Esta|El|La|Los|Las|Un|Una|Desarrolladores)\b[\s\S].*)$/u,
+        /^(.+?)\s+((?:Este|Esta|El|La|Los|Las|Un|Una|Desarrolladores|Jarvis|[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\s+es)\b[\s\S].*)$/u,
       );
       if (!body || body[1]!.trim().length < 8) return line;
-      const indent = line.match(/^(\s*)/)?.[1] ?? "";
       return `${indent}${prefix}${body[1]!.trim()}\n\n${indent}${body[2]!.trim()}`;
     })
     .join("\n");

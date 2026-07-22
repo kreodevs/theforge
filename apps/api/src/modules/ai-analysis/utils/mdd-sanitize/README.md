@@ -14,7 +14,7 @@ Submódulos extraídos de `../mdd-sanitize.ts` durante el refactor GOD-REFACTOR 
 | `persist-format.util.ts` | 3 exports (re-export barrel) | HR/fences del pipeline de persist: `closeUnclosedCodeFencesInDraft`, `collapseConsecutiveHorizontalRules`, `stripStrayParenAfterJsonCodeBlocks` |
 | `persist-pipeline.ts` | 11 exports (re-export barrel) | `prepare/store/sanitize` at persist, `normalizeMddFormat`, `finalizeMddDeliverable`, `applyPreDeliveryGateFixes` |
 | `cross-consistency.ts` | ~25 exports (re-export barrel) | Coherencia cruzada §1–§7: JWT, outbox, dual approval, lockout, patches LLM, detect* |
-| `contratos-format.ts` | 5 exports (re-export barrel) | §4 Contratos: JSON repair, tablas markdown, `ensureContratosSection` |
+| `contratos-format.ts` | §4 Contratos + `isContratosSubstantial` / `isContratosPlaceholder` (gate + Architect) | JSON repair, tablas, `ensureContratosSection`, sustancia de endpoints |
 | `draft-normalize.ts` | 13 exports (re-export barrel) | Contexto, §6/§7 JSON→MD, headings canónicos, limpieza artefactos LLM |
 | `infra-manifest.ts` | 6 exports (re-export barrel) | Detección infra en texto, manifest §7, sanitize AWS genérico |
 | `section-structured.ts` | 5 exports (re-export barrel) | §6/§7 structured→MD, `parseModeloDatosFromSection3Markdown`, `objectSectionToMarkdown` |
@@ -22,7 +22,7 @@ Submódulos extraídos de `../mdd-sanitize.ts` durante el refactor GOD-REFACTOR 
 
 El entrypoint estable para consumidores sigue siendo `../mdd-sanitize.ts` (re-exports).
 
-**Exports públicos de `sql-repair.ts`:** `sanitizeSqlBrokenCommentsAndProse`, `stripIndexesOnCommentedSqlColumns`, `repairSqlProseInTableBodies`, `repairSqlDetachedCheckConstraints`, `sanitizeAllSqlBlocksInDraft`, `formatSqlBlockWithNewlines`, `detectUnclosedSqlFences`.
+**Exports públicos de `sql-repair.ts`:** `sanitizeSqlBrokenCommentsAndProse`, `stripIndexesOnCommentedSqlColumns`, `repairSqlProseInTableBodies`, `repairSqlDetachedCheckConstraints`, `sanitizeAllSqlBlocksInDraft`, `formatSqlBlockWithNewlines`, `detectUnclosedSqlFences`, `repairSqlSpacedColumnIdentifiers`, `stripMonthlyPartitionStubTables`.
 
 **Exports principales de `section-merge.ts`:** `mergeSection1IntoDraft`, `preserveUntouchedMddSectionsFromBaseline`, `restoreMddSectionsFromBaselineStrict`, `deduplicateAndReorderMddSections`, `validateMddStructure`, `getSection6Or7Range`, `replaceSection6Or7InDraft`, `mergeSingleArchitectSectionIntoDraft` (regen §2/§3/§4 quirúrgica tras Architect).
 
@@ -32,7 +32,7 @@ El entrypoint estable para consumidores sigue siendo `../mdd-sanitize.ts` (re-ex
 
 **Exports principales de `cross-consistency.ts`:** `applyDeterministicCrossConsistencyFixes`, `detectCrossConsistencyIssues`, `applyCrossConsistencyPatches`, `fixDeterministicMddCoherence`, `ensureSecurityLockoutInSection6`, `fixDualApprovalSchemaInDraft`, `detectDuplicateOutboxTables`, `draftUsesRs256Jwt`.
 
-**Exports de `contratos-format.ts`:** `repairNestedJsonFencesInDraft`, `repairDisplacedJsonBracesInContratos`, `formatContratosBody`, `normalizeContratosTableSummary`, `ensureContratosSection`.
+**Exports de `contratos-format.ts`:** `repairNestedJsonFencesInDraft`, `repairDisplacedJsonBracesInContratos`, `formatContratosBody`, `normalizeContratosTableSummary`, `ensureContratosSection`, `isContratosSubstantial`, `isContratosPlaceholder`, `extractContratosSectionBody`, `MIN_CONTRATOS_LENGTH`.
 
 **Exports de `draft-normalize.ts`:** `sanitizeContextSection`, `sanitizeSeguridadIntegracionRawJson`, `normalizeMddEnglishSubheadings`, `CANONICAL_HEADINGS`, `stripMeshDirectivesFromDraft`, `forceStripBrokenPrefix`, `unescapeLiteralNewlines`.
 

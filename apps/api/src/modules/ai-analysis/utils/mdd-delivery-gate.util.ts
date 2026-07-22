@@ -9,6 +9,7 @@ import {
   validateMddStructure,
 } from "./mdd-sanitize.js";
 import { isMddSectionPipelinePlaceholderBody } from "./mdd-sanitize/section-merge.js";
+import { isContratosSubstantial } from "./mdd-sanitize/contratos-format.js";
 import { collectMddQualityIssues, isAutoRepairableDeliveryGateWarning } from "../../engine/mdd-quality-audit.util.js";
 import { domainDeliveryGateFindings } from "../../engine/cascade-accuracy.util.js";
 import { checkBrdDecisionLogClosure } from "../../engine/brd-decision-log.util.js";
@@ -164,6 +165,12 @@ export function validateMddForDelivery(
     if (isMddSectionPipelinePlaceholderBody(body)) {
       blockers.push(
         `Sección ${entry.title} es un placeholder del pipeline (ej. "Pendiente: Arquitecto"). Regenera antes de persistir.`,
+      );
+    }
+    // §4: longitud sola no basta — rechaza “(Falta: definir endpoints…)” y stubs sin JSON/rutas.
+    if (entry.num === 4 && !isContratosSubstantial(body)) {
+      blockers.push(
+        "§4 Contratos de API no tiene endpoints reales con request/response JSON (placeholder o solo stubs). Regenera contratos antes de persistir.",
       );
     }
   }

@@ -383,6 +383,32 @@ describe("sanitizeSqlBrokenCommentsAndProse", () => {
     assert.ok(!/^\s*deny\s*$/m.test(out));
   });
 
+  it("repara columna con espacio (original text TEXT → original_text TEXT)", () => {
+    const broken = `CREATE TABLE message_embeddings (
+  id UUID PRIMARY KEY,
+  original text TEXT,
+  created_at TIMESTAMPTZ
+);`;
+    const out = sanitizeSqlBrokenCommentsAndProse(broken);
+    assert.match(out, /original_text\s+TEXT/);
+    assert.doesNotMatch(out, /original text TEXT/);
+  });
+
+  it("omite stubs de partición mensuales si existe la tabla padre", () => {
+    const broken = `CREATE TABLE requests (
+  id UUID PRIMARY KEY,
+  created_at TIMESTAMPTZ
+);
+CREATE TABLE requests_2026_07 (
+  id UUID PRIMARY KEY,
+  created_at TIMESTAMPTZ
+);`;
+    const out = sanitizeSqlBrokenCommentsAndProse(broken);
+    assert.match(out, /CREATE TABLE requests\b/);
+    assert.match(out, /omitted partition stub requests_2026_07/);
+    assert.doesNotMatch(out, /CREATE TABLE requests_2026_07/);
+  });
+
   it("cierra CREATE INDEX con paréntesis partidos en varias líneas", () => {
     const broken = `CREATE TABLE audit_events (id UUID PRIMARY KEY);
   CREATE INDEX idx_audit_occurred_at ON audit_events(occurred_at

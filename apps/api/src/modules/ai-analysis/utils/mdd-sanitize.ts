@@ -17,8 +17,14 @@ export {
   unescapeLiteralNewlines,
 } from "./mdd-sanitize/draft-normalize.js";
 export {
+  CONTRATOS_HAS_ENDPOINTS,
+  CONTRATOS_IS_PLACEHOLDER,
   ensureContratosSection,
+  extractContratosSectionBody,
   formatContratosBody,
+  isContratosPlaceholder,
+  isContratosSubstantial,
+  MIN_CONTRATOS_LENGTH,
   normalizeContratosTableSummary,
   repairDisplacedJsonBracesInContratos,
   repairNestedJsonFencesInDraft,
@@ -45,9 +51,11 @@ export {
   formatSqlBlockWithNewlines,
   repairSqlDetachedCheckConstraints,
   repairSqlProseInTableBodies,
+  repairSqlSpacedColumnIdentifiers,
   sanitizeAllSqlBlocksInDraft,
   sanitizeSqlBrokenCommentsAndProse,
   stripIndexesOnCommentedSqlColumns,
+  stripMonthlyPartitionStubTables,
 } from "./mdd-sanitize/sql-repair.js";
 export type { ValidateMddStructureResult } from "./mdd-sanitize/section-merge.js";
 export {
