@@ -208,7 +208,7 @@ function checkStructure(
 
   const hasExplicitRequirements = task.requirements.length >= 2;
   const hasDocumentedInference = task.inferenceRules.some((r) => !GENERIC_INFERENCE_RULE_IDS.has(r));
-  if (!hasExplicitRequirements && task.inferenceRules.length === 0) {
+  if (!hasExplicitRequirements && !hasDocumentedInference) {
     warnings.push({
       taskId: task.id,
       message: RULES.HAS_REQUIREMENTS.message,
