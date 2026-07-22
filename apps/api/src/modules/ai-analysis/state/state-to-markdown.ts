@@ -24,6 +24,7 @@ const AGENT_LABELS: Record<string, string> = {
   diagram_injector: "Inyector de diagramas (MDD)",
   prepare_output: "Preparación de salida (MDD)",
   graph_populator: "Poblador de grafo (MDD)",
+  section5: "Ingeniero de Lógica (§5)",
   redactor: "Redactor (MDD)",
   // "auditor" ya existe para DBGA; para MDD el nodo se llama "auditor" pero el mensaje es distinto
 };
