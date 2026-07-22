@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowRight, Globe, History, Loader2, Play, Rocket, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowRight, Globe, History, Loader2, Play, Rocket, Sparkles, Trash2 } from "lucide-react";
 import { UnderlineTabs } from "@/components/ui/UnderlineTabs";
 import MddViewer from "@/components/MddViewer";
 import { DocEmptyState } from "@/components/DocEmptyState";
@@ -13,6 +13,7 @@ import {
   WorkshopPanelButton,
   WorkshopButtonIcon,
 } from "@/components/WorkshopButtons";
+import { useWorkshopStore } from "@/store/workshopStore";
 import type { WorkshopBenchmarkPanelProps } from "./workshopBenchmarkPanel.types";
 
 export function WorkshopBenchmarkPanel({
@@ -48,6 +49,16 @@ export function WorkshopBenchmarkPanel({
   onPhase0DeepResearch,
   onFetchProject,
 }: WorkshopBenchmarkPanelProps) {
+  const phase0AssistedActive = useWorkshopStore((s) => s.phase0AssistedActive);
+  const phase0AssistedTemplateLabel = useWorkshopStore((s) => s.phase0AssistedTemplateLabel);
+  const startPhase0Assisted = useWorkshopStore((s) => s.startPhase0Assisted);
+  const stopPhase0Assisted = useWorkshopStore((s) => s.stopPhase0Assisted);
+
+  const toggleAssisted = () => {
+    if (phase0AssistedActive) void stopPhase0Assisted();
+    else void startPhase0Assisted();
+  };
+
   return (
                   <>
                     <UnderlineTabs
@@ -60,10 +71,58 @@ export function WorkshopBenchmarkPanel({
                       onValueChange={onBenchmarkPhaseTabChange}
                       ariaLabel="Secciones de benchmark"
                     />
+
+                    {benchmarkPhaseTab === "fase0" ? (
+                      <WorkshopPanelActionRegion
+                        role="region"
+                        aria-label="Modo asistido Fase 0"
+                        className="mb-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <WorkshopPanelButton
+                            tone={phase0AssistedActive ? "primary" : "secondary"}
+                            onClick={toggleAssisted}
+                            disabled={loading}
+                            title={
+                              phase0AssistedActive
+                                ? "Apagar modo asistido"
+                                : "Activar modo asistido: reformatea la plantilla y pregunta una a una en el chat"
+                            }
+                          >
+                            <WorkshopButtonIcon
+                              icon={Sparkles}
+                              tone={phase0AssistedActive ? "primary" : "secondary"}
+                            />
+                            {phase0AssistedActive ? "Modo asistido ON" : "Modo asistido"}
+                          </WorkshopPanelButton>
+                          {phase0AssistedActive && phase0AssistedTemplateLabel ? (
+                            <span className="text-xs text-[var(--foreground-subtle)]">
+                              Plantilla: {phase0AssistedTemplateLabel}
+                            </span>
+                          ) : null}
+                        </div>
+                      </WorkshopPanelActionRegion>
+                    ) : null}
     
                     {benchmarkPhaseTab === "fase0" ? (
                       phase0IsEmpty ? (
-                        phase0EntryMode === "paste" ? (
+                        phase0AssistedActive ? (
+                          <div className="flex min-h-[200px] flex-1 flex-col items-center justify-center gap-3 px-4 py-8 text-center">
+                            <Sparkles
+                              className="h-8 w-8 text-[color-mix(in_oklch,var(--primary)_55%,var(--muted-foreground))]"
+                              strokeWidth={1.5}
+                              aria-hidden
+                            />
+                            <h3 className="text-base font-semibold text-[var(--foreground)]">
+                              Modo asistido activo
+                            </h3>
+                            <p className="max-w-md text-sm leading-relaxed text-[var(--muted-foreground)]">
+                              Usa el chat del Workshop: pega tu idea o documento. Detectaremos la
+                              plantilla, reformatearemos y preguntaremos una cosa a la vez; verás
+                              cada cambio en este panel.
+                            </p>
+                          </div>
+                        ) : phase0EntryMode === "paste" ? (
                           <Phase0PastePanel projectId={projectId} onComplete={onPhase0Complete} />
                         ) : (
                           <Phase0InterviewPanel projectId={projectId} onComplete={onPhase0Complete} />
@@ -76,6 +135,11 @@ export function WorkshopBenchmarkPanel({
                             <span>Generando Deep Research… Suele tardar 1–2 minutos; no cierres la página.</span>
                           </div>
                         )}
+                        {phase0AssistedActive ? (
+                          <div className="shrink-0 rounded-lg border border-[color-mix(in_oklch,var(--primary)_28%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_8%,var(--card))] px-4 py-2 mb-2 text-sm text-[color-mix(in_oklch,var(--primary)_65%,var(--foreground))]">
+                            Modo asistido: responde en el chat. El documento se actualiza en cada iteración.
+                          </div>
+                        ) : null}
                         <WorkshopPanelActionRegion role="region" aria-label="Acciones de Fase 0">
                           <div className="flex flex-wrap items-center gap-2">
                             <WorkshopPanelButton

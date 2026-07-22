@@ -225,6 +225,14 @@ export interface WorkshopState {
   ) => Promise<void>;
   /** `/formatear` — normaliza markdown del documento del tab (sin LLM). */
   formatDocumentForActiveTab: (activeTab?: string) => Promise<{ ok: boolean; message: string }>;
+
+  /** Modo asistido Paso 0 — pregunta a pregunta en el chat del Workshop. */
+  phase0AssistedActive: boolean;
+  phase0AssistedThreadId: string | null;
+  phase0AssistedAwaitingSeed: boolean;
+  phase0AssistedTemplateLabel: string | null;
+  startPhase0Assisted: (idea?: string) => Promise<void>;
+  stopPhase0Assisted: () => Promise<void>;
   updateMddContent: (content: string) => void;
   persistMddContent: (
     content: string,

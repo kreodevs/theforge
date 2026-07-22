@@ -108,13 +108,16 @@ export interface Phase0InterviewState {
   ultimaPregunta?: string;
   /** Historial de preguntas y respuestas */
   historial: Phase0QA[];
-  /** Entrevista inicial vs auditoría manual posterior */
-  mode: "interview" | "audit";
+  /** Entrevista inicial vs auditoría manual vs modo asistido (chat Workshop) */
+  mode: "interview" | "audit" | "assisted";
   /**
    * structured = borrador entrevista / markdown Fase 0 canónico.
    * freeform_dbga = dbgaContent libre (lo que muestra el Workshop en pestaña Fase 0).
+   * deep_research = Especificador de Base en phase0SummaryContent.
    */
-  sourceFormat?: "structured" | "freeform_dbga";
+  sourceFormat?: "structured" | "freeform_dbga" | "deep_research";
+  /** Markdown vivo del documento asistido (plantillas B/C o A serializado). */
+  workingMarkdown?: string;
 }
 
 export interface Phase0QA {
@@ -150,6 +153,44 @@ export type Phase0StreamEvent =
       question: string;
       n: number;
       total: number;
+    }
+  | {
+      type: "assisted_started";
+      threadId: string;
+      templateKind: "structured" | "freeform_dbga" | "deep_research";
+      templateLabel: string;
+      /** Campo persistido que se está editando */
+      targetField: "dbgaContent" | "phase0SummaryContent";
+      markdown: string;
+      reformatted: boolean;
+      question: string;
+      n: number;
+      total: number;
+      gaps: Phase0Gap[];
+      message: string;
+      /** true si hace falta que el usuario envíe idea/documento en el chat */
+      awaitingSeed?: boolean;
+    }
+  | {
+      type: "assisted_turn";
+      threadId: string;
+      templateKind: "structured" | "freeform_dbga" | "deep_research";
+      targetField: "dbgaContent" | "phase0SummaryContent";
+      markdown: string;
+      impacto: string;
+      cambios: string[];
+      question?: string;
+      n: number;
+      total: number;
+      gaps: Phase0Gap[];
+      done: boolean;
+      message: string;
+    }
+  | {
+      type: "assisted_stopped";
+      message: string;
+      markdown?: string;
+      targetField?: "dbgaContent" | "phase0SummaryContent";
     }
   | { type: "error"; message: string; code?: string };
 

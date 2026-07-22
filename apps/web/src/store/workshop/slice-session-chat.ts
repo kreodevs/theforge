@@ -36,6 +36,11 @@ import {
 } from "../../utils/orchestratorDocGuard";
 import { isFormatDocumentChatCommand } from "../../utils/documentFormatCommand";
 import { isWorkshopConnectionError } from "../../utils/workshopSyncStatus";
+import {
+  appendWorkshopChatPair,
+  applyAssistedMarkdownToState,
+  postPhase0AssistedAnswer,
+} from "./helpers/phase0-assisted";
 import { pickDefaultStageId } from "./helpers/pick-default-stage";
 import { patchAgentProgressFromMddEvent } from "./helpers/agent-progress-patch";
 import { persistField } from "./helpers/persist-field";
@@ -478,6 +483,66 @@ export const createSessionChatSlice: StateCreator<WorkshopState, [], [], Session
     const msg = message.trim();
     const regenerateSection = options?.regenerateSection;
     const regenerateSectionGaps = options?.regenerateSectionGaps?.filter((g) => g?.trim()) ?? [];
+
+    const assisted =
+      get().phase0AssistedActive &&
+      (tab === "benchmark" || tab === "phase0") &&
+      !images.length &&
+      !!msg;
+    if (assisted) {
+      set({ loading: true, error: null, synced: false });
+      try {
+        const event = await postPhase0AssistedAnswer({
+          projectId: requestProjectId,
+          answer: msg,
+          threadId: get().phase0AssistedAwaitingSeed
+            ? undefined
+            : get().phase0AssistedThreadId,
+        });
+        if (event.type === "error") {
+          set({
+            loading: false,
+            error: event.message ?? "Error en modo asistido",
+          });
+          return;
+        }
+        applyAssistedMarkdownToState(set as (p: Record<string, unknown>) => void, event);
+        const assistantContent =
+          typeof event.message === "string" && event.message.trim()
+            ? event.message.trim()
+            : "Respuesta aplicada.";
+        const nextSession = await appendWorkshopChatPair({
+          session: get().session,
+          stageId: get().activeStageId,
+          tab: "benchmark",
+          userContent: msg,
+          assistantContent,
+        });
+        const finished =
+          event.type === "assisted_turn" && event.done === true
+            ? true
+            : event.type === "assisted_started" && !event.question?.trim() && !event.awaitingSeed;
+        set({
+          session: nextSession ?? get().session,
+          phase0AssistedActive: !finished,
+          phase0AssistedThreadId: finished
+            ? null
+            : event.threadId?.trim() || get().phase0AssistedThreadId,
+          phase0AssistedAwaitingSeed: !!event.awaitingSeed,
+          phase0AssistedTemplateLabel:
+            event.templateLabel?.trim() || get().phase0AssistedTemplateLabel,
+          loading: false,
+          error: null,
+        });
+        await get().fetchProject(requestProjectId).catch(() => {});
+      } catch (e) {
+        set({
+          loading: false,
+          error: e instanceof Error ? e.message : "Error en modo asistido",
+        });
+      }
+      return;
+    }
 
     if (isFormatDocumentChatCommand(msg) && !images.length) {
       set({ loading: true, error: null, synced: false });

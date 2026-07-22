@@ -12,7 +12,7 @@ Subcomponentes extraídos de `WorkshopView.tsx` (Fase 5b del [GOD-REFACTOR](../.
 | **WorkshopModals.tsx** | Agrupa todos los overlays al final del root (`AlertDialog`, patrones MDD, regen, AEM, etapa, flujo, DBGA, ayuda, modelos no disponibles). Tipos en `workshopModals.types.ts`. |
 | **WorkshopStandardDocPanels.tsx** | Ocho entregables con `StandardDocPanel` (arquitectura, casos de uso, historias, blueprint, tasks, API, flujos, infra). Tipos en `workshopStandardDocPanels.types.ts`. |
 | **WorkshopLegacyPanels.tsx** | Banner AS-IS, MDD Inicial, Integración y flujo de modificación legacy. Tipos en `workshopLegacyPanels.types.ts`. |
-| **WorkshopBenchmarkPanel.tsx** | Pestaña Benchmark (Fase 0 + Deep Research). Tipos en `workshopBenchmarkPanel.types.ts`. |
+| **WorkshopBenchmarkPanel.tsx** | Pestaña Benchmark (Fase 0 + Deep Research). Incluye toggle **Modo asistido** (chat Workshop, una pregunta por turno, cambios visibles en el panel). Tipos en `workshopBenchmarkPanel.types.ts`. |
 | **WorkshopMddPanel.tsx** | Panel MDD: gates legacy, acciones (generar, formato, patrones, cascade), auditoría manual y editor. Tipos en `workshopMddPanel.types.ts`. |
 | **WorkshopSpecBrdAemPanels.tsx** | Spec, AEM, UI Screens y BRD de etapa. Tipos en `workshopSpecBrdAemPanels.types.ts`. |
 | **WorkshopAgentPanels.tsx** | Gobernanza de agentes, gaps pendientes y log de sesión. Tipos en `workshopAgentPanels.types.ts`. |

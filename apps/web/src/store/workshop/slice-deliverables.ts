@@ -94,6 +94,8 @@ type DeliverablesSliceActions = Pick<
   | "setPhase0SummaryContent"
   | "persistPhase0SummaryContent"
   | "phase0DeepResearch"
+  | "startPhase0Assisted"
+  | "stopPhase0Assisted"
   | "fetchEstimation"
   | "clearPhase0SummaryContent"
   | "clearMddDependentDeliverables"
@@ -986,6 +988,111 @@ export const createDeliverablesSlice: StateCreator<
 
   persistPhase0SummaryContent: async (content) => {
     await persistField("phase0SummaryContent", content, get, set);
+  },
+
+  startPhase0Assisted: async (idea) => {
+    const projectId = get().projectId?.trim() ?? "";
+    if (!projectId) {
+      set({ error: "No hay proyecto activo" });
+      return;
+    }
+    set({ loading: true, error: null });
+    try {
+      const {
+        postPhase0AssistedStart,
+        appendWorkshopChatPair,
+        applyAssistedMarkdownToState,
+      } = await import("./helpers/phase0-assisted");
+      const event = await postPhase0AssistedStart(projectId, idea);
+      if (event.type === "error") {
+        set({
+          loading: false,
+          error: event.message ?? "No se pudo activar el modo asistido",
+        });
+        return;
+      }
+      applyAssistedMarkdownToState(set as (p: Record<string, unknown>) => void, event);
+      const assistantContent =
+        typeof event.message === "string" && event.message.trim()
+          ? event.message.trim()
+          : "Modo asistido activado.";
+      const nextSession = await appendWorkshopChatPair({
+        session: get().session,
+        stageId: get().activeStageId,
+        tab: "benchmark",
+        userContent: idea?.trim() || undefined,
+        assistantContent,
+      });
+      const done =
+        event.type === "assisted_started" &&
+        !event.awaitingSeed &&
+        !event.question?.trim();
+      set({
+        session: nextSession ?? get().session,
+        phase0AssistedActive: !done,
+        phase0AssistedThreadId: event.threadId?.trim() || null,
+        phase0AssistedAwaitingSeed: !!event.awaitingSeed,
+        phase0AssistedTemplateLabel: event.templateLabel?.trim() || null,
+        loading: false,
+        error: null,
+        workshopActiveDocPanel: "benchmark",
+      });
+      if (event.markdown?.trim()) {
+        await get().fetchProject(projectId).catch(() => {});
+      }
+    } catch (e) {
+      set({
+        loading: false,
+        error: e instanceof Error ? e.message : "No se pudo activar el modo asistido",
+      });
+    }
+  },
+
+  stopPhase0Assisted: async () => {
+    const projectId = get().projectId?.trim() ?? "";
+    if (!projectId) {
+      set({
+        phase0AssistedActive: false,
+        phase0AssistedThreadId: null,
+        phase0AssistedAwaitingSeed: false,
+        phase0AssistedTemplateLabel: null,
+      });
+      return;
+    }
+    set({ loading: true, error: null });
+    try {
+      const { postPhase0AssistedStop, appendWorkshopChatPair, applyAssistedMarkdownToState } =
+        await import("./helpers/phase0-assisted");
+      const event = await postPhase0AssistedStop(projectId);
+      applyAssistedMarkdownToState(set as (p: Record<string, unknown>) => void, event);
+      const nextSession = await appendWorkshopChatPair({
+        session: get().session,
+        stageId: get().activeStageId,
+        tab: "benchmark",
+        assistantContent:
+          typeof event.message === "string" && event.message.trim()
+            ? event.message.trim()
+            : "Modo asistido desactivado.",
+      });
+      set({
+        session: nextSession ?? get().session,
+        phase0AssistedActive: false,
+        phase0AssistedThreadId: null,
+        phase0AssistedAwaitingSeed: false,
+        phase0AssistedTemplateLabel: null,
+        loading: false,
+        error: null,
+      });
+    } catch (e) {
+      set({
+        phase0AssistedActive: false,
+        phase0AssistedThreadId: null,
+        phase0AssistedAwaitingSeed: false,
+        phase0AssistedTemplateLabel: null,
+        loading: false,
+        error: e instanceof Error ? e.message : "No se pudo desactivar el modo asistido",
+      });
+    }
   },
 
   phase0DeepResearch: async (projectId, opts) => {

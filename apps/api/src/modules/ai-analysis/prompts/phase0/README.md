@@ -3,7 +3,8 @@
 | Archivo | Uso |
 |---------|-----|
 | `arranque-prompt.md` | Borrador inicial + gaps (JSON). `flujos[].pasos` = texto plano, sin `##`. |
-| `update-prompt.md` | Actualización tras respuesta del usuario (JSON). |
+| `update-prompt.md` | Actualización tras respuesta del usuario (JSON; `impacto`/`cambios` en modo asistido). |
+| `assisted-markdown-update-prompt.md` | Modo asistido: actualiza markdown DBGA/Deep Research + impacto. |
 | `question-prompt.md` | Siguiente pregunta del plan. |
 | `extract-dbga-prompt.md` | Extrae JSON desde DBGA markdown libre. |
 | `merge-phase0-prompt.md` | Fusión de borradores multi-proyecto. |

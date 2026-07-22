@@ -518,6 +518,9 @@ export default function ChatContainer({
   const loadingReason = useWorkshopStore((s) => s.loadingReason);
   const agentProgress = useWorkshopStore((s) => s.agentProgress);
   const pendingPlanApproval = useWorkshopStore((s) => s.pendingPlanApproval);
+  const phase0AssistedActive = useWorkshopStore((s) => s.phase0AssistedActive);
+  const phase0AssistedTemplateLabel = useWorkshopStore((s) => s.phase0AssistedTemplateLabel);
+  const stopPhase0Assisted = useWorkshopStore((s) => s.stopPhase0Assisted);
   const isBenchmarkStreaming = activeTab === "benchmark" && loading && loadingReason === "benchmark";
   const isMddStreaming =
     loading && (loadingReason === "mdd" || loadingReason === "mdd-section");
@@ -1090,6 +1093,27 @@ export default function ChatContainer({
               </button>
             </div>
           )}
+          {phase0AssistedActive && activeTab === "benchmark" && (
+            <div
+              className="shrink-0 mx-3 mt-2 mb-1 px-3 py-2 rounded-lg border border-[color-mix(in_oklch,var(--primary)_35%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_10%,var(--card))] text-[color-mix(in_oklch,var(--primary)_55%,var(--foreground))] text-xs leading-snug flex gap-2 items-start"
+              role="status"
+            >
+              <span className="flex-1">
+                <strong className="text-[color-mix(in_oklch,var(--primary)_72%,var(--foreground))]">
+                  Modo asistido
+                </strong>
+                {phase0AssistedTemplateLabel ? ` · ${phase0AssistedTemplateLabel}` : ""}
+                : una pregunta por turno; el panel de Paso 0 muestra cada cambio.
+              </span>
+              <button
+                type="button"
+                onClick={() => void stopPhase0Assisted()}
+                className="shrink-0 px-2 py-0.5 rounded bg-[color-mix(in_oklch,var(--muted)_82%,var(--card))] hover:bg-[var(--muted)] text-[var(--foreground)] text-[11px]"
+              >
+                Apagar
+              </button>
+            </div>
+          )}
           <AlertDialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
             <AlertDialogContent>
               <AlertDialogHeader>
@@ -1181,7 +1205,9 @@ export default function ChatContainer({
                   <MessageSquare className="h-5 w-5" strokeWidth={2} aria-hidden />
                 </div>
                 <p className="text-sm leading-relaxed text-[var(--foreground-subtle)]">
-                  {activeTab === "benchmark"
+                  {phase0AssistedActive && activeTab === "benchmark"
+                    ? "Modo asistido: responde la pregunta en la barra inferior. Verás el impacto y los cambios en el panel de Paso 0."
+                    : activeTab === "benchmark"
                     ? "Escribe tu idea en la barra inferior y envía. Los agentes generarán el Benchmark & Gap Analysis."
                     : activeTab === "mdd"
                       ? "Usa la barra inferior: pide generar el MDD, revisiones o preguntas. El orquestador asigna el agente adecuado."

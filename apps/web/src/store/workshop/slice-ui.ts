@@ -16,7 +16,14 @@ type UiSliceActions = Pick<
 >;
 
 export const createUiSlice: StateCreator<WorkshopState, [], [], UiSliceActions> = (set) => ({
-  setProjectId: (id) => set({ projectId: id }),
+  setProjectId: (id) =>
+    set({
+      projectId: id,
+      phase0AssistedActive: false,
+      phase0AssistedThreadId: null,
+      phase0AssistedAwaitingSeed: false,
+      phase0AssistedTemplateLabel: null,
+    }),
   setLoading: (v) => set({ loading: v }),
   setSynced: (v) => set({ synced: v }),
   setError: (e) => set({ error: e }),
