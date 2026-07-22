@@ -500,10 +500,54 @@ function replaceSection5Body(draft: string, newBody: string): string {
   return replaceH2SectionBody(draft, /##\s*5\.\s*Lógica\s+y\s*Edge\s+Cases/i, newBody);
 }
 
+/** Reemplaza solo el cuerpo de ## 3. Modelo de datos. */
+export function replaceMddSection3Body(draft: string, newBody: string): string {
+  return replaceSection3Body(draft, newBody);
+}
+
+/** Reemplaza solo el cuerpo de ## 4. Contratos de API. */
+export function replaceMddSection4Body(draft: string, newBody: string): string {
+  return replaceSection4Body(draft, newBody);
+}
+
 /** Versión exportada de `replaceSection5Body` para que el nodo
  *  `mdd-section5` pueda reescribir §5 sin tocar el resto del MDD. */
 export function replaceMddSection5Body(draft: string, newBody: string): string {
   return replaceSection5Body(draft, newBody);
+}
+
+const MIN_SURGICAL_SECTION_BODY_LEN = 80;
+
+/**
+ * Tras Software Architect (que produce §2–§5), aplica SOLO la sección pedida (2|3|4)
+ * sobre el draft baseline. Evita que `/arquitectura` / `/modelo-datos` / `/contratos-api`
+ * reescriban el bloque §2–§5 entero y borren contenido bueno en las otras.
+ * Si el cuerpo extraído es vacío, placeholder o demasiado corto, conserva el baseline.
+ */
+export function mergeSingleArchitectSectionIntoDraft(
+  baselineDraft: string,
+  architectDraft: string,
+  section: 2 | 3 | 4,
+): string {
+  const baseline = (baselineDraft ?? "").trim();
+  const fromArchitect = (architectDraft ?? "").trim();
+  if (!baseline) return fromArchitect;
+  if (!fromArchitect) return baseline;
+
+  const body =
+    section === 2
+      ? extractArquitecturaSectionBody(fromArchitect)
+      : section === 3
+        ? extractSection3Body(fromArchitect)
+        : extractSection4Body(fromArchitect);
+
+  if (!body || isMddSectionPipelinePlaceholderBody(body) || body.trim().length < MIN_SURGICAL_SECTION_BODY_LEN) {
+    return baseline;
+  }
+
+  if (section === 2) return replaceArquitecturaSectionBody(baseline, body);
+  if (section === 3) return replaceMddSection3Body(baseline, body);
+  return replaceMddSection4Body(baseline, body);
 }
 
 /** Secciones 1–7 que no serán reescritas por los nodos del plan sections (sin format/diagram/auditor). */

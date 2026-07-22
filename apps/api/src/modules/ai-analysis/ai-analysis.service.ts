@@ -24,10 +24,9 @@ import {
 } from "./utils/mdd-stream-progress.util.js";
 import {
   extractContextSectionBody,
-  extractSections2To5Content,
   logSection3Debug,
+  mergeSingleArchitectSectionIntoDraft,
   replaceSection1BodyFromAnyHeading,
-  replaceSections2To5InDraft,
   restoreContextSectionFromBaselineIfMissing,
   restoreMddSectionsFromBaselineStrict,
 } from "./utils/mdd-sanitize.js";
@@ -1727,11 +1726,17 @@ export class AiAnalysisService {
           tracer,
         );
         const architectDraft = (result.mddDraft ?? "").trim();
-        const content25 = await tracer.step("extract-§2-5", async () => extractSections2To5Content(architectDraft), { draftLen: architectDraft.length });
-        const finalDraft =
-          content25 != null
-            ? replaceSections2To5InDraft(mddContent, content25)
-            : architectDraft || mddContent;
+        // Architect produce §2–§5; solo aplicamos la sección pedida al baseline.
+        const finalDraft = mergeSingleArchitectSectionIntoDraft(
+          mddContent,
+          architectDraft || mddContent,
+          section as 2 | 3 | 4,
+        );
+        if (finalDraft === mddContent.trim()) {
+          this.logger.warn(
+            `[MDD regenerate-section] §${section} sin cambios quirúrgicos (cuerpo ausente/corto/placeholder) projectId=${pid}`,
+          );
+        }
         const markdown = await tracer.step("prepare-output", async () => this.runPrepareMddForOutput(
           { mddStructured: result.mddStructured, mddDraft: finalDraft },
           regenPrepareOpts,
