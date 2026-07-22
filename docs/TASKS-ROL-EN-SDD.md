@@ -116,7 +116,7 @@ Pipeline: `TasksGenerationPipelineService` → `ProjectsService.generateTasks`:
 6. **Reparación** — hasta 2 ciclos (3 si documento truncado) con feedback combinado (Auditor LLM + gates).
 7. **W4 cascada** — reintento Tasks con `acknowledgeGaps` solo si DocAccuracy upstream &lt; 70.
 
-Configuración: **Ajustes → Editar instancia → Modelo auditor / planner** (vacío = modelo de chat).
+Configuración: **Ajustes → Editar instancia → Modelo auditor / planner** (vacío = modelo de chat). Combos OpenRouter y tuning de tiempo: [TASKS-OPENROUTER-MODELS.md](./TASKS-OPENROUTER-MODELS.md).
 
 Persistencia: `cleanDocumentContent` + auto-parse a `tasksJson` (Tasks v2).
 

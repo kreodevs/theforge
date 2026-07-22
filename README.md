@@ -225,6 +225,58 @@ Sí. Quita una versión solo cuando ninguna fila la use o tras migrar con `rotat
 | `OPENROUTER_EMBEDDING_MODEL` | `openai/text-embedding-3-small` | Modelo de embeddings |
 | `TAVILY_API_KEY` | — | Búsqueda web Scout (opcional) |
 
+En producción con **BYOK**, los modelos activos se configuran en **Ajustes → Proveedores → instancia activa** (OpenRouter). Las variables `OPENROUTER_*` anteriores son fallback de plataforma / desarrollo.
+
+#### Generación de Tasks — qué modelo usa cada fase
+
+| Fase | Campo en Ajustes | Rol |
+|------|------------------|-----|
+| Redactor (`tasks.md`) | **Modelo de chat** | Markdown YAML en lotes (~24 ítems del plan) |
+| Planner (plan JSON) | **Modelo auditor / planner** (vacío = chat) | JSON estricto, cobertura API/pantallas |
+| Auditor LLM (umbral 92) | **Modelo auditor / planner** | Puntúa calidad |
+| Reparación parche | **Modelo auditor / planner** | 1 llamada si solo falla el auditor |
+| Reparación regen | **Modelo de chat** | Regenera todos los lotes (más lento) |
+
+**Regla:** en proyectos HIGH, separa **chat** (redactor) y **auditor/planner**. Si auditor/planner está vacío, el mismo modelo genera y se audita a sí mismo.
+
+#### Combos OpenRouter recomendados (Tasks)
+
+Verifica slugs en [openrouter.ai/models](https://openrouter.ai/models). Guía ampliada: [`docs/TASKS-OPENROUTER-MODELS.md`](./docs/TASKS-OPENROUTER-MODELS.md).
+
+**Económico** (~25–45 min en ~90 ítems)
+
+| Campo | Modelo |
+|-------|--------|
+| Chat (redactor) | `google/gemini-2.5-flash-preview` o `openai/gpt-4o-mini` |
+| Auditor / planner | `openai/gpt-4o-mini` o `anthropic/claude-3.5-haiku` |
+| Respaldo | `google/gemma-3-27b-it:nitro` |
+
+**Equilibrado** (~15–30 min; recomendado proyectos HIGH / ForgeOps)
+
+| Campo | Modelo |
+|-------|--------|
+| Chat (redactor) | `anthropic/claude-sonnet-4` o `openai/gpt-4o` |
+| Auditor / planner | `openai/gpt-4o-mini` o `google/gemini-2.5-flash-preview` |
+| Respaldo | `google/gemma-3-27b-it:nitro` |
+
+**Máxima calidad** (~20–40 min; menos ciclos de repair)
+
+| Campo | Modelo |
+|-------|--------|
+| Chat (redactor) | `anthropic/claude-sonnet-4` o `google/gemini-2.5-pro-preview` |
+| Auditor / planner | `openai/gpt-4o` o `anthropic/claude-sonnet-4` |
+| Respaldo | `openai/gpt-4o-mini` |
+
+Tuning opcional del pipeline (API / Dokploy):
+
+| Variable | Default | Efecto |
+|----------|---------|--------|
+| `TASKS_REDACTOR_BATCH_SIZE` | `24` | Ítems por lote → menos llamadas LLM |
+| `TASKS_REDACTOR_CONCURRENCY` | `2` | Lotes en paralelo (máx. 4) |
+| `TASKS_PIPELINE_MAX_REPAIRS` | `2` | Reparaciones si el doc no está truncado |
+| `TASKS_PIPELINE_MAX_REPAIRS_TRUNCATED` | `3` | Reparaciones si hubo truncado |
+| `TASKS_REPAIR_STAGNANT_DELTA` | `3` | Corta repairs si el score LLM no mejora |
+
 </details>
 
 <details>
@@ -255,6 +307,7 @@ Ver referencia completa en [`.env.example`](./.env.example).
 - [CONTRIBUTING.md](./CONTRIBUTING.md) — Guía de contribución, PRs y tests
 - [docs/JSDOC.md](./docs/JSDOC.md) — Convenciones de documentación
 - [Índice de arquitectura](./docs/notebooklm/THEFORGE-INDEX.md)
+- [Tasks — modelos OpenRouter y tiempo de generación](./docs/TASKS-OPENROUTER-MODELS.md)
 - [Blueprint](./blueprint.md) · [MDD](./mdd.md)
 - [Multi-proveedor BYOK](./multi_provider_spec.md) · [Rotación de claves](#cifrado-de-tokens-byok-claves-maestras)
 

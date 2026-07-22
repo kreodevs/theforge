@@ -3,8 +3,6 @@ import {
   tasksGenerationPlanSchema,
   tasksLlmAuditorOutputSchema,
   TASKS_LLM_AUDITOR_PASS_THRESHOLD,
-  TASKS_PIPELINE_MAX_REPAIRS,
-  TASKS_PIPELINE_MAX_REPAIRS_TRUNCATED,
   type TasksGenerationPlan,
   type TasksLlmAuditorOutput,
   type TasksPipelineProgress,
@@ -42,6 +40,13 @@ import {
   summarizeTasksRepairAttempt,
   type TasksRedactorRetryFeedback,
 } from "./tasks-generation-repair-feedback.util.js";
+import {
+  mapWithConcurrency,
+  resolveTasksPipelineMaxRepairs,
+  resolveTasksRedactorBatchSize,
+  resolveTasksRedactorConcurrency,
+  resolveTasksRepairStagnantDelta,
+} from "./tasks-pipeline-tuning.util.js";
 
 export type TasksPipelineInput = {
   mddMarkdown: string;
@@ -77,9 +82,6 @@ export type TasksPipelineResult = {
   plan: TasksGenerationPlan | null;
   snapshot: TasksPipelineQualitySnapshot;
 };
-
-/** Ítems por lote de redacción (~500 tok/tarea YAML → 18 caben en 8K; lotes evitan truncado). */
-const TASKS_REDACTOR_BATCH_SIZE = 18;
 
 @Injectable()
 export class TasksGenerationPipelineService {
@@ -154,18 +156,19 @@ export class TasksGenerationPipelineService {
     const taskDeficitRatio = plan.items.length > 0 && quality.taskCount > 0
       ? quality.taskCount / plan.items.length
       : 1;
-    // Adaptive repairs: more when truncated OR when task count far below plan
-    let maxRepairs = isTruncated
-      ? TASKS_PIPELINE_MAX_REPAIRS_TRUNCATED
-      : TASKS_PIPELINE_MAX_REPAIRS;
+    let maxRepairs = resolveTasksPipelineMaxRepairs({
+      truncated: isTruncated,
+      taskDeficitRatio,
+    });
     if (taskDeficitRatio < 0.5 && quality.taskCount > 0) {
-      maxRepairs = Math.max(maxRepairs, 5);
       this.logger.warn(
         `[Tasks pipeline] task deficit: ${quality.taskCount}/${plan.items.length} (${Math.round(taskDeficitRatio * 100)}%) — allowing ${maxRepairs} repair attempts`,
       );
     }
 
     const repairHistory: string[] = [];
+    let lastLlmScore = llmAuditor.score;
+    const stagnantDelta = resolveTasksRepairStagnantDelta();
 
     while (
       repairAttempts < maxRepairs &&
@@ -200,9 +203,23 @@ export class TasksGenerationPipelineService {
       tasksMarkdown = await this.runRepair(tasksMarkdown, plan, retryFeedback, input, {
         documentTruncated,
         patchFeedbackLines: repairFeedbackLines,
+        deterministicOk: quality.ok,
+        llmOnlyFailure:
+          quality.ok &&
+          (!llmAuditor.passed || llmAuditor.score < TASKS_LLM_AUDITOR_PASS_THRESHOLD),
       });
       llmAuditor = await this.runLlmAuditor(tasksMarkdown, input);
       quality = this.evaluateQuality(tasksMarkdown, input);
+      if (
+        repairAttempts >= 2 &&
+        llmAuditor.score <= lastLlmScore + stagnantDelta
+      ) {
+        this.logger.warn(
+          `[Tasks pipeline] LLM auditor stagnant (${lastLlmScore} → ${llmAuditor.score}) — stopping repairs early`,
+        );
+        break;
+      }
+      lastLlmScore = llmAuditor.score;
       this.reportProgress(input, {
         phase: "auditor",
         repairAttempt: repairAttempts,
@@ -296,7 +313,8 @@ export class TasksGenerationPipelineService {
     gapsFeedback?: string | null,
     tasksAuditorFeedback?: string | null,
   ): Promise<string> {
-    const totalBatches = Math.max(1, Math.ceil(plan.items.length / TASKS_REDACTOR_BATCH_SIZE));
+    const batchSize = resolveTasksRedactorBatchSize();
+    const totalBatches = Math.max(1, Math.ceil(plan.items.length / batchSize));
     const journeyPartitions =
       (input.inventory?.processes?.length ?? 0) > 0
         ? partitionTasksPlanByJourney(plan, input.inventory)
@@ -359,11 +377,12 @@ export class TasksGenerationPipelineService {
     tasksAuditorFeedback?: string | null,
     batchInfo?: { batch: number; totalBatches: number },
   ): Promise<string> {
+    const batchSize = resolveTasksRedactorBatchSize();
     const planJson = JSON.stringify(plan, null, 2);
     const totalBatches =
       batchInfo?.totalBatches ??
-      Math.max(1, Math.ceil(plan.items.length / TASKS_REDACTOR_BATCH_SIZE));
-    if (plan.items.length <= TASKS_REDACTOR_BATCH_SIZE) {
+      Math.max(1, Math.ceil(plan.items.length / batchSize));
+    if (plan.items.length <= batchSize) {
       this.reportProgress(input, {
         phase: "redactor",
         batch: batchInfo?.batch ?? 1,
@@ -389,26 +408,32 @@ export class TasksGenerationPipelineService {
     }
 
     this.logger.log(
-      `[Tasks pipeline] redactor en lotes: ${plan.items.length} ítems, batch=${TASKS_REDACTOR_BATCH_SIZE}`,
+      `[Tasks pipeline] redactor en lotes: ${plan.items.length} ítems, batch=${batchSize}, concurrency=${resolveTasksRedactorConcurrency()}`,
     );
-    const parts: string[] = [];
-    for (let offset = 0; offset < plan.items.length; offset += TASKS_REDACTOR_BATCH_SIZE) {
-      const sliceItems = plan.items.slice(offset, offset + TASKS_REDACTOR_BATCH_SIZE);
+
+    const batchTotal = Math.ceil(plan.items.length / batchSize);
+    const batchOffsets = Array.from(
+      { length: batchTotal },
+      (_, i) => i * batchSize,
+    );
+    const concurrency = resolveTasksRedactorConcurrency();
+
+    const parts = await mapWithConcurrency(batchOffsets, concurrency, async (offset, batchIndex) => {
+      const sliceItems = plan.items.slice(offset, offset + batchSize);
       const slicePlan: TasksGenerationPlan = { sections: plan.sections, items: sliceItems };
-      const batchIndex = Math.floor(offset / TASKS_REDACTOR_BATCH_SIZE) + 1;
-      const batchTotal = Math.ceil(plan.items.length / TASKS_REDACTOR_BATCH_SIZE);
+      const batchNumber = batchIndex + 1;
       this.reportProgress(input, {
         phase: "redactor",
-        batch: batchIndex,
+        batch: batchNumber,
         totalBatches: batchTotal,
-        message: `Redactando lote ${batchIndex}/${batchTotal} (${sliceItems[0]!.id}…)…`,
+        message: `Redactando lote ${batchNumber}/${batchTotal} (${sliceItems[0]!.id}…)…`,
       });
       const batchFeedback =
         offset === 0
           ? gapsFeedback
           : [
               gapsFeedback?.trim(),
-              `Lote ${batchIndex}/${batchTotal} del plan Tasks. Continúa desde ${sliceItems[0]!.id}. ` +
+              `Lote ${batchNumber}/${batchTotal} del plan Tasks. Continúa desde ${sliceItems[0]!.id}. ` +
                 "No repitas el título # Tasks ni secciones H2 ya generadas en lotes anteriores.",
             ]
               .filter(Boolean)
@@ -421,19 +446,23 @@ export class TasksGenerationPipelineService {
         tasksAuditorFeedback: offset === 0 ? tasksAuditorFeedback : undefined,
       });
       const trimmed = chunk.trim();
-      if (offset === 0 && isFirstChunk) {
-        parts.push(trimmed);
-      } else {
-        parts.push(trimmed.replace(/^#\s*Tasks\s*\n+/im, "").trim());
-      }
-      const accumulated = parts.filter(Boolean).join("\n\n");
+      const normalized =
+        offset === 0 && isFirstChunk
+          ? trimmed
+          : trimmed.replace(/^#\s*Tasks\s*\n+/im, "").trim();
+      return normalized;
+    });
+
+    let accumulated = "";
+    for (let i = 0; i < parts.length; i += 1) {
+      accumulated = [...parts.slice(0, i + 1)].filter(Boolean).join("\n\n");
       this.reportProgress(input, {
         phase: "redactor",
-        batch: batchIndex,
+        batch: i + 1,
         totalBatches: batchTotal,
         tasksLength: accumulated.length,
         markdown: accumulated,
-        message: `Lote ${batchIndex}/${batchTotal} redactado`,
+        message: `Lote ${i + 1}/${batchTotal} redactado`,
       });
     }
     return parts.filter(Boolean).join("\n\n");
@@ -775,8 +804,38 @@ export class TasksGenerationPipelineService {
     plan: TasksGenerationPlan,
     retryFeedback: TasksRedactorRetryFeedback,
     input: TasksPipelineInput,
-    options: { documentTruncated: boolean; patchFeedbackLines: string },
+    options: {
+      documentTruncated: boolean;
+      patchFeedbackLines: string;
+      deterministicOk: boolean;
+      llmOnlyFailure: boolean;
+    },
   ): Promise<string> {
+    const usePatchFirst =
+      !options.documentTruncated &&
+      options.deterministicOk &&
+      options.llmOnlyFailure;
+
+    if (usePatchFirst) {
+      this.logger.log(
+        "[Tasks pipeline] repair → patch agent (deterministic OK, solo fallo auditor LLM)",
+      );
+      const patched = await this.runPatchRepair(
+        previousMarkdown,
+        plan,
+        options.patchFeedbackLines,
+        input,
+      );
+      const looksLikeTasksDoc =
+        patched.trim().startsWith("#") || patched.includes("## Backend");
+      if (looksLikeTasksDoc) {
+        return patched;
+      }
+      this.logger.warn(
+        "[Tasks pipeline] patch repair unusable — falling back to redactor regenerate",
+      );
+    }
+
     this.logger.log(
       `[Tasks pipeline] repair → redactor regenerate (truncated=${options.documentTruncated})`,
     );
