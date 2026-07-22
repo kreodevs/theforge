@@ -108,6 +108,53 @@ export function analyzeGaps(borrador: Phase0Document): Phase0Gap[] {
     });
   }
 
+  // 8. ENTIDADES DE NEGOCIO NO-AUTH — crítico si solo hay entidades auth/genéricas
+  // Evita domain-auth-only-skew en §3 del MDD.
+  const entidades = borrador.entidades ?? [];
+  const entidadesNegocio = entidades.filter((e) => {
+    const nombre = (e?.nombre ?? "").toLowerCase().trim();
+    return !/^(user|usuario|users|usuarios|role|rol|roles|session|sesion|sesiones|audit|auditoria|auditlog|permission|permiso)$/i.test(
+      nombre,
+    );
+  });
+  if (entidades.length > 0 && entidadesNegocio.length < 2) {
+    gaps.push({
+      seccion: "entidades",
+      criticidad: "critico",
+      descripcion: `Solo se identificaron entidades auth/genéricas (${entidades
+        .map((e) => e.nombre)
+        .join(", ")})`,
+      razon:
+        "El MDD §3 (Modelo de Datos) saldrá vacío o solo-auth. La IA downstream lo penaliza como domain-auth-only-skew.",
+      sugerenciaPregunta:
+        "¿Qué objetos o conceptos de negocio maneja el sistema, además de usuarios y roles? (ej: proyectos, pedidos, candidatos, facturas)",
+    });
+  }
+
+  // 9. RIESGOS — importante si vacío
+  if (!borrador.riesgos || borrador.riesgos.length === 0) {
+    gaps.push({
+      seccion: "proposito",
+      criticidad: "importante",
+      descripcion: "No se han identificado riesgos del proyecto",
+      razon: "La §1 (Riesgos) del MDD queda vacía y la IA los inventa",
+      sugerenciaPregunta:
+        "¿Cuáles son los 3 principales riesgos del proyecto y su mitigación? (ej: 'cambio regulatorio — mitigación: asesoría legal trimestral')",
+    });
+  }
+
+  // 10. UAT — importante si vacío
+  if (!borrador.criteriosUAT || borrador.criteriosUAT.length === 0) {
+    gaps.push({
+      seccion: "proposito",
+      criticidad: "importante",
+      descripcion: "No se han definido criterios de aceptación de negocio (UAT)",
+      razon: "La §1 (Criterios de aceptación) del MDD queda vacía y la IA los inventa",
+      sugerenciaPregunta:
+        "¿Cuáles son los 4 escenarios de aceptación más importantes? (Dado/Cuando/Entonces en lenguaje de negocio)",
+    });
+  }
+
   return gaps.sort((a, b) => GAP_WEIGHT[a.criticidad] - GAP_WEIGHT[b.criticidad]);
 }
 
@@ -166,6 +213,15 @@ export function filterResolvedGaps(
     }
     switch (gap.seccion) {
       case "entidades":
+        if (gap.descripcion.includes("entidades auth/genéricas")) {
+          const entidadesNegocio = (borrador.entidades ?? []).filter((e) => {
+            const nombre = (e?.nombre ?? "").toLowerCase().trim();
+            return !/^(user|usuario|users|usuarios|role|rol|roles|session|sesion|sesiones|audit|auditoria|auditlog|permission|permiso)$/i.test(
+              nombre,
+            );
+          });
+          return !borrador.entidades || borrador.entidades.length < 2 || entidadesNegocio.length < 2;
+        }
         return !borrador.entidades || borrador.entidades.length < 2;
       case "reglasNegocio":
         return !borrador.reglasNegocio || borrador.reglasNegocio.length === 0;
@@ -186,6 +242,12 @@ export function filterResolvedGaps(
         }
         if (gap.descripcion.includes("NO hace")) {
           return !borrador.proposito.outOfScope || borrador.proposito.outOfScope.length === 0;
+        }
+        if (gap.descripcion.includes("riesgos del proyecto")) {
+          return !borrador.riesgos || borrador.riesgos.length === 0;
+        }
+        if (gap.descripcion.includes("criterios de aceptación")) {
+          return !borrador.criteriosUAT || borrador.criteriosUAT.length === 0;
         }
         return true;
       default:

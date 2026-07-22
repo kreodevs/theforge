@@ -18,20 +18,6 @@ function emptyDocument(): Phase0Document {
   };
 }
 
-export function isPhase0StructuredMarkdown(markdown: string): boolean {
-  const t = markdown.trim();
-  return (
-    t.includes("# Fase 0") ||
-    t.includes("## 1. Propósito y Alcance") ||
-    t.includes("## 1. Proposito y Alcance")
-  );
-}
-
-function isPlaceholder(line: string): boolean {
-  const t = line.trim();
-  return t === "*(No definidas)*" || t === "*(No definidos)*" || t === "*(No definida)*";
-}
-
 function bulletItems(lines: string[], start: number): { items: string[]; next: number } {
   const items: string[] = [];
   let i = start;
@@ -50,6 +36,20 @@ function bulletItems(lines: string[], start: number): { items: string[]; next: n
     break;
   }
   return { items, next: i };
+}
+
+export function isPhase0StructuredMarkdown(markdown: string): boolean {
+  const t = markdown.trim();
+  return (
+    t.includes("# Fase 0") ||
+    t.includes("## 1. Propósito y Alcance") ||
+    t.includes("## 1. Proposito y Alcance")
+  );
+}
+
+function isPlaceholder(line: string): boolean {
+  const t = line.trim();
+  return t === "*(No definidas)*" || t === "*(No definidos)*" || t === "*(No definida)*";
 }
 
 function sectionIndex(lines: string[], heading: string): number {
@@ -218,6 +218,103 @@ export function markdownToPhase0Document(markdown: string): Phase0Document {
   if (idxPendientes >= 0) {
     const { items } = bulletItems(lines, idxPendientes + 1);
     doc.preguntasPendientes = items;
+  }
+
+  // §9. Glosario — tabla | Término | Definición |
+  const idxGlosario = sectionIndex(lines, "## 9. Glosario de Dominio");
+  if (idxGlosario >= 0) {
+    const end = lines.length;
+    const glossary: Array<{ termino: string; definicion: string }> = [];
+    for (let i = idxGlosario + 1; i < end; i += 1) {
+      const raw = lines[i].trim();
+      if (raw.startsWith("## ")) break;
+      if (raw.startsWith("|") && !raw.startsWith("| ---") && !/Término\s*\|/.test(raw)) {
+        const cells = raw
+          .slice(1, -1)
+          .split("|")
+          .map((c) => c.trim());
+        if (cells.length >= 2 && cells[0] && cells[1]) {
+          glossary.push({ termino: cells[0], definicion: cells[1] });
+        }
+      }
+    }
+    if (glossary.length > 0) doc.glosario = glossary;
+  }
+
+  // §10. Stack declarado por el usuario
+  const idxStack = sectionIndex(lines, "## 10. Stack declarado por el usuario");
+  if (idxStack >= 0) {
+    // Puede haber un párrafo introductorio antes de los bullets; saltar líneas no-bullet
+    let cursor = idxStack + 1;
+    while (cursor < lines.length) {
+      const t = lines[cursor].trim();
+      if (t === "" || t.startsWith("## ")) {
+        cursor += 1;
+        continue;
+      }
+      if (t.startsWith("- ")) break;
+      cursor += 1;
+    }
+    const { items } = bulletItems(lines, cursor);
+    const stack = items.filter((s) => !/^Esta sección/i.test(s) && !/^Stack técnico/i.test(s));
+    if (stack.length > 0) doc.stackUsuario = stack;
+  }
+
+  // §11. Riesgos y Mitigación — tabla | ID | Riesgo | Impacto | Probabilidad | Mitigación |
+  const idxRiesgos = sectionIndex(lines, "## 11. Riesgos y Mitigación");
+  if (idxRiesgos >= 0) {
+    const end = lines.length;
+    const riesgos: Array<{
+      id: string;
+      nombre: string;
+      impacto: "Alto" | "Medio" | "Bajo";
+      probabilidad: "Alta" | "Media" | "Baja";
+      mitigacion: string;
+    }> = [];
+    for (let i = idxRiesgos + 1; i < end; i += 1) {
+      const raw = lines[i].trim();
+      if (raw.startsWith("## ")) break;
+      if (
+        raw.startsWith("|") &&
+        !raw.startsWith("| ---") &&
+        !/ID\s*\|\s*Riesgo/i.test(raw)
+      ) {
+        const cells = raw
+          .slice(1, -1)
+          .split("|")
+          .map((c) => c.trim());
+        if (cells.length >= 5 && cells[0] && cells[1]) {
+          const impacto = (["Alto", "Medio", "Bajo"].includes(cells[2] ?? "")
+            ? cells[2]
+            : "Medio") as "Alto" | "Medio" | "Bajo";
+          const prob = (["Alta", "Media", "Baja"].includes(cells[3] ?? "")
+            ? cells[3]
+            : "Media") as "Alta" | "Media" | "Baja";
+          riesgos.push({
+            id: cells[0],
+            nombre: cells[1],
+            impacto,
+            probabilidad: prob,
+            mitigacion: cells[4] ?? "",
+          });
+        }
+      }
+    }
+    if (riesgos.length > 0) doc.riesgos = riesgos;
+  }
+
+  // §12. Criterios de Aceptación (UAT) — bullets - **<id>:** <desc>
+  const idxUAT = sectionIndex(lines, "## 12. Criterios de Aceptación (UAT)");
+  if (idxUAT >= 0) {
+    const end = lines.length;
+    const uat: Array<{ id: string; descripcion: string }> = [];
+    for (let i = idxUAT + 1; i < end; i += 1) {
+      const raw = lines[i].trim();
+      if (raw.startsWith("## ")) break;
+      const m = raw.match(/^-\s+\*\*(.+?):\*\*\s*(.+)$/);
+      if (m) uat.push({ id: m[1].trim(), descripcion: m[2].trim() });
+    }
+    if (uat.length > 0) doc.criteriosUAT = uat;
   }
 
   return doc;

@@ -15,15 +15,21 @@ function load(): string {
 Construye un borrador inicial de Fase 0 y lista de gaps a partir del input del usuario.
 Responde solo con JSON válido: { "borrador": { ... }, "gaps": [...] }.
 
-El borrador tiene 8 secciones:
+El borrador tiene 8 secciones obligatorias + opcionales recomendadas:
 - proposito: { problema, usuarios, outOfScope }
-- entidades: [{ nombre, descripcion, atributosClave }]
+- entidades: [{ nombre, descripcion, atributosClave }] (≥2 de negocio no-auth)
 - reglasNegocio: string[]
 - flujos: [{ nombre, pasos }]
 - roles: [{ rol, permisos }]
 - integraciones: string[]
 - edgeCases: string[]
 - preguntasPendientes: string[]
+- glosario?: [{ termino, definicion }]            (recomendado, alimenta §1 MDD)
+- riesgos?: [{ id, nombre, impacto, probabilidad, mitigacion }] (recomendado, alimenta §1 MDD)
+- criteriosUAT?: [{ id, descripcion }]           (recomendado, alimenta §1 MDD)
+- stackUsuario?: string[]                         (autoritativo para §2 MDD)
+- aprobacionDual?: boolean
+- rolesPorApp?: [{ aplicacion, roles: [{ rol, permisos }] }]
 
 Los gaps tienen: seccion, criticidad ("critico"|"importante"|"opcional"), descripcion, razon, sugerenciaPregunta.`;
   }

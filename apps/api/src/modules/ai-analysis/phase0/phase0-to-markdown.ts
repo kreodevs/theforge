@@ -108,5 +108,57 @@ export function phase0ToMarkdown(doc: Phase0Document): string {
     lines.push("");
   }
 
+  // 9. Glosario de Dominio
+  if (normalized.glosario && normalized.glosario.length > 0) {
+    lines.push("## 9. Glosario de Dominio");
+    lines.push("");
+    lines.push("| Término | Definición |");
+    lines.push("| --- | --- |");
+    normalized.glosario.forEach((g) => {
+      const term = g.termino.replace(/\|/g, "\\|");
+      const def = g.definicion.replace(/\|/g, "\\|");
+      lines.push(`| ${term} | ${def} |`);
+    });
+    lines.push("");
+  }
+
+  // 10. Stack declarado por el usuario
+  if (normalized.stackUsuario && normalized.stackUsuario.length > 0) {
+    lines.push("## 10. Stack declarado por el usuario");
+    lines.push("");
+    lines.push(
+      "Esta sección es la referencia autoritativa del stack del usuario para la §2 del MDD. No debe contradecirse con el stack técnico observado de competidores.",
+    );
+    lines.push("");
+    normalized.stackUsuario.forEach((s) => lines.push(`- ${s}`));
+    lines.push("");
+  }
+
+  // 11. Riesgos y Mitigación
+  if (normalized.riesgos && normalized.riesgos.length > 0) {
+    lines.push("## 11. Riesgos y Mitigación");
+    lines.push("");
+    lines.push("| ID | Riesgo | Impacto | Probabilidad | Mitigación |");
+    lines.push("| --- | --- | --- | --- | --- |");
+    normalized.riesgos.forEach((r) => {
+      const nombre = r.nombre.replace(/\|/g, "\\|");
+      const mitigacion = r.mitigacion.replace(/\|/g, "\\|");
+      lines.push(
+        `| ${r.id || "R-?"} | ${nombre} | ${r.impacto} | ${r.probabilidad} | ${mitigacion} |`,
+      );
+    });
+    lines.push("");
+  }
+
+  // 12. Criterios de Aceptación (UAT)
+  if (normalized.criteriosUAT && normalized.criteriosUAT.length > 0) {
+    lines.push("## 12. Criterios de Aceptación (UAT)");
+    lines.push("");
+    normalized.criteriosUAT.forEach((c) => {
+      lines.push(`- **${c.id || "UAT-?"}:** ${c.descripcion}`);
+    });
+    lines.push("");
+  }
+
   return lines.join("\n");
 }

@@ -25,6 +25,11 @@ const SECTION_ORDER: Array<{ key: string; pattern: RegExp }> = [
   { key: "s9", pattern: /^##\s+9\.\s+Salidas/i },
   { key: "s10", pattern: /^##\s+10\.\s+Preguntas/i },
   { key: "s11", pattern: /^##\s+11\.\s+(?:API|Integraci)/i },
+  { key: "s8_pendientes", pattern: /^##\s+8\.\s+Preguntas Pendientes/i },
+  { key: "s9_glosario", pattern: /^##\s+9\.\s+Glosario/i },
+  { key: "s10_stack", pattern: /^##\s+10\.\s+Stack declarado/i },
+  { key: "s11_riesgos", pattern: /^##\s+11\.\s+Riesgos/i },
+  { key: "s12_uat", pattern: /^##\s+12\.\s+(?:Criterios de Aceptaci[oó]n|UAT)/i },
   { key: "changelog", pattern: /^##\s+Registro de cambios del documento\b/i },
 ];
 
@@ -133,6 +138,10 @@ function structureBonus(key: string, body: string): number {
   if (key === "s3") return bullets * 25;
   if (key === "s4") return subsections * 400;
   if (key === "s1" && body.includes("**Arquitectura Multi-Agente:**")) return 1_500;
+  if (key === "s11_riesgos") return bullets * 50;
+  if (key === "s12_uat") return bullets * 50;
+  if (key === "s9_glosario") return bullets * 30;
+  if (key === "s10_stack") return bullets * 20;
   return subsections * 100;
 }
 

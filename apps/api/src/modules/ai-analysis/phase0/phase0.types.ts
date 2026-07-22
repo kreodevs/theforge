@@ -25,6 +25,18 @@ export interface Phase0Document {
   edgeCases: string[];
   /** 8. Preguntas Pendientes — lo que no se alcanzó a preguntar */
   preguntasPendientes: string[];
+  /** 9. Glosario de Dominio — términos clave del negocio (opcional pero recomendado) */
+  glosario?: Phase0GlossaryEntry[];
+  /** 10. Riesgos y Mitigación — alimenta §1 (Riesgos) del MDD (opcional pero recomendado) */
+  riesgos?: Phase0Risk[];
+  /** 11. Criterios de Aceptación (UAT) — alimenta §1 (UAT) del MDD (opcional pero recomendado) */
+  criteriosUAT?: Phase0UATCriterion[];
+  /** Stack declarado por el usuario — technologies nombradas literalmente en la idea (opcional) */
+  stackUsuario?: string[];
+  /** Aprobación/control dual explícito — flag para §3 del MDD (opcional) */
+  aprobacionDual?: boolean;
+  /** Roles por aplicación — para multi-tenant; alimenta §3 del MDD (opcional) */
+  rolesPorApp?: Array<{ aplicacion: string; roles: Phase0Role[] }>;
 }
 
 export interface Phase0Entity {
@@ -41,6 +53,24 @@ export interface Phase0Flow {
 export interface Phase0Role {
   rol: string;
   permisos: string[];
+}
+
+export interface Phase0GlossaryEntry {
+  termino: string;
+  definicion: string;
+}
+
+export interface Phase0Risk {
+  id: string;
+  nombre: string;
+  impacto: "Alto" | "Medio" | "Bajo";
+  probabilidad: "Alta" | "Media" | "Baja";
+  mitigacion: string;
+}
+
+export interface Phase0UATCriterion {
+  id: string;
+  descripcion: string;
 }
 
 /** Criticidad de un gap de información */

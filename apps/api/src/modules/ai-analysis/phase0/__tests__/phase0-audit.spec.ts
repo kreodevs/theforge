@@ -19,6 +19,18 @@ const completeBorrador = (): Phase0Document => ({
   integraciones: ["Odoo"],
   edgeCases: ["Tipo de cambio no disponible"],
   preguntasPendientes: [],
+  riesgos: [
+    {
+      id: "R-01",
+      nombre: "Tipo de cambio",
+      impacto: "Medio",
+      probabilidad: "Media",
+      mitigacion: "Cache diario + fallback manual",
+    },
+  ],
+  criteriosUAT: [
+    { id: "UAT-01", descripcion: "Crear lista con margen válido" },
+  ],
 });
 
 describe("phase0 audit gaps", () => {
