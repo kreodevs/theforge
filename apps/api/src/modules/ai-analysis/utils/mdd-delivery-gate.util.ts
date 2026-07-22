@@ -8,6 +8,7 @@ import {
   mddHasDuplicateSectionHeadings,
   validateMddStructure,
 } from "./mdd-sanitize.js";
+import { isMddSectionPipelinePlaceholderBody } from "./mdd-sanitize/section-merge.js";
 import { collectMddQualityIssues, isAutoRepairableDeliveryGateWarning } from "../../engine/mdd-quality-audit.util.js";
 import { domainDeliveryGateFindings } from "../../engine/cascade-accuracy.util.js";
 import { checkBrdDecisionLogClosure } from "../../engine/brd-decision-log.util.js";
@@ -16,12 +17,91 @@ export type { MddDeliveryGateResult };
 
 const DELIVERY_SCORE_THRESHOLD = 90;
 
+/** Mínimo de chars que una sección canónica debe tener para no ser considerada
+ *  placeholder. 200 chars = ~3-4 líneas de prosa o un bloque SQL/JSON de
+ *  tabla pequeña. Ajustado para no rechazar SSOT correcciones que generan
+ *  secciones muy sintéticas pero válidas (umbral relajado a 100 para §3 si
+ *  tiene CREATE TABLE). */
+const MIN_SECTION_BODY_LENGTH = 200;
+const MIN_SECTION3_BODY_LENGTH = 100;
+
 export type ValidateMddForDeliveryOptions = {
   /** BRD stage content — enables domain auth-skew / entity coverage blockers. */
   brdMarkdown?: string | null;
   dbgaMarkdown?: string | null;
   specMarkdown?: string | null;
 };
+
+/** Títulos canónicos de las 7 secciones del MDD (ordenados). Usados para construir
+ *  los nombres en los blockers y para que el log de errores sea legible. */
+const CANONICAL_SECTION_TITLES: ReadonlyArray<{ num: number; title: string; pattern: RegExp }> = [
+  { num: 1, title: "1. Contexto", pattern: /^##\s+1\.\s*Contexto\b/i },
+  { num: 2, title: "2. Arquitectura y Stack", pattern: /^##\s+2\.\s*(?:Arquitectura(?:\s+y\s*Stack)?|Stack(?:\s+t[eé]cnico)?)\b/i },
+  { num: 3, title: "3. Modelo de Datos", pattern: /^##\s+3\.\s*Modelo\s+(?:de\s+)?datos/i },
+  { num: 4, title: "4. Contratos de API", pattern: /^##\s+4\.\s*Contratos\s+de\s+API/i },
+  { num: 5, title: "5. Lógica y Edge Cases", pattern: /^##\s+5\.\s*Lógica\s+y\s+Edge\s+Cases/i },
+  { num: 6, title: "6. Seguridad", pattern: /^##\s+6\.\s*Seguridad\b|^##\s*Seguridad\b/i },
+  { num: 7, title: "7. Infraestructura", pattern: /^##\s+7\.\s*Infraestructura\b|^##\s*Infraestructura\b|^##\s*Integración\b/i },
+];
+
+/** Extrae el cuerpo (markdown) de la sección canónica `num` (1-7) sin el heading.
+ *  Devuelve `null` si la sección no existe. Robusto contra:
+ *  - Code fences que contengan `## N. …` literal (no cortar dentro).
+ *  - Heading pegado al body en la misma línea (`## 1. Contexto ForgeOps es…`),
+ *    artefacto de `applyDeterministicCrossConsistencyFixes` upstream.
+ *  - Variantes de heading: numerado (`## N. …`) o bare (`## Seguridad`,
+ *    `## Infraestructura`/`## Integración` para §6/§7).
+ */
+function extractSectionBody(draft: string, num: number): string | null {
+  const trimmed = (draft ?? "").trim();
+  if (!trimmed) return null;
+  const entry = CANONICAL_SECTION_TITLES.find((s) => s.num === num);
+  if (!entry) return null;
+
+  const lines = trimmed.split("\n");
+  let headingLineIdx = -1;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (entry.pattern.test(lines[i]!)) {
+      headingLineIdx = i;
+      break;
+    }
+  }
+  if (headingLineIdx === -1) return null;
+
+  // Si el heading está pegado al body en la misma línea (e.g.
+  // "## 1. Contexto ForgeOps es…"), parte la línea: el cuerpo empieza
+  // después del match del heading en la misma línea.
+  const headingLine = lines[headingLineIdx]!;
+  const headingMatch = headingLine.match(entry.pattern);
+  const bodyStartsOnSameLine =
+    headingMatch != null && headingLine.slice(headingMatch[0].length).trim().length > 0;
+  const inlineBodyPrefix = bodyStartsOnSameLine
+    ? headingLine.slice(headingMatch![0]!.length).replace(/^\s+/, "")
+    : null;
+
+  // Cuerpo: líneas después del heading, hasta el próximo ## N+1 (o ## <Title-bare>).
+  let inFence = false;
+  const bodyLines: string[] = [];
+  if (inlineBodyPrefix) bodyLines.push(inlineBodyPrefix);
+  for (let i = headingLineIdx + 1; i < lines.length; i += 1) {
+    const line = lines[i]!;
+    if (/^[ \t]*```/.test(line)) {
+      inFence = !inFence;
+      bodyLines.push(line);
+      continue;
+    }
+    if (!inFence) {
+      const nextNumMatch = line.match(/^##\s+(\d+)\./);
+      if (nextNumMatch && parseInt(nextNumMatch[1]!, 10) > num) break;
+      if (num >= 6) {
+        if (/^##\s+Seguridad\b/.test(line) && num !== 6) break;
+        if (/^##\s+Infraestructura\b|^##\s+Integraci[oó]n\b/.test(line) && num !== 7) break;
+      }
+    }
+    bodyLines.push(line);
+  }
+  return bodyLines.join("\n").replace(/^\s*\n+/, "").trim();
+}
 
 /** Heurística alineada con reconcileUiUxDesignIntent: columnas id,name,status repetidas. */
 function detectGenericUiUxIntent(draft: string): boolean {
@@ -46,6 +126,46 @@ export function validateMddForDelivery(
   const structure = validateMddStructure(trimmed);
   if (structure.missingSections.length > 0) {
     blockers.push(`Secciones obligatorias faltantes: ${structure.missingSections.join(", ")}`);
+  }
+
+  // ─── Sustancia por sección canónica ────────────────────────────────────
+  // Caso de uso: el LLMFormatter (u otro nodo) puede comprimir el MDD a
+  // ~18k chars dejando §2-§7 como "(Pendiente)" o placeholders triviales.
+  // El check de `validateMddStructure` solo verifica que los headings
+  // `## N. …` existan, no que tengan contenido real. El log del job 92
+  // del proyecto ForgeOps (2026-07-22 05:35–05:59) demuestra el bug: 3
+  // de 7 secciones persistidas en (Pendiente) con `gate ok=true
+  // score=100`. CHANGELOG [Unreleased] → Fixed → "Quality Gate endurece
+  // substance check para detectar placeholders".
+  //
+  // Excepciones: una sección puede tener cuerpo corto pero válido si
+  // contiene una referencia cruzada (ej. §5 con "Ver §1" tras dedup de
+  // UAT) o un manifest JSON muy sintético. Estos patrones no bloquean.
+  // El check ignora sub-headings (`### …`) al inicio — una sección puede
+  // empezar con `### Criterios UAT` y luego contener la referencia `Ver §N`.
+  const hasCrossReference = (body: string) => /Ver\s+§\d/i.test(body);
+  for (const entry of CANONICAL_SECTION_TITLES) {
+    const body = extractSectionBody(trimmed, entry.num);
+    const minLength = entry.num === 3 ? MIN_SECTION3_BODY_LENGTH : MIN_SECTION_BODY_LENGTH;
+    if (body == null) {
+      // Ya cubierto por `missingSections` arriba (heading ausente).
+      continue;
+    }
+    if (hasCrossReference(body)) continue;
+    const bodyLen = body.length;
+    if (bodyLen < minLength) {
+      const isPlaceholder = isMddSectionPipelinePlaceholderBody(body);
+      const reason = isPlaceholder
+        ? `Sección ${entry.title} está en (Pendiente) o tiene contenido insuficiente (${bodyLen} chars; mínimo ${minLength}).`
+        : `Sección ${entry.title} tiene contenido insuficiente (${bodyLen} chars; mínimo ${minLength}).`;
+      blockers.push(reason);
+      continue;
+    }
+    if (isMddSectionPipelinePlaceholderBody(body)) {
+      blockers.push(
+        `Sección ${entry.title} es un placeholder del pipeline (ej. "Pendiente: Arquitecto"). Regenera antes de persistir.`,
+      );
+    }
   }
   if (!structure.hasTechnicalMetadata) {
     const metaIssue =
