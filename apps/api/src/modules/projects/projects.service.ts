@@ -7,6 +7,7 @@ import {
   type DeliverableKind,
   type CreateProjectDto,
   type UpdateProjectDto,
+  type TasksPipelineProgress,
 } from "@theforge/shared-types";
 
 import { loadAccessibleProjectWithStages } from "./project-access.util.js";
@@ -318,7 +319,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
   async generateTasks(
     projectId: string,
     gapsFeedback?: string | null,
-    options?: { acknowledgeGaps?: boolean },
+    options?: { acknowledgeGaps?: boolean; onProgress?: (progress: TasksPipelineProgress) => void },
   ) {
     return this.deliverableGenerators.generateTasks(projectId, gapsFeedback, options);
   }

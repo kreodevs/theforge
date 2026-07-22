@@ -7,6 +7,7 @@ import {
   TASKS_PIPELINE_MAX_REPAIRS_TRUNCATED,
   type TasksGenerationPlan,
   type TasksLlmAuditorOutput,
+  type TasksPipelineProgress,
   type TasksPipelineQualitySnapshot,
 } from "@theforge/shared-types";
 import type { DomainInventory } from "@theforge/shared-types";
@@ -66,6 +67,7 @@ export type TasksPipelineInput = {
     fileCoordinatesContext?: string | null;
     coordinatesMode?: boolean;
   };
+  onProgress?: (progress: TasksPipelineProgress) => void;
 };
 
 export type TasksPipelineResult = {
@@ -84,6 +86,10 @@ export class TasksGenerationPipelineService {
   private readonly logger = new Logger(TasksGenerationPipelineService.name);
 
   constructor(private readonly ai: AiService) {}
+
+  private reportProgress(input: TasksPipelineInput, progress: TasksPipelineProgress): void {
+    input.onProgress?.(progress);
+  }
 
   async run(input: TasksPipelineInput): Promise<TasksPipelineResult> {
     const preflight = await runTasksPreflightStrict({
@@ -119,7 +125,16 @@ export class TasksGenerationPipelineService {
     }
 
     const plannerContext = this.buildPlannerContext(input);
+    this.reportProgress(input, {
+      phase: "planner",
+      message: "Planificando cobertura Tasks (JSON)…",
+    });
     const plan = await this.runPlanner(plannerContext, input);
+    this.reportProgress(input, {
+      phase: "planner",
+      plannerItemCount: plan.items.length,
+      message: `Plan listo: ${plan.items.length} ítems`,
+    });
     const redactorMaxTokens = resolveLlmMaxTokensForPurpose("tasksDoc");
     this.logger.log(
       `[Tasks pipeline] plan ${plan.items.length} items → redactor max_tokens=${redactorMaxTokens} (global ceiling llm_max_tokens)`,
@@ -127,6 +142,11 @@ export class TasksGenerationPipelineService {
 
     let tasksMarkdown = await this.runRedactor(plan, input, input.gapsFeedback);
 
+    this.reportProgress(input, {
+      phase: "auditor",
+      tasksLength: tasksMarkdown.length,
+      message: "Auditando calidad estructural…",
+    });
     let llmAuditor = await this.runLlmAuditor(tasksMarkdown, input);
     let quality = this.evaluateQuality(tasksMarkdown, input);
     let repairAttempts = 0;
@@ -171,12 +191,25 @@ export class TasksGenerationPipelineService {
         documentTruncated,
       });
       repairHistory.push(summarizeTasksRepairAttempt(quality, llmAuditor));
+      this.reportProgress(input, {
+        phase: "repair",
+        repairAttempt: repairAttempts,
+        maxRepairs,
+        message: `Regenerando Tasks (intento ${repairAttempts}/${maxRepairs})…`,
+      });
       tasksMarkdown = await this.runRepair(tasksMarkdown, plan, retryFeedback, input, {
         documentTruncated,
         patchFeedbackLines: repairFeedbackLines,
       });
       llmAuditor = await this.runLlmAuditor(tasksMarkdown, input);
       quality = this.evaluateQuality(tasksMarkdown, input);
+      this.reportProgress(input, {
+        phase: "auditor",
+        repairAttempt: repairAttempts,
+        tasksLength: tasksMarkdown.length,
+        taskCount: quality.taskCount,
+        message: `Auditoría tras reparación ${repairAttempts} (score det=${quality.score}, llm=${llmAuditor.score})`,
+      });
     }
 
     const snapshot: TasksPipelineQualitySnapshot = {
@@ -263,6 +296,7 @@ export class TasksGenerationPipelineService {
     gapsFeedback?: string | null,
     tasksAuditorFeedback?: string | null,
   ): Promise<string> {
+    const totalBatches = Math.max(1, Math.ceil(plan.items.length / TASKS_REDACTOR_BATCH_SIZE));
     const journeyPartitions =
       (input.inventory?.processes?.length ?? 0) > 0
         ? partitionTasksPlanByJourney(plan, input.inventory)
@@ -289,13 +323,32 @@ export class TasksGenerationPipelineService {
               ]
                 .filter(Boolean)
                 .join("\n\n");
-        const chunk = await this.redactorSlice(slicePlan, input, batchFeedback, ji === 0, tasksAuditorFeedback);
+        const chunk = await this.redactorSlice(
+          slicePlan,
+          input,
+          batchFeedback,
+          ji === 0,
+          tasksAuditorFeedback,
+          { batch: ji + 1, totalBatches: journeyPartitions.length },
+        );
         parts.push(chunk);
+        const accumulated = parts.filter(Boolean).join("\n\n");
+        this.reportProgress(input, {
+          phase: "redactor",
+          batch: ji + 1,
+          totalBatches: journeyPartitions.length,
+          tasksLength: accumulated.length,
+          markdown: accumulated,
+          message: `Redactando journey ${ji + 1}/${journeyPartitions.length}…`,
+        });
       }
       return parts.filter(Boolean).join("\n\n");
     }
 
-    return this.redactorSlice(plan, input, gapsFeedback, true, tasksAuditorFeedback);
+    return this.redactorSlice(plan, input, gapsFeedback, true, tasksAuditorFeedback, {
+      batch: 1,
+      totalBatches,
+    });
   }
 
   private async redactorSlice(
@@ -304,16 +357,35 @@ export class TasksGenerationPipelineService {
     gapsFeedback?: string | null,
     isFirstChunk = true,
     tasksAuditorFeedback?: string | null,
+    batchInfo?: { batch: number; totalBatches: number },
   ): Promise<string> {
     const planJson = JSON.stringify(plan, null, 2);
+    const totalBatches =
+      batchInfo?.totalBatches ??
+      Math.max(1, Math.ceil(plan.items.length / TASKS_REDACTOR_BATCH_SIZE));
     if (plan.items.length <= TASKS_REDACTOR_BATCH_SIZE) {
+      this.reportProgress(input, {
+        phase: "redactor",
+        batch: batchInfo?.batch ?? 1,
+        totalBatches,
+        message: `Redactando lote ${batchInfo?.batch ?? 1}/${totalBatches}…`,
+      });
       const chunk = await this.ai.generateTasks(input.mddMarkdown, input.blueprintMarkdown ?? null, {
         ...input.taskOpts,
         tasksPlanJson: planJson,
         gapsFeedback,
         tasksAuditorFeedback,
       });
-      return isFirstChunk ? chunk.trim() : chunk.trim().replace(/^#\s*Tasks\s*\n+/im, "").trim();
+      const trimmed = isFirstChunk ? chunk.trim() : chunk.trim().replace(/^#\s*Tasks\s*\n+/im, "").trim();
+      this.reportProgress(input, {
+        phase: "redactor",
+        batch: batchInfo?.batch ?? 1,
+        totalBatches,
+        tasksLength: trimmed.length,
+        markdown: trimmed,
+        message: `Lote ${batchInfo?.batch ?? 1}/${totalBatches} redactado`,
+      });
+      return trimmed;
     }
 
     this.logger.log(
@@ -325,6 +397,12 @@ export class TasksGenerationPipelineService {
       const slicePlan: TasksGenerationPlan = { sections: plan.sections, items: sliceItems };
       const batchIndex = Math.floor(offset / TASKS_REDACTOR_BATCH_SIZE) + 1;
       const batchTotal = Math.ceil(plan.items.length / TASKS_REDACTOR_BATCH_SIZE);
+      this.reportProgress(input, {
+        phase: "redactor",
+        batch: batchIndex,
+        totalBatches: batchTotal,
+        message: `Redactando lote ${batchIndex}/${batchTotal} (${sliceItems[0]!.id}…)…`,
+      });
       const batchFeedback =
         offset === 0
           ? gapsFeedback
@@ -348,6 +426,15 @@ export class TasksGenerationPipelineService {
       } else {
         parts.push(trimmed.replace(/^#\s*Tasks\s*\n+/im, "").trim());
       }
+      const accumulated = parts.filter(Boolean).join("\n\n");
+      this.reportProgress(input, {
+        phase: "redactor",
+        batch: batchIndex,
+        totalBatches: batchTotal,
+        tasksLength: accumulated.length,
+        markdown: accumulated,
+        message: `Lote ${batchIndex}/${batchTotal} redactado`,
+      });
     }
     return parts.filter(Boolean).join("\n\n");
   }

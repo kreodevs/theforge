@@ -92,6 +92,7 @@ export interface WorkshopState {
     | "deliverables-cascade"
     | "repair-sdd-gaps"
     | "agent-governance"
+    | "tasks"
     | "converge"
     | "tasks-to-issues"
     | "clarify-spec"

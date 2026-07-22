@@ -13,9 +13,11 @@ import {
   isBrownfieldCapable,
   isPhase0BorradorJson,
   mergeTasksQualityIntoShortTermContext,
+  mergeTasksGenerationDraftFlag,
   parseAgentGovernanceScaffold,
   specKitFeatureDir,
   type DeliverableKind,
+  type TasksPipelineProgress,
   type TasksPipelineQualitySnapshot,
 } from "@theforge/shared-types";
 import { loadProjectBorrador, hasBorradorContent } from "../ai-analysis/phase0/phase0-load-borrador.util.js";
@@ -503,7 +505,7 @@ export class ProjectDeliverableGeneratorsService {
   async generateTasks(
   projectId: string,
   gapsFeedback?: string | null,
-  options?: { acknowledgeGaps?: boolean },
+  options?: { acknowledgeGaps?: boolean; onProgress?: (progress: TasksPipelineProgress) => void },
   ) {
   let project = await loadAccessibleProjectWithStages(this.prisma, projectId);
 
@@ -555,6 +557,17 @@ export class ProjectDeliverableGeneratorsService {
       ? resolveLegacyBaselineStageFlag(stage, mdd)
       : false;
 
+  let lastDraftPersistLen = 0;
+  const onPipelineProgress = async (progress: TasksPipelineProgress): Promise<void> => {
+    const { markdown: _markdown, ...publicProgress } = progress;
+    options?.onProgress?.(publicProgress);
+    const draft = progress.markdown?.trim();
+    if (!draft || draft.length < 48) return;
+    if (draft.length <= lastDraftPersistLen + 180) return;
+    lastDraftPersistLen = draft.length;
+    await this.persistTasksDraftContent(projectId, stage?.id, draft);
+  };
+
   const pipelineResult = await this.tasksPipeline.run({
     mddMarkdown: mdd,
     blueprintMarkdown: project.blueprintContent,
@@ -566,6 +579,13 @@ export class ProjectDeliverableGeneratorsService {
     legacyBaselineStage,
     acknowledgeGaps: options?.acknowledgeGaps === true,
     taskOpts,
+    onProgress: (progress) => {
+      void onPipelineProgress(progress).catch((err) =>
+        this.logger.warn(
+          `[Tasks] draft persist failed: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
+    },
   });
 
   const { tasksMarkdown: tasksRaw, quality, snapshot } = pipelineResult;
@@ -579,7 +599,7 @@ export class ProjectDeliverableGeneratorsService {
 
   const updated = await this.projects.update(projectId, { tasksContent });
   this.notifyPluginAfterDocumentPersist("tasks", projectId, updated.tasksContent ?? tasksContent);
-  await this.persistTasksQualitySnapshot(stage?.id, snapshot);
+  await this.persistTasksQualitySnapshot(stage?.id, snapshot, { clearDraft: true });
 
   if (stage?.id) {
     const freshStage = pickPrimaryStage(updated.stages ?? []) ?? stage;
@@ -1277,9 +1297,51 @@ export class ProjectDeliverableGeneratorsService {
     });
   }
 
+  private async persistTasksDraftContent(
+    projectId: string,
+    stageId: string | undefined,
+    markdown: string,
+  ): Promise<void> {
+    const cleaned = cleanDocumentContent(markdown);
+    if (cleaned.trim().length < 48) return;
+
+    const data = { tasksContent: cleaned };
+    if (stageId?.trim()) {
+      await this.prisma.$transaction([
+        this.prisma.stage.update({ where: { id: stageId.trim() }, data }),
+        this.prisma.project.update({ where: { id: projectId }, data }),
+      ]);
+      try {
+        const stage = await this.prisma.stage.findUnique({
+          where: { id: stageId.trim() },
+          select: { shortTermContext: true },
+        });
+        const prev =
+          stage?.shortTermContext &&
+          typeof stage.shortTermContext === "object" &&
+          !Array.isArray(stage.shortTermContext)
+            ? (stage.shortTermContext as Record<string, unknown>)
+            : {};
+        await this.prisma.stage.update({
+          where: { id: stageId.trim() },
+          data: {
+            shortTermContext: mergeTasksGenerationDraftFlag(prev, true) as Prisma.InputJsonValue,
+          },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `[Tasks] draft flag persist failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    } else {
+      await this.prisma.project.update({ where: { id: projectId }, data });
+    }
+  }
+
   private async persistTasksQualitySnapshot(
     stageId: string | undefined,
     snapshot: TasksPipelineQualitySnapshot,
+    opts?: { clearDraft?: boolean },
   ): Promise<void> {
     if (!stageId?.trim()) return;
     try {
@@ -1293,10 +1355,14 @@ export class ProjectDeliverableGeneratorsService {
         !Array.isArray(stage.shortTermContext)
           ? (stage.shortTermContext as Record<string, unknown>)
           : {};
+      const withSnapshot = mergeTasksQualityIntoShortTermContext(prev, snapshot);
+      const shortTermContext = opts?.clearDraft
+        ? mergeTasksGenerationDraftFlag(withSnapshot, false)
+        : withSnapshot;
       await this.prisma.stage.update({
         where: { id: stageId.trim() },
         data: {
-          shortTermContext: mergeTasksQualityIntoShortTermContext(prev, snapshot) as Prisma.InputJsonValue,
+          shortTermContext: shortTermContext as Prisma.InputJsonValue,
         },
       });
     } catch (err) {

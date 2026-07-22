@@ -53,6 +53,52 @@ export type TasksPipelineQualitySnapshot = {
   capturedAt: string;
 };
 
+/** Progreso emitido durante la generación de Tasks (cola BullMQ + UI Workshop). */
+export type TasksPipelineProgress = {
+  phase: "planner" | "redactor" | "auditor" | "repair";
+  batch?: number;
+  totalBatches?: number;
+  repairAttempt?: number;
+  maxRepairs?: number;
+  tasksLength?: number;
+  taskCount?: number;
+  plannerItemCount?: number;
+  message?: string;
+  /** Markdown acumulado — solo para persistencia de borrador en API; no serializar a Redis. */
+  markdown?: string;
+};
+
+export function tasksPipelineProgressPercent(progress: TasksPipelineProgress): number {
+  switch (progress.phase) {
+    case "planner":
+      return 8;
+    case "redactor": {
+      const batch = progress.batch ?? 1;
+      const total = Math.max(progress.totalBatches ?? 1, 1);
+      return 12 + Math.round((batch / total) * 58);
+    }
+    case "auditor":
+      return 78;
+    case "repair": {
+      const attempt = progress.repairAttempt ?? 1;
+      const max = Math.max(progress.maxRepairs ?? 1, 1);
+      return 82 + Math.round((attempt / max) * 16);
+    }
+    default:
+      return 5;
+  }
+}
+
+export function mergeTasksGenerationDraftFlag(
+  prev: Record<string, unknown>,
+  draft: boolean,
+): Record<string, unknown> {
+  if (draft) return { ...prev, tasksGenerationDraft: true };
+  const next = { ...prev };
+  delete next.tasksGenerationDraft;
+  return next;
+}
+
 export function readTasksQualitySnapshot(
   shortTermContext: unknown,
 ): TasksPipelineQualitySnapshot | null {

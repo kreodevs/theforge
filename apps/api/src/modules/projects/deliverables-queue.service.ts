@@ -12,6 +12,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { Queue, Worker, type Job } from "bullmq";
 import type { AffectedArtifact } from "@theforge/shared-types";
+import { tasksPipelineProgressPercent } from "@theforge/shared-types";
 import { getRequestUserId, runWithRequestUserAsync } from "../../common/request-user.store.js";
 import {
   resolveDeliverablesWorkerConcurrency,
@@ -438,7 +439,12 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
         result = await this.projects.generateTasks(
           projectId,
           (data.gapsFeedback as string | null) ?? undefined,
-          { acknowledgeGaps: data.acknowledgeGaps === true },
+          {
+            acknowledgeGaps: data.acknowledgeGaps === true,
+            onProgress: (progress) => {
+              onProgress({ ...progress, percent: tasksPipelineProgressPercent(progress) });
+            },
+          },
         );
         break;
       case "agent-governance":

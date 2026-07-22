@@ -78,6 +78,7 @@ export const workshopInitialState = {
     | "deliverables-cascade"
     | "repair-sdd-gaps"
     | "agent-governance"
+    | "tasks"
     | null,
   streamingUserMessage: null as string | null,
   streamingUserImages: null as ChatImagePart[] | null,

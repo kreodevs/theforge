@@ -15,6 +15,7 @@ export type WorkshopAgentsBusySlice = {
     | "deliverables-cascade"
     | "repair-sdd-gaps"
     | "agent-governance"
+    | "tasks"
     | "converge"
     | "tasks-to-issues"
     | "clarify-spec"
@@ -43,6 +44,7 @@ const AGENT_LOADING_REASONS = new Set<NonNullable<WorkshopAgentsBusySlice["loadi
   "deliverables-cascade",
   "repair-sdd-gaps",
   "agent-governance",
+  "tasks",
   "converge",
   "tasks-to-issues",
   "clarify-spec",

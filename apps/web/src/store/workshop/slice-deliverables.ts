@@ -1,6 +1,13 @@
 import type { StateCreator } from "zustand";
 import { apiFetch, API_BASE, fetchWithRetry } from "../../utils/apiClient";
 import { queueAndPoll } from "../../utils/queueAndPoll";
+import { isFireAndForgetQueueResponse } from "../../utils/queueAndPollHelpers";
+import {
+  applyTasksPipelineProgress,
+  completeTasksGenerationProgressItems,
+  createTasksGenerationProgressItems,
+} from "../../utils/tasks-generation-progress.util";
+import type { TasksPipelineProgress } from "@theforge/shared-types";
 import {
   applyDeliverableCascadeProgressUpdate,
   ensurePostPassCascadeRow,
@@ -377,27 +384,120 @@ export const createDeliverablesSlice: StateCreator<
   generateTasks: async (projectId, options) => {
     if (!projectId?.trim()) return null;
     const pid = projectId.trim();
-    set({ loading: true, error: null });
+    set({
+      loading: true,
+      loadingReason: "tasks",
+      error: null,
+      agentProgress: createTasksGenerationProgressItems(),
+    });
     try {
-      const qs = options?.acknowledgeGaps === true ? "?acknowledgeGaps=true" : "";
-      const data = await queueAndPoll<Project>(
-        `${API_BASE}/projects/${pid}/generate-tasks${qs}`,
-        {},
-      );
-      const nextStages = data.stages ?? get().workshopStages;
-      set({
-        project: data,
-        tasksContent: data.tasksContent ?? null,
-        workshopStages: nextStages.length > 0 ? nextStages : get().workshopStages,
-        error: null,
+      const params = new URLSearchParams({ queue: "true" });
+      if (options?.acknowledgeGaps === true) params.set("acknowledgeGaps", "true");
+      const baselineLen = get().tasksContent?.length ?? 0;
+      const r = await apiFetch(`${API_BASE}/projects/${pid}/generate-tasks?${params.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
       });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { message?: string }).message ?? "Error al generar Tasks");
+      }
+      const queued = (await r.json()) as { queued?: boolean; jobId?: string };
+      if (queued.queued !== true) {
+        const data = queued as unknown as Project;
+        set({
+          project: data,
+          tasksContent: data.tasksContent ?? null,
+          workshopStages: data.stages ?? get().workshopStages,
+          agentProgress: completeTasksGenerationProgressItems(),
+          error: null,
+        });
+        void get().fetchPlanValidation(pid);
+        return data;
+      }
+
+      const jobId = queued.jobId as string;
+      set({ activeDeliverablesJobId: jobId });
+      const deadline = Date.now() + 6 * 60 * 60 * 1000;
+      let lastTasksLen = baselineLen;
+
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        const projectRes = await apiFetch(`${API_BASE}/projects/${pid}`);
+        if (projectRes.ok) {
+          const project = (await projectRes.json()) as Project;
+          const nextLen = project.tasksContent?.length ?? 0;
+          if (nextLen > lastTasksLen) {
+            lastTasksLen = nextLen;
+            set({
+              project,
+              tasksContent: project.tasksContent ?? null,
+              workshopStages: project.stages ?? get().workshopStages,
+            });
+          }
+        }
+
+        if (isFireAndForgetQueueResponse(queued)) {
+          const status = await get().fetchGenerationStatus(pid);
+          const tasksBusy =
+            status?.busy?.some((j) => j.type === "tasks") ||
+            status?.activeJob?.type === "tasks";
+          if (!tasksBusy && lastTasksLen > baselineLen) {
+            const done = await get().fetchProject(pid);
+            set({ agentProgress: completeTasksGenerationProgressItems() });
+            void get().fetchPlanValidation(pid);
+            return done;
+          }
+          continue;
+        }
+
+        const jobRes = await apiFetch(`${API_BASE}/projects/jobs/${jobId}`);
+        if (!jobRes.ok) continue;
+        const job = (await jobRes.json()) as {
+          status: string;
+          progress?: TasksPipelineProgress & { percent?: number };
+          result?: Project;
+          error?: string;
+        };
+        if (job.progress) {
+          set((s) => ({
+            agentProgress: applyTasksPipelineProgress(s.agentProgress, job.progress!),
+          }));
+        }
+        if (job.status === "failed") {
+          throw new Error(job.error ?? "Error al generar Tasks");
+        }
+        if (job.status === "completed") {
+          let data = job.result as Project | undefined;
+          if (!data) {
+            const fresh = await apiFetch(`${API_BASE}/projects/${pid}`);
+            if (fresh.ok) data = (await fresh.json()) as Project;
+          }
+          if (data) {
+            set({
+              project: data,
+              tasksContent: data.tasksContent ?? null,
+              workshopStages: data.stages ?? get().workshopStages,
+              agentProgress: completeTasksGenerationProgressItems(),
+              error: null,
+            });
+            void get().fetchPlanValidation(pid);
+            return data;
+          }
+          break;
+        }
+      }
+
+      const fallback = await get().fetchProject(pid);
       void get().fetchPlanValidation(pid);
-      return data;
+      return fallback;
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : "Error al generar Tasks" });
+      set({ error: e instanceof Error ? e.message : "Error al generar Tasks", agentProgress: [] });
       return null;
     } finally {
-      set({ loading: false });
+      set({ loading: false, loadingReason: null, activeDeliverablesJobId: null, agentProgress: [] });
       void get().fetchGenerationStatus(pid);
     }
   },
