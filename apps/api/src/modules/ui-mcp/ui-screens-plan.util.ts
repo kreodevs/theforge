@@ -282,7 +282,11 @@ function formatStoryPurpose(story: ParsedUserStory): string {
   } else {
     lines.push(story.title);
   }
-  if (story.id) lines.push(`\n*Referencia:* ${story.id}`);
+  // Sin `*Referencia:* ${story.id}` redundante: el `useCase.id` en
+  // `buildUiProjectInstructions` ya expone `story.id`; duplicar aquí producía
+  // nombres de useCase como "**Como:** ... \n*Referencia:* US-CRUD". Ver
+  // CHANGELOG [Unreleased] → Fixed → "Pantallas: sin *Referencia:* duplicado
+  // en useCase.name".
   return lines.join("  \n");
 }
 

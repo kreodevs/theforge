@@ -77,11 +77,37 @@ export function inferScreenRoute(screenName: string, uiHint?: string): string {
   return slug ? `/${slug}` : "/";
 }
 
+/**
+ * Convierte un identificador (snake_case, kebab-case, SCREAMING_SNAKE, con espacios
+ * o con acentos) a PascalCase limpio: `app_packages` → `AppPackages`,
+ * `app-packages` → `AppPackages`, `app packages` → `AppPackages`,
+ * `APP_PACKAGES` → `AppPackages`, `gestión` → `Gestion`, `inicio de sesión` →
+ * `InicioDeSesion`. Normaliza acentos primero (NFD + strip combining marks) para
+ * que `ó` se considere `[a-zA-Z]` y no rompa la palabra. Usado por
+ * `inferPageComponentName` para producir nombres de componente React limpios
+ * sin restos de guiones bajos ni acentos sueltos como "ó" o "NDe".
+ * CHANGELOG [Unreleased] → Fixed → "Pantallas: PascalCase limpio en
+ * inferPageComponentName (incluye normalización de acentos)".
+ */
+function toPascalCase(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .split(/[^a-zA-Z0-9]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join("");
+}
+
 export function inferPageComponentName(screenName: string): string {
   const cleaned = screenName.replace(/[^\w\sáéíóúñÁÉÍÓÚÑ-]/g, " ").trim();
   const words = cleaned.split(/\s+/).filter(Boolean);
   if (words.length === 0) return "ScreenPage";
-  return `${words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join("")}Page`;
+  // Slugifica cada palabra por separado para que `app_packages` se vuelva
+  // `AppPackages` (no `App_packages`). Antes concatenaba con `.charAt(0).toUpperCase()
+  // + .slice(1)` que preservaba guiones bajos si la palabra los tenía.
+  const pascal = words.map(toPascalCase).join("");
+  return pascal ? `${pascal}Page` : "ScreenPage";
 }
 
 /** Estados UI sugeridos según tipo de pantalla. */

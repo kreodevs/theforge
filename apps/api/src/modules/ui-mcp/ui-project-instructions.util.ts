@@ -189,7 +189,13 @@ export function buildUiProjectInstructions(input: {
 
     uiScreens.push({
       key,
-      title: item.pageName ?? item.screenName,
+      // Title legible para humanos: el `screenName` del plan ya es una frase
+      // legible ("Gestionar app_packages", "Chat del copiloto"). Usamos ese
+      // directamente. Antes era `item.pageName` (PascalCase sucio, tipo
+      // "GestionarApp_packagesPage") que sólo sirve como nombre de componente
+      // React — no como título visible. El `pageName` se mantiene en
+      // `ui.sections[].title` (header) porque la MCP lo usa como component name.
+      title: item.screenName,
       useCase: item.userStoryId
         ? { id: item.userStoryId, name: item.purpose, actors: item.role ? [item.role] : undefined }
         : undefined,
