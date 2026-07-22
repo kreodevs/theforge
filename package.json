@@ -17,6 +17,7 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "test:types": "turbo run test:types",
+    "typecheck": "turbo run build && turbo run test:types",
     "db:generate": "turbo run db:generate --filter=@theforge/database",
     "db:push": "turbo run db:push --filter=@theforge/database",
     "db:migrate": "turbo run db:migrate --filter=@theforge/database",

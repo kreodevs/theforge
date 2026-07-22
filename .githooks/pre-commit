@@ -1,0 +1,44 @@
+#!/usr/bin/env sh
+# Pre-commit: si cambian archivos en `apps/api/**` o `packages/shared-types/**`,
+# rebuild `@theforge/shared-types` (y demás dependencias) antes de aceptar el
+# commit. Sin esto, `dist/` queda stale y un `tsc --noEmit` posterior produce
+# falsos positivos (TS2305 "has no exported member 'X'") aunque el código sea
+# correcto. Ver CHANGELOG [Unreleased] → Fixed.
+#
+# Salida: si la build falla, el commit se aborta (exit != 0).
+# Tiempo añadido: ~3-8 s en cold cache; ~0.5 s si turbo tiene caché.
+
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+# Detecta cambios staged en archivos que dependen de los tipos publicados.
+if git diff --cached --name-only -- 'apps/api/**' 'packages/shared-types/**' | grep -q .; then
+  echo "[pre-commit] Cambios detectados en apps/api o packages/shared-types — rebuild de dependencias con turbo..."
+  if command -v pnpm >/dev/null 2>&1; then
+    pnpm install --frozen-lockfile --silent || {
+      echo "[pre-commit] pnpm install falló — abortando commit"
+      exit 1
+    }
+    # Turbo respeta `^build` en turbo.json, así que reconstruye en orden
+    # topológico: shared-types → business-rules/config/docs-mcp-server/mcp-server
+    # → api. Si no hay cambios en algún paquete, lo salta (cache hit).
+    pnpm turbo run build --filter=...{./apps/api} || {
+      echo "[pre-commit] turbo run build falló — abortando commit"
+      exit 1
+    }
+  elif command -v npx >/dev/null 2>&1; then
+    npx turbo run build --filter=...{./apps/api} || {
+      echo "[pre-commit] turbo run build falló — abortando commit"
+      exit 1
+    }
+  else
+    echo "[pre-commit] WARN: ni pnpm ni npx disponibles — saltando rebuild. Ejecuta \`pnpm -r build\` manualmente."
+  fi
+
+  # Re-stage los `dist/` actualizados para que el commit los incluya.
+  git add -u 'packages/shared-types/dist' 'packages/shared-types/dist-cjs' 2>/dev/null || true
+fi
+
+exit 0
