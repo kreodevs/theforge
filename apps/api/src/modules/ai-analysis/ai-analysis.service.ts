@@ -47,6 +47,7 @@ import { getRequestUserId } from "../../common/request-user.store.js";
 import { CONTEXT_SYNTHESIZER_PROMPT } from "./prompts/load-prompts.js";
 import { createMddIntegrationNode } from "./nodes/mdd-integration.node.js";
 import { createMddSecurityNode } from "./nodes/mdd-security.node.js";
+import { createMddSection5Node } from "./nodes/mdd-section5.node.js";
 import { createMddSoftwareArchitectNode } from "./nodes/mdd-software-architect.node.js";
 import { createMddClarifierNode } from "./nodes/mdd-clarifier.node.js";
 import { getMddArchitectTools } from "./tools/tool-registry.js";
@@ -1682,7 +1683,40 @@ export class AiAnalysisService {
         };
         return;
       }
-      if (section >= 2 && section <= 5) {
+      if (section === 5) {
+        // Nodo quirúrgico: SOLO reescribe ## 5. No usar Software Architect aquí —
+        // ese agente regenera §2–§5 como bloque y puede borrar contenido bueno en §2–§4.
+        const section5Node = createMddSection5Node(llm);
+        const result = yield* runRegenWithHeartbeat(
+          section5Node(state as MDDStateType),
+          getAgentLabel("section5"),
+          "Regenerando §5 Lógica y Edge Cases…",
+          tracer,
+        );
+        const finalDraft = (result.mddDraft ?? mddContent).trim();
+        if (finalDraft === mddContent.trim()) {
+          this.logger.warn(
+            `[MDD regenerate-section] §5 sin cambios (LLM vacío/placeholder o merge no aplicado) projectId=${pid}`,
+          );
+        }
+        const markdown = await tracer.step("prepare-output", async () => this.runPrepareMddForOutput(
+          { mddStructured: result.mddStructured ?? state.mddStructured, mddDraft: finalDraft },
+          regenPrepareOpts,
+        ), { draftLen: finalDraft.length });
+        const metrics = await tracer.step("metrics", async () => this.estimationService.calculateLiveMetrics(markdown, regenEstOpts));
+        const regenGate5 = mddStreamDeliveryGateFields(regenGateRef.current, metrics.status);
+        tracer.summary(true, { mddLen: markdown.length, precision: metrics.precision });
+        yield {
+          type: "done",
+          markdown,
+          precision: metrics.precision,
+          status: regenGate5.status,
+          deliveryGate: regenGate5.deliveryGate,
+          precisionBreakdown: this.estimationService.getPrecisionBreakdown(markdown, regenEstOpts),
+        };
+        return;
+      }
+      if (section >= 2 && section <= 4) {
         const softwareArchitectNode = createMddSoftwareArchitectNode(llm, getMddArchitectTools(), {
           theforge: this.theforge,
         });
