@@ -96,6 +96,7 @@ type DeliverablesSliceActions = Pick<
   | "phase0DeepResearch"
   | "fetchEstimation"
   | "clearPhase0SummaryContent"
+  | "clearMddDependentDeliverables"
   | "clearWorkshopDocumentContent"
   | "setAgentProgress"
 >;
@@ -1130,6 +1131,34 @@ export const createDeliverablesSlice: StateCreator<
       }
     } catch {
       // ignore
+    }
+  },
+
+  clearMddDependentDeliverables: async (projectId) => {
+    const pid = projectId?.trim();
+    if (!pid) return false;
+    const stageId = get().activeStageId?.trim();
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${pid}/clear-mdd-deliverables`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(stageId ? { stageId } : {}),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        set({
+          error: (err as { message?: string }).message ?? "No se pudieron limpiar los entregables",
+        });
+        return false;
+      }
+      await get().fetchProject(pid);
+      set({ error: null });
+      return true;
+    } catch (e) {
+      set({
+        error: e instanceof Error ? e.message : "Error al limpiar entregables del MDD",
+      });
+      return false;
     }
   },
 

@@ -326,6 +326,8 @@ export interface WorkshopState {
     opts: { userIdea?: string; urls?: string[]; includeBenchmark?: boolean },
   ) => Promise<Project | null>;
   clearPhase0SummaryContent: (projectId: string) => Promise<void>;
+  /** Vacía entregables SDD dependientes del MDD (spec, blueprint, tasks, etc.) sin borrar el MDD. */
+  clearMddDependentDeliverables: (projectId: string) => Promise<boolean>;
   /** Clears the active workshop document tab content (PATCH null / empty). */
   clearWorkshopDocumentContent: (
     projectId: string,

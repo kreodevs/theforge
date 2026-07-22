@@ -164,6 +164,13 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     return this.projectUpdate.update(id, data);
   }
 
+  async clearMddDependentDeliverables(
+    projectId: string,
+    options?: { stageId?: string },
+  ) {
+    return this.projectUpdate.clearMddDependentDeliverables(projectId, options);
+  }
+
   async remove(id: string) {
     const project = await loadAccessibleProjectWithStages(this.prisma, id);
     const userId = getRequestUserId();

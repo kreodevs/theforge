@@ -33,6 +33,7 @@ import {
   clarifyDocumentBodySchema,
   resolveClarificationsBodySchema,
   tasksToIssuesBodySchema,
+  clearMddDependentDeliverablesBodySchema,
 } from "@theforge/shared-types";
 import { SddIntegrationService } from "./sdd-integration.service.js";
 import { PlanValidationService } from "./plan-validation.service.js";
@@ -408,6 +409,15 @@ export class ProjectsController {
   @Patch(":id")
   update(@Param("id") id: string, @Body() body: unknown) {
     return this.projects.update(id, updateProjectSchema.partial().parse(body));
+  }
+
+  /** Vacía entregables SDD dependientes del MDD (spec, blueprint, tasks, etc.) sin borrar el MDD. */
+  @Post(":id/clear-mdd-deliverables")
+  clearMddDependentDeliverables(@Param("id") id: string, @Body() body: unknown) {
+    const parsed = clearMddDependentDeliverablesBodySchema.parse(body ?? {});
+    return this.projects.clearMddDependentDeliverables(id, {
+      stageId: parsed.stageId,
+    });
   }
 
   @Post(":id/generate-benchmark")

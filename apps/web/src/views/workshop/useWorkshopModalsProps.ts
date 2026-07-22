@@ -39,6 +39,9 @@ export function useWorkshopModalsProps(args: UseWorkshopModalsPropsArgs): Worksh
     clearMddConfirmOpen,
     setClearMddConfirmOpen,
     handleClearMddCompletely,
+    clearMddDeliverablesConfirmOpen,
+    setClearMddDeliverablesConfirmOpen,
+    handleClearMddDependentDeliverables,
     mddPatternsWizardOpen,
     setMddPatternsWizardOpen,
     mddPatternsWizardMode,
@@ -103,6 +106,12 @@ export function useWorkshopModalsProps(args: UseWorkshopModalsPropsArgs): Worksh
         const ok = await handleClearMddCompletely();
         if (ok) setClearMddConfirmOpen(false);
       },
+      clearMddDeliverablesConfirmOpen,
+      setClearMddDeliverablesConfirmOpen,
+      onClearMddDeliverablesConfirm: async () => {
+        const ok = await handleClearMddDependentDeliverables();
+        if (ok) setClearMddDeliverablesConfirmOpen(false);
+      },
       mddPatternsWizardOpen,
       setMddPatternsWizardOpen,
       mddPatternsWizardMode,
@@ -155,6 +164,8 @@ export function useWorkshopModalsProps(args: UseWorkshopModalsPropsArgs): Worksh
       reapplyMddFormat,
       clearMddConfirmOpen,
       handleClearMddCompletely,
+      clearMddDeliverablesConfirmOpen,
+      handleClearMddDependentDeliverables,
       mddPatternsWizardOpen,
       mddPatternsWizardMode,
       patternsWizardPreselected,

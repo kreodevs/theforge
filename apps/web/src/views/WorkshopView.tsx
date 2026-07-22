@@ -136,6 +136,7 @@ export default function WorkshopView({
   const [mddRegenerateInitialMode, setMddRegenerateInitialMode] =
     useState<MddRegenerateMode>("full");
   const [clearMddConfirmOpen, setClearMddConfirmOpen] = useState(false);
+  const [clearMddDeliverablesConfirmOpen, setClearMddDeliverablesConfirmOpen] = useState(false);
   const [mddPatternsWizardMode, setMddPatternsWizardMode] =
     useState<MddPatternsWizardMode>("initial");
   const [patternsWizardAnalyzing, setPatternsWizardAnalyzing] = useState(false);
@@ -516,6 +517,7 @@ export default function WorkshopView({
   const clearPhase0SummaryContent = useWorkshopStore((s) => s.clearPhase0SummaryContent);
   const clearWorkshopDocumentContent = useWorkshopStore((s) => s.clearWorkshopDocumentContent);
   const clearMddContentCompletely = useWorkshopStore((s) => s.clearMddContentCompletely);
+  const clearMddDependentDeliverables = useWorkshopStore((s) => s.clearMddDependentDeliverables);
   const setPhase0SummaryContent = useWorkshopStore((s) => s.setPhase0SummaryContent);
   const persistPhase0SummaryContent = useWorkshopStore((s) => s.persistPhase0SummaryContent);
   const legacyGenerateCodebaseDoc = useWorkshopStore((s) => s.legacyGenerateCodebaseDoc);
@@ -1183,6 +1185,12 @@ export default function WorkshopView({
     });
     return true;
   }, [projectId, clearMddContentCompletely, setCentralPanel]);
+
+  const handleClearMddDependentDeliverables = useCallback(async () => {
+    if (!projectId?.trim()) return false;
+    const ok = await clearMddDependentDeliverables(projectId);
+    return ok;
+  }, [projectId, clearMddDependentDeliverables]);
 
   const [isLgLayout, setIsLgLayout] = useState(() =>
     typeof globalThis.matchMedia === "function"
@@ -1965,6 +1973,9 @@ export default function WorkshopView({
     clearMddConfirmOpen,
     setClearMddConfirmOpen,
     handleClearMddCompletely,
+    clearMddDeliverablesConfirmOpen,
+    setClearMddDeliverablesConfirmOpen,
+    handleClearMddDependentDeliverables,
     mddPatternsWizardOpen,
     setMddPatternsWizardOpen,
     mddPatternsWizardMode,
@@ -2140,6 +2151,7 @@ export default function WorkshopView({
     openSuggestMddPatterns,
     openEditMddPatterns,
     setClearMddConfirmOpen,
+    setClearMddDeliverablesConfirmOpen,
     handleGenerateDeliverables,
     setMddContent,
     revertMddContent,

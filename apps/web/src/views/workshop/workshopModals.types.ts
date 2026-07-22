@@ -56,6 +56,9 @@ export type WorkshopModalsProps = {
   clearMddConfirmOpen: boolean;
   setClearMddConfirmOpen: (open: boolean) => void;
   onClearMddConfirm: () => void | Promise<boolean | void>;
+  clearMddDeliverablesConfirmOpen: boolean;
+  setClearMddDeliverablesConfirmOpen: (open: boolean) => void;
+  onClearMddDeliverablesConfirm: () => void | Promise<boolean | void>;
   mddPatternsWizardOpen: boolean;
   setMddPatternsWizardOpen: Dispatch<SetStateAction<boolean>>;
   mddPatternsWizardMode: MddPatternsWizardMode;

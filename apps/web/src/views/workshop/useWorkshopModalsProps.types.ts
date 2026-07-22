@@ -51,6 +51,9 @@ export interface UseWorkshopModalsPropsArgs {
   clearMddConfirmOpen: boolean;
   setClearMddConfirmOpen: (open: boolean) => void;
   handleClearMddCompletely: () => Promise<boolean>;
+  clearMddDeliverablesConfirmOpen: boolean;
+  setClearMddDeliverablesConfirmOpen: (open: boolean) => void;
+  handleClearMddDependentDeliverables: () => Promise<boolean>;
   mddPatternsWizardOpen: boolean;
   setMddPatternsWizardOpen: Dispatch<SetStateAction<boolean>>;
   mddPatternsWizardMode: MddPatternsWizardMode;

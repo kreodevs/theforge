@@ -18,7 +18,14 @@ import {
   DocumentSnapshotService,
   type DocumentSnapshotSource,
 } from "../document-snapshot/document-snapshot.service.js";
-import { shouldReplacePhase0SummaryWithBorrador, updateProjectSchema, type UpdateProjectDto } from "@theforge/shared-types";
+import {
+  shouldReplacePhase0SummaryWithBorrador,
+  updateProjectSchema,
+  type UpdateProjectDto,
+  pickDeliverableFieldsFromSource,
+  MDD_DEPENDENT_DELIVERABLE_KEYS,
+  type ProjectDeliverableSource,
+} from "@theforge/shared-types";
 import { stampMarkdownIfBodyChanged } from "../engine/document-date-header.util.js";
 import { enforceMddGovernancePatternsOnPersist } from "@theforge/shared-types/mdd-governance-patterns";
 import { PrismaService } from "../../prisma/prisma.service.js";
@@ -31,8 +38,11 @@ import { ProjectEstimationRecalcService } from "./project-estimation-recalc.serv
 import { ProjectDeliverableGateService } from "./project-deliverable-gate.service.js";
 import { pickPrimaryStage } from "./stage-helpers.js";
 import { persistStageAndProjectDeliverables } from "./stage-deliverable-persist.util.js";
-import { pickDeliverableFieldsFromSource, type ProjectDeliverableSource } from "@theforge/shared-types";
 import { ProjectsService } from "./projects.service.js";
+import {
+  buildProjectClearMddDependentDeliverablesUpdate,
+  buildStageClearMddDependentDeliverablesUpdate,
+} from "./clear-mdd-dependent-deliverables.util.js";
 
 type StageWithEst = Stage & { estimation: Estimation | null };
 
@@ -365,5 +375,40 @@ export class ProjectUpdateService {
     }
     notifyLifecycle();
     return project;
+  }
+
+  /** Vacía entregables SDD regenerados desde el MDD (conserva MDD, DBGA, Fase 0, AEM, BRD). */
+  async clearMddDependentDeliverables(
+    projectId: string,
+    options?: { stageId?: string },
+  ) {
+    const existing = await loadAccessibleProjectWithStages(this.prisma, projectId);
+    const targetStage =
+      (options?.stageId?.trim() &&
+        existing.stages.find((s) => s.id === options.stageId!.trim())) ||
+      pickPrimaryStage(existing.stages);
+    if (!targetStage) throw new BadRequestException("El proyecto no tiene etapas");
+
+    const projectClear = buildProjectClearMddDependentDeliverablesUpdate();
+    const stageClear = buildStageClearMddDependentDeliverablesUpdate(targetStage.shortTermContext);
+
+    await this.prisma.$transaction([
+      this.prisma.project.update({
+        where: { id: projectId },
+        data: projectClear,
+      }),
+      this.prisma.stage.update({
+        where: { id: targetStage.id },
+        data: stageClear,
+      }),
+    ]);
+
+    for (const field of MDD_DEPENDENT_DELIVERABLE_KEYS) {
+      await this.changeLog.log(projectId, field, null);
+    }
+    await this.changeLog.log(projectId, "tasksContent", null);
+
+    await this.deliverableGate.refreshStageSemaphoreFromProject(projectId);
+    return this.projects.findOne(projectId);
   }
 }

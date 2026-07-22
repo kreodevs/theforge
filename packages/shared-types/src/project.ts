@@ -96,6 +96,15 @@ export const updateProjectSchema = z.object({
   groupId: z.string().uuid().optional(),
 });
 
+/** Body para POST /projects/:id/clear-mdd-deliverables */
+export const clearMddDependentDeliverablesBodySchema = z.object({
+  /** Etapa activa donde limpiar entregables live; si se omite, la etapa principal del proyecto. */
+  stageId: z.string().uuid().optional(),
+});
+export type ClearMddDependentDeliverablesBody = z.infer<
+  typeof clearMddDependentDeliverablesBodySchema
+>;
+
 /** Body para POST /projects/:id/phase0-deep-research */
 export const phase0DeepResearchBodySchema = z.object({
   userIdea: z.string().optional(),
