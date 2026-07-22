@@ -24,7 +24,7 @@ El entrypoint estable para consumidores sigue siendo `../mdd-sanitize.ts` (re-ex
 
 **Exports públicos de `sql-repair.ts`:** `sanitizeSqlBrokenCommentsAndProse`, `stripIndexesOnCommentedSqlColumns`, `repairSqlProseInTableBodies`, `repairSqlDetachedCheckConstraints`, `sanitizeAllSqlBlocksInDraft`, `formatSqlBlockWithNewlines`, `detectUnclosedSqlFences`.
 
-**Exports principales de `section-merge.ts`:** `mergeSection1IntoDraft`, `preserveUntouchedMddSectionsFromBaseline`, `restoreMddSectionsFromBaselineStrict`, `deduplicateAndReorderMddSections`, `validateMddStructure`, `getSection6Or7Range`, `replaceSection6Or7InDraft`.
+**Exports principales de `section-merge.ts`:** `mergeSection1IntoDraft`, `preserveUntouchedMddSectionsFromBaseline`, `restoreMddSectionsFromBaselineStrict`, `deduplicateAndReorderMddSections`, `validateMddStructure`, `getSection6Or7Range`, `replaceSection6Or7InDraft`, `mergeSingleArchitectSectionIntoDraft` (regen §2/§3/§4 quirúrgica tras Architect).
 
 **Exports de `mermaid-fences.ts`:** `stripMermaidFences`, `fixDoubleMermaidFences`, `unescapeMermaidLiteralNewlines`, `fixSection2UnclosedSqlAndGluedMermaid`.
 
