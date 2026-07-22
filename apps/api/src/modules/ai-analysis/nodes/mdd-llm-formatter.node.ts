@@ -12,6 +12,17 @@ const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:LLMFormatter]
  * Nodo formateador LLM: toma mddStructured (estructura completa con §§1-7),
  * lo serializa como JSON y pide al LLM que genere markdown limpio.
  * Reemplaza mddDraft con el markdown generado.
+ *
+ * @deprecated REMOVIDO del grafo MDD (CHANGELOG [Unreleased] → Fixed →
+ * "Eliminación del LLM formatter destructivo"). Era destructivo: en
+ * pasadas posteriores (ej. tras section5 regen) el skip heurístico
+ * podía fallar y el LLM re-formateaba con resultado peor que el
+ * original. Si necesitas reintroducirlo, exígele un skip MUCHO más
+ * estricto: 7 secciones con headings + §3 con `CREATE TABLE` + §4 con
+ * endpoints JSON + sin patrones `(Pendiente)` en el cuerpo. Confía en
+ * los 3 formatters deterministas (`format_after_architect`,
+ * `format_sec_int`, `format_after_redactor`) + el substance check del
+ * delivery gate para mantener la calidad.
  */
 export function createMddLlmFormatterNode(llm: BaseChatModel) {
   return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {

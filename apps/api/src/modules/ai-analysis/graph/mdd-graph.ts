@@ -11,7 +11,10 @@ import { createMddSecurityNode } from "../nodes/mdd-security.node.js";
 import { createMddIntegrationNode } from "../nodes/mdd-integration.node.js";
 import { createMddSection5Node } from "../nodes/mdd-section5.node.js";
 import { createMddSecurityIntegrationNode } from "../nodes/mdd-security-integration.node.js";
-import { createMddLlmFormatterNode } from "../nodes/mdd-llm-formatter.node.js";
+// `createMddLlmFormatterNode` import ELIMINADO: el nodo llm_formatter fue
+// removido del grafo por ser destructivo. El factory se conserva en
+// mdd-llm-formatter.node.ts (marcado @deprecated) por si alguien lo quiere
+// reintroducir con un skip heurístico más estricto.
 import { createMddAuditorNode } from "../nodes/mdd-auditor.node.js";
 import { createMddManagerNode, type MddManagerToolDeps } from "../nodes/mdd-manager.node.js";
 import { createMddPlanApprovalNode } from "../nodes/mdd-plan-approval.node.js";
@@ -38,7 +41,6 @@ import {
   securityInput,
   integrationInput,
   securityIntegrationInput,
-  llmFormatterInput,
   crossConsistencyInput,
 } from "../checkpoint/node-input-hash.js";
 
@@ -177,11 +179,14 @@ export async function createMddGraph(
     ),
     onNodeStart,
   );
-  const llmFormatterNode = wrapNodeStart(
-    "llm_formatter",
-    wrapCache(nodeCache, "llm_formatter", llmFormatterInput, createMddLlmFormatterNode(llm)),
-    onNodeStart,
-  );
+  // `llm_formatter` (mdd-llm-formatter.node.ts) ELIMINADO del grafo: era destructivo.
+  // Re-generaba el markdown desde mddStructured via LLM, perdiendo el formato
+  // que los formatters deterministas (format_after_architect, format_sec_int,
+  // format_after_redactor) ya habían producido. En pasadas posteriores (ej. tras
+  // section5 regen) el skip heurístico podía fallar y el LLM re-formateaba
+  // con resultado peor que el original. Confiamos en los 3 formatters
+  // deterministas + el substance check del delivery gate. Ver CHANGELOG
+  // [Unreleased] → Fixed → "Eliminación del LLM formatter destructivo".
   const auditorNode = wrapNodeStart(
     "auditor",
     createMddAuditorNode(auditorLlm, getMddAuditorTools(), null),
@@ -271,7 +276,6 @@ export async function createMddGraph(
     .addNode("integration", integrationNode)
     .addNode("format_sec_int", formatSecIntNode)
     .addNode("format_after_redactor", formatterNode("format_after_redactor"))
-    .addNode("llm_formatter", llmFormatterNode)
     // [PARALELO] CrossConsistency (skip si draft completo) + DiagramInjector (code-only, <3s)
     .addNode("cross_consistency_checker", consistencyNode)
     .addNode("diagram_injector", diagramInjectorNode)
@@ -298,9 +302,10 @@ export async function createMddGraph(
     .addEdge("security_integration", "format_after_redactor")
     .addEdge("integration", "format_sec_int")
     .addEdge("format_sec_int", "format_after_redactor")
-    .addEdge("format_after_redactor", "llm_formatter")
-    .addEdge("llm_formatter", "cross_consistency_checker")
-    .addEdge("llm_formatter", "diagram_injector")
+    // format_after_redactor → cross_consistency_checker + diagram_injector en paralelo.
+    // (Antes pasaba por llm_formatter destructivo; ver CHANGELOG [Unreleased].)
+    .addEdge("format_after_redactor", "cross_consistency_checker")
+    .addEdge("format_after_redactor", "diagram_injector")
     .addEdge("cross_consistency_checker", "auditor")
     .addEdge("diagram_injector", "auditor")
     // section5 (dedicated §5 pass) vuelve a prepare_output para re-evaluar el gate.
@@ -368,7 +373,10 @@ export async function createMddGraphWithManager(
     securityIntegrationInput,
     createMddSecurityIntegrationNode(structuralLlm),
   );
-  const llmFormatterNode = wrapCache(nodeCache, "llm_formatter", llmFormatterInput, createMddLlmFormatterNode(llm));
+  // `llm_formatter` ELIMINADO del grafo manager: destructivo.
+  // (mdd-llm-formatter.node.ts se conserva en el repo, marcado @deprecated,
+  // por si en el futuro alguien lo quiere reintroducir con un skip heurístico
+  // más estricto.)
   const diagramInjectorNode = createMddDiagramInjectorNode();
   const consistencyNode = wrapCache(
     nodeCache,
@@ -478,7 +486,9 @@ export async function createMddGraphWithManager(
   }
   function routeAfterFormatRedactor(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
-    return nextInSections(state, "format_after_redactor") ?? "llm_formatter";
+    // Antes: ?? "llm_formatter" (destructivo, eliminado). Ahora va directo a
+    // los verificadores de consistencia + diagramas.
+    return nextInSections(state, "format_after_redactor") ?? "cross_consistency_checker";
   }
   function routeAfterConsistency(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
@@ -522,7 +532,6 @@ export async function createMddGraphWithManager(
     "security",
     "integration",
     "section5",
-    "llm_formatter",
     "cross_consistency_checker",
     "graph_populator",
     "blackboard",
@@ -567,7 +576,6 @@ export async function createMddGraphWithManager(
     // únicamente en §5. CHANGELOG [Unreleased] → Added → "Dedicated §5 pass".
     .addNode("section5", section5Node, { ends: ["prepare_output"] })
     .addNode("format_after_redactor", formatterNode)
-    .addNode("llm_formatter", llmFormatterNode)
     .addNode("cross_consistency_checker", consistencyNode)
     .addNode("diagram_injector", diagramInjectorNode)
     .addNode("auditor", auditorNode)
@@ -626,7 +634,6 @@ export async function createMddGraphWithManager(
       executor: "executor",
     })
     .addConditionalEdges("integration", routeAfterIntegration, {
-      llm_formatter: "llm_formatter",
       format_after_redactor: "format_after_redactor",
       cross_consistency_checker: "cross_consistency_checker",
       diagram_injector: "diagram_injector",
@@ -635,14 +642,13 @@ export async function createMddGraphWithManager(
       executor: "executor",
     })
     .addConditionalEdges("format_after_redactor", routeAfterFormatRedactor, {
-      llm_formatter: "llm_formatter",
       cross_consistency_checker: "cross_consistency_checker",
       diagram_injector: "diagram_injector",
       auditor: "auditor",
       manager: "manager",
       executor: "executor",
     })
-    .addEdge("llm_formatter", "cross_consistency_checker")
+    .addEdge("format_after_redactor", "cross_consistency_checker")
     .addConditionalEdges("cross_consistency_checker", routeAfterConsistency, {
       diagram_injector: "diagram_injector",
       auditor: "auditor",

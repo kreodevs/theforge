@@ -19,7 +19,7 @@ const AGENT_LABELS: Record<string, string> = {
   security_integration: "Seguridad + Integración (paralelo)",
   format_sec_int: "Formateador (seguridad e integración)",
   format_after_redactor: "Formateador (post-redacción)",
-  llm_formatter: "Formateador LLM (MDD)",
+  llm_formatter: "Formateador LLM (deprecated)",
   cross_consistency_checker: "Consistencia cruzada (MDD)",
   diagram_injector: "Inyector de diagramas (MDD)",
   prepare_output: "Preparación de salida (MDD)",
