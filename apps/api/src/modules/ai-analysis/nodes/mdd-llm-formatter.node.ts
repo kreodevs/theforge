@@ -4,6 +4,7 @@ import { MDD_LLM_FORMATTER_PROMPT } from "../prompts/load-prompts.js";
 import type { MDDStateType } from "../state/index.js";
 import { getUserBrief } from "../utils/mdd-user-brief.js";
 import { logMddNodeOutput, validateMddStructure } from "../utils/mdd-sanitize.js";
+import { extractLlmText, invokeLlmWithRetry } from "../utils/mdd-llm-retry.util.js";
 
 const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:LLMFormatter] ${msg}`, ...args);
 
@@ -54,8 +55,12 @@ export function createMddLlmFormatterNode(llm: BaseChatModel) {
       ].filter(Boolean).join("\n");
 
       const prompt = `${MDD_LLM_FORMATTER_PROMPT}\n\n---\n${context}`;
-      const response = await llm.invoke([new HumanMessage(prompt)]);
-      const text = typeof response.content === "string" ? response.content : "";
+      const response = await invokeLlmWithRetry(llm, [new HumanMessage(prompt)], { tag: "LLMFormatter" });
+      if (!response) {
+        LOG("LLM sin respuesta tras reintentos, preservando draft actual");
+        return {};
+      }
+      const text = extractLlmText(response);
       if (!text.trim()) {
         LOG("LLM vacío, preservando draft actual");
         return {};

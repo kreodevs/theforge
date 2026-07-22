@@ -10,6 +10,7 @@ import { buildUserDeclaredStackPromptBlock } from "../utils/user-declared-stack.
 import { extractFirstJsonObject, parseJsonOrThrow } from "../utils/parse-json.js";
 import { clarifierComplexityAppendix } from "../utils/mdd-complexity-rigor.js";
 import { domainInventoryPromptBlock } from "../utils/mdd-domain-prompt.util.js";
+import { extractLlmText, invokeLlmWithRetry } from "../utils/mdd-llm-retry.util.js";
 import { z } from "zod";
 
 /** Acepta string o objeto (el LLM a veces devuelve objeto); normaliza a string. */
@@ -90,8 +91,16 @@ export function createMddClarifierNode(llm: BaseChatModel) {
         }
         const context = contextParts.join("\n");
         const prompt = `${CLARIFIER_QUESTIONS_ONLY_MDD_PROMPT}\n\n---\n${context}`;
-        const response = await llm.invoke([new HumanMessage(prompt)]);
-        const text = typeof response.content === "string" ? response.content : "";
+        const response = await invokeLlmWithRetry(llm, [new HumanMessage(prompt)], { tag: "Clarifier:questions" });
+        if (!response) {
+          LOG("questions-only: LLM sin respuesta tras reintentos — usando fallback");
+          return {
+            managerQuestions: ["¿Cuáles son los objetivos principales del sistema?", "¿Qué requisitos técnicos o integraciones son prioritarios?"],
+            requestQuestionsOnly: false,
+            clarifierJustGeneratedQuestions: true,
+          };
+        }
+        const text = extractLlmText(response);
         const questions = text.trim()
           ? parseJsonOrThrow(text, questionsOnlySchema).questions.slice(0, 2)
           : ["¿Cuáles son los objetivos principales del sistema?", "¿Qué requisitos técnicos o integraciones son prioritarios?"];
@@ -154,8 +163,20 @@ export function createMddClarifierNode(llm: BaseChatModel) {
           prompt += `\n\n**Importante:** La última respuesta es un acuerdo breve; el usuario acepta la propuesta concreta del Feedback del Auditor (ej. transacciones ACID, consistencia eventual, Docker, etc.). Incorpórala explícitamente al borrador en la sección correspondiente.`;
         }
       }
-      const response = await llm.invoke([new HumanMessage(prompt)]);
-      const text = typeof response.content === "string" ? response.content : "";
+      const response = await invokeLlmWithRetry(llm, [new HumanMessage(prompt)], { tag: "Clarifier:draft" });
+      if (!response) {
+        LOG("LLM sin respuesta tras reintentos — usando fallback (template placeholder)");
+        const noBench = /sin benchmark|no hay benchmark/i.test(state.dbgaContent);
+        const base = noBench
+          ? getMddTemplatePlaceholder("(Genera un MDD base; el usuario refinará después.)")
+          : getMddTemplatePlaceholder(`(Basado en: ${state.dbgaContent.slice(0, 1500)}.)`);
+        return {
+          clarifiedScope: state.dbgaContent.slice(0, 2000),
+          mddDraft: base,
+          clarifierJustGeneratedQuestions: false,
+        };
+      }
+      const text = extractLlmText(response);
       if (!text.trim()) {
         LOG("LLM vacío, usando fallback");
         const noBench = /sin benchmark|no hay benchmark/i.test(state.dbgaContent);

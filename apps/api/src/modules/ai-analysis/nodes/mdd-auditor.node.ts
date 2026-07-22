@@ -9,6 +9,7 @@ import { applyPreDeliveryGateFixes, validateMddStructure } from "../utils/mdd-sa
 import { getInternalDirectivesContext } from "../utils/mdd-mesh-topology.js";
 import { auditorConstitutionRigorAppendix } from "../utils/mdd-complexity-rigor.js";
 import { domainInventoryPromptBlock } from "../utils/mdd-domain-prompt.util.js";
+import { extractLlmText, invokeLlmWithRetry } from "../utils/mdd-llm-retry.util.js";
 import {
   buildAuditorFeedbackFromGaps,
   computeDeterministicAuditorScore,
@@ -188,9 +189,22 @@ export function createMddAuditorNode(
       let loopCount = 0;
 
       while (loopCount < MAX_TOOL_LOOPS) {
-        const response = await llmWithTools.invoke(messages);
+        // Retry sólo en la última iteración del tool-loop (cuando ya no hay
+        // tool_calls y se genera la respuesta JSON final). Iteraciones
+        // intermedias con contenido vacío son OK — el LLM sigue invocando
+        // tools hasta agotar el loop. Ver CHANGELOG [Unreleased] → Fixed →
+        // "Auditor devuelve LLM vacío".
+        const isFinalIteration = loopCount === MAX_TOOL_LOOPS - 1;
+        const response = isFinalIteration
+          ? await invokeLlmWithRetry(llmWithTools, messages, { tag: "Auditor:tools" })
+          : await llmWithTools.invoke(messages);
+        if (!response) {
+          LOG("tool-loop LLM sin respuesta tras reintentos (iter=%s); saliendo del loop", loopCount);
+          lastContent = "";
+          break;
+        }
         const aiMsg = response as AIMessage;
-        lastContent = typeof aiMsg.content === "string" ? aiMsg.content : "";
+        lastContent = extractLlmText(aiMsg);
 
         const toolCalls = aiMsg.tool_calls ?? [];
         if (toolCalls.length === 0) break;

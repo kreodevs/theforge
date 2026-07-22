@@ -35,6 +35,7 @@ import { parseJsonOrThrow } from "../utils/parse-json.js";
 import { getInternalDirectivesContext, extractInternalDirectives } from "../utils/mdd-mesh-topology.js";
 import { softwareArchitectComplexityAppendix } from "../utils/mdd-complexity-rigor.js";
 import { buildUiMcpFrontendArchitectHint } from "../utils/mdd-inject-ui-mcp-frontend.util.js";
+import { extractLlmText, invokeLlmWithRetry } from "../utils/mdd-llm-retry.util.js";
 import {
   domainInventoryPromptBlock,
   mddStateHasDomainAuthSkew,
@@ -700,9 +701,21 @@ export function createMddSoftwareArchitectNode(
       if (toolsToUse.length > 0) {
         let loopCount = 0;
         while (loopCount < maxToolLoops) {
-          const response = await llmWithTools.invoke(messages);
+          // Retry sólo en la última iteración del tool-loop (cuando ya no hay
+          // tool_calls y se genera el texto final). Iteraciones intermedias
+          // con contenido vacío no son un problema — el LLM sigue invocando
+          // tools hasta que termina. Ver CHANGELOG [Unreleased] → Fixed →
+          // "SoftwareArchitect devuelve LLM vacío".
+          const isFinalIteration = loopCount === maxToolLoops - 1;
+          const response = isFinalIteration
+            ? await invokeLlmWithRetry(llmWithTools, messages, { tag: "SoftwareArchitect:tools" })
+            : await llmWithTools.invoke(messages);
+          if (!response) {
+            LOG("tool-loop LLM sin respuesta tras reintentos (iter=%s); saliendo del loop", loopCount);
+            break;
+          }
           const aiMsg = response as AIMessage;
-          text = typeof aiMsg.content === "string" ? aiMsg.content : "";
+          text = extractLlmText(aiMsg);
           const toolCalls = aiMsg.tool_calls ?? [];
           if (toolCalls.length === 0) break;
           const toolMessages: ToolMessage[] = [];
@@ -728,8 +741,8 @@ export function createMddSoftwareArchitectNode(
           loopCount++;
         }
       } else {
-        const response = await llm.invoke(messages);
-        text = typeof response.content === "string" ? response.content : "";
+        const response = await invokeLlmWithRetry(llm, messages, { tag: "SoftwareArchitect:no-tools" });
+        text = response ? extractLlmText(response) : "";
       }
       text = stripThinkingTags(text);
 
