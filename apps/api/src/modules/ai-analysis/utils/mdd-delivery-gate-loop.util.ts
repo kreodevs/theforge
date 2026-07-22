@@ -5,22 +5,47 @@ import { getSection6Or7Range } from "./mdd-sanitize.js";
 /** Máximo de reintentos automáticos del gate de entrega (Fase 4). */
 export const MAX_MDD_DELIVERY_GATE_ATTEMPTS = 3;
 
-export type DeliveryGateFixTarget = "software_architect" | "integration" | "clarifier";
+/** Nodo del grafo al que el auto-loop redirige tras un fallo del gate.
+ *  - "software_architect": re-genera §2/§3/§4/§5 (slice completo).
+ *  - "integration": re-genera §6/§7 en paralelo.
+ *  - "clarifier": re-pide alcance al usuario.
+ *  - "section5": re-genera SOLO §5 (cuando el substance check falla
+ *    únicamente en §5, evita re-correr todo el software_architect).
+ *    CHANGELOG [Unreleased] → Added → "Dedicated §5 pass". */
+export type DeliveryGateFixTarget =
+  | "software_architect"
+  | "integration"
+  | "clarifier"
+  | "section5";
 
+const SECTION5_BLOCKER_RE = /5\.\s*Lógica\s+y\s*Edge\s+Cases/i;
 const INTEGRATION_BLOCKER_RE =
   /§7|infraestructura|jwt|manifest|node:|microservicios|hashing_algorithm|jwks|api_prefix|tabla\s+outbox\b/i;
 const SECTION3_BLOCKER_RE =
   /§3|§4|sql|prosa inválida|create table|erdiagram|technicalmetadata|outbox-like|§6 menciona tabla|fences desbalanceados|tabla huérfana|json inválido/i;
+// §1 substance: el Clarifier debe re-pedir el alcance al usuario. §2 también
+// si falta el stack (heading ausente); pero §2 con heading presente y
+// body corto es un problema del Architect, no del Clarifier. Para distinguir,
+// exigimos que el mensaje de §2 mencione "faltante" o "faltantes".
 const CLARIFIER_BLOCKER_RE =
-  /§1\s*contexto|1\.\s*contexto|2\.\s*arquitectura|secciones obligatorias faltantes:.*(?:1\.\s*contexto|2\.\s*arquitectura)|placeholder.*guiones|objetivos comerciales/i;
+  /§1\s*contexto|1\.\s*contexto|2\.\s*arquitectura\s+y\s*stack\s*faltant|secciones obligatorias faltantes:.*(?:1\.\s*contexto|2\.\s*arquitectura)|placeholder.*guiones|objetivos comerciales/i;
 
 const MISSING_SECTION7_BLOCKER_RE =
   /secciones obligatorias faltantes:\s*7\.\s*infraestructura\b/i;
 
-/** Decide si el siguiente paso del auto-loop debe ser arquitecto (§3/§4), integración (§7) o clarifier (§1). */
+/** Decide si el siguiente paso del auto-loop debe ser arquitecto (§3/§4), integración (§7),
+ *  clarifier (§1) o section5 (§5 sólo). Prioriza el match más específico:
+ *  si el substance check sólo menciona §5, enruta a "section5" (más eficiente
+ *  que re-correr software_architect). */
 export function resolveDeliveryGateFixTarget(blockers: string[]): DeliveryGateFixTarget {
   const items = blockers.length > 0 ? blockers : [];
   const text = items.join(" ");
+
+  // Prioridad alta: si TODOS los blockers son sólo sobre §5 → section5
+  // (más eficiente que regenerar §2-§5 vía software_architect).
+  if (items.length > 0 && items.every((b) => SECTION5_BLOCKER_RE.test(b))) {
+    return "section5";
+  }
 
   if (items.some((b) => MISSING_SECTION7_BLOCKER_RE.test(b))) {
     return "integration";

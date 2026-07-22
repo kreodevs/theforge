@@ -9,6 +9,7 @@ import { createMddFormatterNode } from "../nodes/mdd-formatter.node.js";
 import { createMddDiagramInjectorNode } from "../nodes/mdd-diagram-injector.node.js";
 import { createMddSecurityNode } from "../nodes/mdd-security.node.js";
 import { createMddIntegrationNode } from "../nodes/mdd-integration.node.js";
+import { createMddSection5Node } from "../nodes/mdd-section5.node.js";
 import { createMddSecurityIntegrationNode } from "../nodes/mdd-security-integration.node.js";
 import { createMddLlmFormatterNode } from "../nodes/mdd-llm-formatter.node.js";
 import { createMddAuditorNode } from "../nodes/mdd-auditor.node.js";
@@ -198,11 +199,24 @@ export async function createMddGraph(
     }),
     onNodeStart,
   );
+  // Dedicated §5 pass: regenera SOLO §5 cuando el substance check falla
+  // únicamente en §5. CHANGELOG [Unreleased] → Added → "Dedicated §5 pass".
+  const section5Input = (s: MDDStateType): Record<string, unknown> => ({
+    mddDraft: s.mddDraft ?? "",
+    clarifiedScope: s.clarifiedScope ?? "",
+    dbgaContent: s.dbgaContent ?? "",
+  });
+  const section5Node = wrapNodeStart(
+    "section5",
+    wrapCache(nodeCache, "section5", section5Input, createMddSection5Node(llm)),
+    onNodeStart,
+  );
 
   function routeAfterPrepareOutput(state: MDDStateType): string {
     if (state.deliveryGateLoopActive === true) {
       if (state.deliveryGateFixTarget === "integration") return "integration";
       if (state.deliveryGateFixTarget === "clarifier") return "clarifier";
+      if (state.deliveryGateFixTarget === "section5") return "section5";
       return "software_architect";
     }
     return "graph_populator";
@@ -264,6 +278,9 @@ export async function createMddGraph(
     .addNode("auditor", auditorNode)
     .addNode("prepare_output", prepareOutputNode)
     .addNode("graph_populator", graphPopulatorNode)
+    // Dedicated §5 pass: regenera SOLO §5 cuando el substance check falla
+    // únicamente en §5. CHANGELOG [Unreleased] → Added → "Dedicated §5 pass".
+    .addNode("section5", section5Node)
     .addEdge(START, "clarifier")
     .addEdge("clarifier", "software_architect")
     .addConditionalEdges("software_architect", routeAfterSoftwareArchitectOneShot, {
@@ -286,6 +303,9 @@ export async function createMddGraph(
     .addEdge("llm_formatter", "diagram_injector")
     .addEdge("cross_consistency_checker", "auditor")
     .addEdge("diagram_injector", "auditor")
+    // section5 (dedicated §5 pass) vuelve a prepare_output para re-evaluar el gate.
+    // Ver CHANGELOG [Unreleased] → Added → "Dedicated §5 pass".
+    .addEdge("section5", "prepare_output")
     .addConditionalEdges("auditor", routeAuditor, {
       clarifier: "clarifier",
       prepare_output: "prepare_output",
@@ -294,6 +314,7 @@ export async function createMddGraph(
       software_architect: "software_architect",
       integration: "integration",
       clarifier: "clarifier",
+      section5: "section5",
       graph_populator: "graph_populator",
     })
     .addEdge("graph_populator", END);
@@ -365,6 +386,18 @@ export async function createMddGraphWithManager(
   const prepareOutputNode = createMddPrepareOutputNode({
     uiMcpLibraryLabel: compileOptions?.uiMcpFrontendLibraryLabel ?? null,
   });
+  // Dedicated §5 pass: regenera SOLO §5 cuando el substance check falla
+  // únicamente en §5. CHANGELOG [Unreleased] → Added → "Dedicated §5 pass".
+  const section5Node = wrapCache(
+    nodeCache,
+    "section5",
+    (s) => ({
+      mddDraft: s.mddDraft ?? "",
+      clarifiedScope: s.clarifiedScope ?? "",
+      dbgaContent: s.dbgaContent ?? "",
+    }),
+    createMddSection5Node(llm),
+  );
 
   function routeAfterPrepareOutput(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
@@ -488,6 +521,7 @@ export async function createMddGraphWithManager(
     "format_after_architect",
     "security",
     "integration",
+    "section5",
     "llm_formatter",
     "cross_consistency_checker",
     "graph_populator",
@@ -505,6 +539,7 @@ export async function createMddGraphWithManager(
     "format_after_architect",
     "security",
     "integration",
+    "section5",
     "format_after_redactor",
     "cross_consistency_checker",
     "diagram_injector",
@@ -528,6 +563,9 @@ export async function createMddGraphWithManager(
     .addNode("security", securityNode)
     .addNode("integration", integrationNode)
     .addNode("security_integration", securityIntegrationNode)
+    // Dedicated §5 pass: regenera SOLO §5 cuando el substance check falla
+    // únicamente en §5. CHANGELOG [Unreleased] → Added → "Dedicated §5 pass".
+    .addNode("section5", section5Node, { ends: ["prepare_output"] })
     .addNode("format_after_redactor", formatterNode)
     .addNode("llm_formatter", llmFormatterNode)
     .addNode("cross_consistency_checker", consistencyNode)
@@ -626,6 +664,7 @@ export async function createMddGraphWithManager(
       software_architect: "software_architect",
       integration: "integration",
       clarifier: "clarifier",
+      section5: "section5",
       graph_populator: "graph_populator",
     })
     .addConditionalEdges("blackboard", routeAfterBlackboard, {

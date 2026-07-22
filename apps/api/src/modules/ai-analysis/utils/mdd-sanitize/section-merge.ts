@@ -491,13 +491,19 @@ function replaceSection3Body(draft: string, newBody: string): string {
 function replaceSection4Body(draft: string, newBody: string): string {
   return replaceH2SectionBody(
     draft,
-    /##\s*4\.\s*Contratos\s+de\s+API|##\s*3\.\s*Contratos\s+de\s+API|##\s*Contratos\s+de\s+API/i,
+    /##\s*4\.\s*Contratos\s+de\s+API|##\s*3\.\s*Contratos\s+de\s+API|##\s*Contratos\s+de\s*API/i,
     newBody,
   );
 }
 
 function replaceSection5Body(draft: string, newBody: string): string {
   return replaceH2SectionBody(draft, /##\s*5\.\s*Lógica\s+y\s*Edge\s+Cases/i, newBody);
+}
+
+/** Versión exportada de `replaceSection5Body` para que el nodo
+ *  `mdd-section5` pueda reescribir §5 sin tocar el resto del MDD. */
+export function replaceMddSection5Body(draft: string, newBody: string): string {
+  return replaceSection5Body(draft, newBody);
 }
 
 /** Secciones 1–7 que no serán reescritas por los nodos del plan sections (sin format/diagram/auditor). */
@@ -512,6 +518,9 @@ export function getSectionsToPreserveFromExecutorPlan(sectionsToRun: string[] | 
       touched.add(4);
       touched.add(5);
     }
+    // Nodo dedicado "section5": regenera SOLO §5. Ver CHANGELOG [Unreleased]
+    // → Added → "Dedicated §5 pass".
+    if (node === "section5") touched.add(5);
     if (node === "security") touched.add(6);
     if (node === "integration") touched.add(7);
   }
@@ -642,7 +651,16 @@ export function logSection3Debug(label: string, draft: string): void {
 export function extractSection4Body(draft: string): string | null {
   const body = getSectionBody(
     (draft ?? "").trim(),
-    /##\s*4\.\s*Contratos\s+de\s+API|##\s*3\.\s*Contratos\s+de\s+API|##\s*Contratos\s+de\s+API/i,
+    /##\s*4\.\s*Contratos\s+de\s+API|##\s*3\.\s*Contratos\s+de\s*API|##\s*Contratos\s+de\s*API/i,
+  );
+  return body && body.length > 0 ? body : null;
+}
+
+/** Extrae el cuerpo de la sección ## 5. Lógica y Edge Cases (hasta el siguiente ## o fin). */
+export function extractSection5Body(draft: string): string | null {
+  const body = getSectionBody(
+    (draft ?? "").trim(),
+    /##\s*5\.\s*Lógica\s+y\s*Edge\s+Cases/i,
   );
   return body && body.length > 0 ? body : null;
 }

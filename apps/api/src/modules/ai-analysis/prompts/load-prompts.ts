@@ -109,9 +109,21 @@ export const SECURITY_ARCHITECT_MDD_PROMPT = withMddGovernanceAgentRule(
 
 export const INTEGRATION_ENGINEER_MDD_PROMPT = withMddGovernanceAgentRule(
   loadPrompt(
-  "mdd",
-  "integration-engineer-prompt.md",
-  "Eres el Ingeniero de Integración del MDD. Añade la sección ## Integración en markdown. Responde solo con JSON: { integrationSection }. NO uses tags de razonamiento ni pienses en voz alta. Devuelve ÚNICAMENTE el JSON.",
+    "mdd",
+    "integration-engineer-prompt.md",
+    "Eres el Ingeniero de Integración del MDD. Añade la sección ## Integración en markdown. Responde solo con JSON: { integrationSection }. NO uses tags de razonamiento ni pienses en voz alta. Devuelve ÚNICAMENTE el JSON.",
+  ),
+);
+
+/** Prompt del nodo "section5" — regenera SOLO ## 5. Lógica y Edge Cases.
+ *  Usado por el delivery gate cuando el substance check falla sólo en §5
+ *  (evita re-correr todo el pipeline software_architect por un placeholder).
+ *  Ver CHANGELOG [Unreleased] → Added → "Dedicated §5 pass". */
+export const SECTION5_MDD_PROMPT = withMddGovernanceAgentRule(
+  loadPrompt(
+    "mdd",
+    "section5-prompt.md",
+    "Eres el Ingeniero de Lógica y Edge Cases. Regenera SOLO la sección ## 5. Lógica y Edge Cases en markdown, con reglas BDD/AAA y edge cases del dominio descrito. NO incluyas otras secciones. NO uses placeholders. Devuelve solo el markdown de §5.",
   ),
 );
 
