@@ -131,6 +131,49 @@ describe("validateMddForDelivery", () => {
     assert.equal(result.ok, true);
   });
 
+  it("bloquea §4 con placeholder (Falta: definir endpoints) aunque tenga >200 chars", () => {
+    const draft = VALID_MDD.replace(
+      /## 4\. Contratos de API[\s\S]*?(?=## 5\.)/,
+      `## 4. Contratos de API
+
+(Falta: definir endpoints con request/response en JSON. El Auditor ha detectado este hueco; en la siguiente iteración se deben completar los contratos.)
+
+### Endpoints journey core (sincronización determinista)
+
+| Método | Ruta | Descripción | Auth | Notas |
+| :----- | :--- | :---------- | :--- | :---- |
+| GET | /api/v1/tenants/{id}/quota | Quota tokens tenant | Bearer | DBGA/BRD |
+
+`,
+    );
+    const result = validateMddForDelivery(draft);
+    assert.ok(
+      result.blockers.some((b) => /4\.\s*Contratos|§4|endpoints reales/i.test(b)),
+      result.blockers.join("; "),
+    );
+    assert.equal(result.ok, false);
+  });
+
+  it("bloquea §4 solo con tabla journey sin ```json ni MÉTODO /ruta", () => {
+    const draft = VALID_MDD.replace(
+      /## 4\. Contratos de API[\s\S]*?(?=## 5\.)/,
+      `## 4. Contratos de API
+
+Resumen de journey sin contratos ejecutables. Texto de relleno para superar el umbral de longitud mínima de sustancia del gate de entrega MDD y evitar falsos negativos por body corto.
+
+| Método | Ruta | Descripción |
+| :----- | :--- | :---------- |
+| GET | /api/v1/tenants/{id}/quota | Quota |
+
+`,
+    );
+    const result = validateMddForDelivery(draft);
+    assert.ok(
+      result.blockers.some((b) => /4\.\s*Contratos|§4|endpoints reales/i.test(b)),
+      result.blockers.join("; "),
+    );
+  });
+
   it("auto-alinea node:XX en §7 con §2 antes de validar (sin blocker Node)", () => {
     const draft = `# MDD
 

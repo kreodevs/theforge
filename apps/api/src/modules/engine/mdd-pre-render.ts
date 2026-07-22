@@ -10,6 +10,7 @@ import {
   looksLikeMermaidDiagramBody,
   normalizeMermaid,
   repairErDiagramPkFkCommas,
+  splitMermaidFenceBodyAtDocumentLeak,
   validateMermaid,
 } from "@theforge/shared-types/mermaid";
 
@@ -195,6 +196,117 @@ export function preRenderMddSanity(draft: string): PreRenderResult {
   return { ok: true };
 }
 
+/** True si el cuerpo Mermaid tiene al menos una arista o es erDiagram con entidad. */
+export function mermaidBlockHasUsableStructure(body: string): boolean {
+  const t = (body ?? "").trim();
+  if (!t) return false;
+  if (/^erDiagram\b/i.test(t)) return /\b\w+\s*\{/.test(t) || /\|\|--/.test(t);
+  return /-->|---|==>|-.->/.test(t);
+}
+
+/**
+ * Reensambla nodos Mermaid que el LLM dejó fuera del fence como `### ID["label"]`
+ * tras un cierre prematuro (típico en diagramas de componentes §2).
+ */
+export function repairPrematureMermaidFenceClose(draft: string): string {
+  if (!draft || typeof draft !== "string") return draft;
+  const lines = draft.replace(/\r\n/g, "\n").split("\n");
+  const out: string[] = [];
+  let i = 0;
+
+  const isOrphanMermaidLine = (trimmed: string): boolean => {
+    if (!trimmed) return false;
+    if (/^#{1,6}\s+[A-Za-z_][\w]*\s*[\[(]/.test(trimmed)) return true;
+    if (/^subgraph\s+/i.test(trimmed) || /^end\s*$/i.test(trimmed)) return true;
+    if (/^[A-Za-z_][\w]*\s*(\[\[|\[\(|\[|"|'|\(\[)/.test(trimmed)) return true;
+    if (/^[A-Za-z_][\w]*\s*(-->|---|==>|-.->)/.test(trimmed)) return true;
+    if (/^\s*[A-Za-z_][\w]*\s*-->/.test(trimmed)) return true;
+    return false;
+  };
+
+  const demoteHeadingNode = (line: string): string =>
+    line.replace(/^(\s*)#{1,6}\s+([A-Za-z_][\w]*\s*[\[(].*)$/, "$1$2");
+
+  while (i < lines.length) {
+    const line = lines[i]!;
+    const trimmed = line.trim();
+    if (!/^```mermaid\b/i.test(trimmed)) {
+      out.push(line);
+      i++;
+      continue;
+    }
+
+    out.push(line);
+    i++;
+    const bodyLines: string[] = [];
+    while (i < lines.length && !/^```\s*$/.test(lines[i]!.trim())) {
+      bodyLines.push(lines[i]!);
+      i++;
+    }
+    if (i < lines.length && /^```\s*$/.test(lines[i]!.trim())) {
+      i++;
+    }
+
+    // Peek past blank lines: only swallow them if real orphan mermaid follows.
+    let peek = i;
+    while (peek < lines.length && !lines[peek]!.trim()) peek++;
+    const peekTrim = peek < lines.length ? lines[peek]!.trim() : "";
+    const hasOrphansAhead = peekTrim.length > 0 && isOrphanMermaidLine(peekTrim);
+
+    const orphanLines: string[] = [];
+    if (hasOrphansAhead) {
+      while (i < peek) {
+        orphanLines.push(lines[i]!);
+        i++;
+      }
+      while (i < lines.length) {
+        const next = lines[i]!;
+        const nt = next.trim();
+        if (!nt) {
+          orphanLines.push(next);
+          i++;
+          continue;
+        }
+        if (/^#{1,2}\s+\d+\.\s+/.test(nt) || /^##\s+/.test(nt)) break;
+        if (/^```/.test(nt)) break;
+        if (!isOrphanMermaidLine(nt)) break;
+        orphanLines.push(demoteHeadingNode(next));
+        i++;
+        if (orphanLines.filter((l) => l.trim()).length > 80) break;
+      }
+      while (orphanLines.length > 0 && !orphanLines[orphanLines.length - 1]!.trim()) {
+        orphanLines.pop();
+      }
+    }
+
+    const merged = [...bodyLines, ...orphanLines.map((l) => demoteHeadingNode(l))].join("\n");
+    const { diagram, remainder } = splitMermaidFenceBodyAtDocumentLeak(merged);
+    const sanitized = sanitizeMermaidBlock(diagram);
+    if (looksLikeMermaidDiagramBody(sanitized) && mermaidBlockHasUsableStructure(sanitized)) {
+      out.push(...sanitized.split("\n"));
+      out.push("```");
+      if (remainder.trim()) {
+        out.push("");
+        out.push(...remainder.split("\n"));
+      }
+      continue;
+    }
+
+    // Diagrama vacío/inválido: no reemitir fence; deja resto como prosa.
+    if (sanitized.trim()) {
+      out.push(...sanitized.split("\n"));
+    }
+    if (remainder.trim()) {
+      out.push("");
+      out.push(...remainder.split("\n"));
+    } else if (orphanLines.length > 0) {
+      out.push(...orphanLines);
+    }
+  }
+
+  return out.join("\n");
+}
+
 /**
  * Auto-repair: strips ```mermaid fences from blocks that don't contain a
  * valid mermaid diagram type, converting them to regular markdown prose.
@@ -204,27 +316,27 @@ export function preRenderMddSanity(draft: string): PreRenderResult {
 export function stripInvalidMermaidFences(draft: string): string {
   if (!draft || typeof draft !== "string") return draft;
   return draft.replace(/```mermaid\s*\n([\s\S]*?)```/gi, (_full, inner: string) => {
-    const sanitized = sanitizeMermaidBlock(inner ?? "");
-    if (looksLikeMermaidDiagramBody(sanitized)) {
-      return "```mermaid\n" + sanitized + "\n```";
+    const { diagram, remainder } = splitMermaidFenceBodyAtDocumentLeak(inner ?? "");
+    const sanitized = sanitizeMermaidBlock(diagram);
+    if (looksLikeMermaidDiagramBody(sanitized) && mermaidBlockHasUsableStructure(sanitized)) {
+      const fence = "```mermaid\n" + sanitized + "\n```";
+      return remainder.trim() ? `${fence}\n\n${remainder}` : fence;
     }
-    // No valid diagram type → convert to prose
-    return sanitized || "";
+    // Vacío / solo subgraph sin aristas / prosa → sin fence (el injector puede proponer uno).
+    const prose = [sanitized, remainder].filter((s) => (s ?? "").trim()).join("\n\n");
+    return prose || "";
   });
 }
 
 /**
  * Applies sanitizeMermaidBlock to every ```mermaid block in the draft and returns the modified draft.
  * Invalid mermaid blocks (prose without diagram type) are converted to regular markdown.
+ * Also reensambla fences cerrados prematuramente con nodos `### ID[...]` fuera.
  */
 export function sanitizeMermaidInDraft(draft: string): string {
   if (!draft || typeof draft !== "string") return draft;
-  return stripInvalidMermaidFences(
-    draft.replace(/```mermaid\s*([\s\S]*?)```/gi, (_match, inner) => {
-      const sanitized = sanitizeMermaidBlock(inner ?? "");
-      return "```mermaid\n" + sanitized + "\n```";
-    }),
-  );
+  const reassembled = repairPrematureMermaidFenceClose(draft);
+  return stripInvalidMermaidFences(reassembled);
 }
 
 /**

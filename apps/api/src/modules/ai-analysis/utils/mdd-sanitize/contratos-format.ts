@@ -165,6 +165,43 @@ const CONTRATOS_BODY_FALTA =
 /** Cuerpo de sección 3 que es solo el placeholder perezoso (con o sin paréntesis). */
 const PENDIENTE_CONTRATOS_REGEX = /^\s*\(?\s*Pendiente:\s*definir\s+endpoints[\s\S]*?\)?\s*$/i;
 
+/** Longitud mínima del cuerpo de §4 para considerarlo candidato a “sustancial”. */
+export const MIN_CONTRATOS_LENGTH = 150;
+
+/** Detecta endpoints reales: método+ruta, heading `### MÉTODO`, o bloque ```json. */
+export const CONTRATOS_HAS_ENDPOINTS =
+  /\b(POST|GET|PUT|DELETE|PATCH)\s+[\"']?\/|```json|###\s+(POST|GET|PUT|DELETE|PATCH)/i;
+
+/** Placeholder explícito del pipeline / Auditor (inicio del cuerpo). */
+export const CONTRATOS_IS_PLACEHOLDER =
+  /^\s*\(?\s*(Pendiente|Falta):\s*definir\s+endpoints/i;
+
+const SECTION4_CONTRATOS_HEADING_REGEX =
+  /##\s*4\.\s*Contratos\s+de\s+API|##\s*3\.\s*Contratos\s+de\s+API|##\s*Contratos\s+de\s+API/i;
+
+/** Extrae el cuerpo de §4 Contratos de API (sin el heading). */
+export function extractContratosSectionBody(draft: string): string | null {
+  const t = (draft ?? "").trim();
+  const match = t.match(SECTION4_CONTRATOS_HEADING_REGEX);
+  if (!match) return null;
+  const start = t.indexOf(match[0]) + match[0].length;
+  const rest = t.slice(start).replace(/^\s*\n+/, "");
+  const nextH2 = rest.search(/\n##\s+/);
+  return (nextH2 !== -1 ? rest.slice(0, nextH2) : rest).trim() || null;
+}
+
+/** True si el cuerpo es placeholder o carece de endpoints/JSON reales. */
+export function isContratosPlaceholder(body: string | null | undefined): boolean {
+  if (!body || body.trim().length < MIN_CONTRATOS_LENGTH) return true;
+  if (CONTRATOS_IS_PLACEHOLDER.test(body)) return true;
+  return !CONTRATOS_HAS_ENDPOINTS.test(body);
+}
+
+/** True si §4 tiene contratos usables (endpoints o JSON y no es placeholder). */
+export function isContratosSubstantial(body: string | null | undefined): boolean {
+  return !!body && !isContratosPlaceholder(body) && CONTRATOS_HAS_ENDPOINTS.test(body);
+}
+
 /**
  * Asegura que el MDD tenga la sección "## 4. Contratos de API" antes de "## 6. Seguridad".
  * Si falta, la inserta con un placeholder. Si existe pero el cuerpo es solo "Pendiente: definir endpoints...", lo reemplaza por el texto "Falta: ...".

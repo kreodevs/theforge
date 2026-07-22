@@ -9,11 +9,14 @@ import { mergeMddStructured } from "../utils/mdd-merge-structured.js";
 import {
   applyDeploymentStackDirectiveToDraft,
   ensureContratosSection,
+  extractContratosSectionBody,
   extractSection3Body,
   extractSection6Body,
   extractSection7Body,
   getMddDraftSummary,
   getSectionsToPreserveFromExecutorPlan,
+  isContratosPlaceholder,
+  isContratosSubstantial,
   isMddSectionPlaceholderBody,
   logMddNodeOutput,
   logSection3Debug,
@@ -200,19 +203,10 @@ function insertDiagramSectionIntoDraft(draft: string, diagramSection: string): s
 
 /** Regex para sección 4 (Contratos de API). */
 const SECTION4_CONTRATOS_HEADING_REGEX = /##\s*4\.\s*Contratos\s+de\s+API|##\s*3\.\s*Contratos\s+de\s+API|##\s*Contratos\s+de\s+API/i;
-const MIN_CONTRATOS_LENGTH = 150;
-const CONTRATOS_HAS_ENDPOINTS = /\b(POST|GET|PUT|DELETE|PATCH)\s+[\"']?\/|```json|###\s+(POST|GET|PUT|DELETE|PATCH)/i;
-const CONTRATOS_IS_PLACEHOLDER = /^\s*\(?\s*(Pendiente|Falta):\s*definir\s+endpoints/i;
 
 /** Extrae el cuerpo de la sección 4 (Contratos de API) de un draft. */
 function extractContratosBody(draft: string): string | null {
-  const t = draft.trim();
-  const match = t.match(SECTION4_CONTRATOS_HEADING_REGEX);
-  if (!match) return null;
-  const start = t.indexOf(match[0]) + match[0].length;
-  const rest = t.slice(start).replace(/^\s*\n+/, "");
-  const nextH2 = rest.search(/\n##\s+/);
-  return (nextH2 !== -1 ? rest.slice(0, nextH2) : rest).trim() || null;
+  return extractContratosSectionBody(draft);
 }
 
 const SECTION5_HEADING_REGEX = /##\s*5\.\s*L[oó]gica\s+y\s*Edge\s+Cases|##\s*L[oó]gica\s+y\s*Edge\s+Cases/i;
@@ -226,14 +220,6 @@ function extractLogicaEdgeCasesBody(draft: string): string | null {
   const rest = t.slice(start).replace(/^\s*\n+/, "");
   const nextH2 = rest.search(/\n##\s+/);
   return (nextH2 !== -1 ? rest.slice(0, nextH2) : rest).trim() || null;
-}
-
-function isContratosSubstantial(body: string | null): boolean {
-  return !!body && body.length >= MIN_CONTRATOS_LENGTH && CONTRATOS_HAS_ENDPOINTS.test(body) && !CONTRATOS_IS_PLACEHOLDER.test(body);
-}
-
-function isContratosPlaceholder(body: string | null): boolean {
-  return !body || body.length < MIN_CONTRATOS_LENGTH || CONTRATOS_IS_PLACEHOLDER.test(body) || !CONTRATOS_HAS_ENDPOINTS.test(body);
 }
 
 /** Extrae la sección 4 (Contratos de API) del texto crudo del LLM si tiene contratos reales. */

@@ -1,8 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  mermaidBlockHasUsableStructure,
   preRenderMddSanity,
+  repairPrematureMermaidFenceClose,
   sanitizeMermaidBlock,
+  sanitizeMermaidInDraft,
   validateMermaidSyntax,
 } from "./mdd-pre-render.js";
 
@@ -57,5 +60,57 @@ describe("validateMermaidSyntax", () => {
 }`);
     assert.equal(result.ok, false);
     assert.match(result.message ?? "", /Unknown diagram type|inválido/i);
+  });
+});
+
+describe("sanitizeMermaidInDraft / premature fence", () => {
+  it("mermaidBlockHasUsableStructure es false sin aristas", () => {
+    assert.equal(
+      mermaidBlockHasUsableStructure(`flowchart TB
+  subgraph ACTORES["Actores"]
+  end`),
+      false,
+    );
+  });
+
+  it("reensambla nodos ### ID[...] fuera del fence tras cierre prematuro", () => {
+    const raw = `### 2.8 Diagrama
+
+\`\`\`mermaid
+flowchart TB
+  subgraph ACTORES["Actores de negocio"]
+  end
+\`\`\`
+
+### USR["Usuario Autorizado (WhatsApp)"]
+
+### ADM["Superadmin / Tenant Admin (Panel Web)"]
+
+  subgraph INFRA["Infraestructura AWS"]
+  WAF["AWS WAF + ALB"]
+  end
+
+USR -->|"Mensajes"| WAF
+`;
+    const out = sanitizeMermaidInDraft(raw);
+    assert.match(out, /```mermaid/);
+    assert.match(out, /USR\["Usuario Autorizado/);
+    assert.match(out, /USR\s*-->/);
+    assert.doesNotMatch(out, /### USR\[/);
+  });
+
+  it("repairPrematureMermaidFenceClose demote headings a nodos", () => {
+    const raw = `\`\`\`mermaid
+flowchart TB
+  A[Start]
+\`\`\`
+
+### B["Next"]
+
+A --> B
+`;
+    const out = repairPrematureMermaidFenceClose(raw);
+    assert.match(out, /B\["Next"\]/);
+    assert.doesNotMatch(out, /### B\[/);
   });
 });

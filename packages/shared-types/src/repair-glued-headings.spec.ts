@@ -32,6 +32,13 @@ describe("repairGluedMarkdownHeadings", () => {
     assert.match(out, /### Declaración de Independencia\n\nEste sistema es la raíz/);
   });
 
+  it("parte ### 1.1 Propósito pegado a prosa (Jarvis)", () => {
+    const raw =
+      "### 1.1 Propósito Jarvis IMJ es un copiloto orquestador inteligente multi-tenant.";
+    const out = repairGluedMarkdownHeadings(raw);
+    assert.match(out, /### 1\.1 Propósito\n\nJarvis IMJ es un copiloto/);
+  });
+
   it("promueve §1 sin ## y despega subheadings (muestra Copiloto pegada)", () => {
     const raw = `1. Contexto y Alcance ### Propósito del Proyecto
 

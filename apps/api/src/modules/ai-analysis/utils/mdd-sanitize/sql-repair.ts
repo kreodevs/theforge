@@ -74,7 +74,9 @@ function repairSqlSplitFunctionBody(sqlContent: string): string {
 export function sanitizeSqlBrokenCommentsAndProse(sqlContent: string): string {
   if (!sqlContent || typeof sqlContent !== "string") return sqlContent;
   const repaired = repairSqlSplitFunctionBody(repairSqlCommentGluedToDdl(sqlContent));
-  const lines = repairSqlSplitCommentLines(repaired).split("\n");
+  const spaced = repairSqlSpacedColumnIdentifiers(repaired);
+  const withoutStubs = stripMonthlyPartitionStubTables(spaced);
+  const lines = repairSqlSplitCommentLines(withoutStubs).split("\n");
   const out: string[] = [];
 
   for (const line of lines) {
@@ -101,6 +103,42 @@ export function sanitizeSqlBrokenCommentsAndProse(sqlContent: string): string {
     repairSqlProseInTableBodies(
       repairSqlDetachedCheckConstraints(repairSqlOrphanTokensAndSplitParens(out.join("\n"))),
     ),
+  );
+}
+
+/**
+ * Repara columnas con espacio en el identificador (`original text TEXT` → `original_text TEXT`).
+ */
+export function repairSqlSpacedColumnIdentifiers(sql: string): string {
+  if (!sql?.trim()) return sql;
+  return sql
+    .split("\n")
+    .map((line) => {
+      const m = line.match(
+        /^(\s*)([a-zA-Z_][\w]*)\s+([a-z][\w]*)\s+(UUID|VARCHAR|TEXT|INTEGER|INT|BIGINT|BOOLEAN|BOOL|TIMESTAMPTZ|TIMESTAMP|INET|JSONB|BYTEA|DATE|SMALLINT|NUMERIC|DECIMAL|CHAR|SERIAL|REAL|DOUBLE|VECTOR)\b(.*)$/i,
+      );
+      if (!m) return line;
+      const mid = m[3]!;
+      // `text`/`name`/… pueden ser tipos SQL y a la vez segunda palabra del identificador
+      // (`original text TEXT`). Siempre fusionar id1+id2 cuando hay un tipo real después.
+      return `${m[1]}${m[2]}_${mid} ${m[4]}${m[5]}`;
+    })
+    .join("\n");
+}
+
+/**
+ * Elimina `CREATE TABLE foo_YYYY_MM` cuando ya existe `CREATE TABLE foo`
+ * (stubs de partición materializados por error por el LLM).
+ */
+export function stripMonthlyPartitionStubTables(sql: string): string {
+  if (!sql?.trim()) return sql;
+  return sql.replace(
+    /CREATE\s+TABLE\s+([a-zA-Z_][\w]*)_(\d{4})_(\d{2})\s*\([\s\S]*?\);/gi,
+    (full, base: string, y: string, mo: string) => {
+      const parentRe = new RegExp(`CREATE\\s+TABLE\\s+${base}\\b`, "i");
+      if (!parentRe.test(sql)) return full;
+      return `-- omitted partition stub ${base}_${y}_${mo} (use PARTITION OF)`;
+    },
   );
 }
 
