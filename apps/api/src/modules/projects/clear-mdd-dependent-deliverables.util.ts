@@ -1,11 +1,12 @@
 import { Prisma } from "@theforge/database";
 import {
-  buildClearMddDependentDeliverablesPayload,
+  buildClearMddDependentProjectDeliverablesPayload,
+  buildClearMddDependentStageDeliverablesPayload,
 } from "@theforge/shared-types";
 
 export function buildProjectClearMddDependentDeliverablesUpdate(): Prisma.ProjectUpdateInput {
   return {
-    ...buildClearMddDependentDeliverablesPayload(),
+    ...buildClearMddDependentProjectDeliverablesPayload(),
     tasksJson: Prisma.JsonNull,
   };
 }
@@ -21,7 +22,7 @@ export function buildStageClearMddDependentDeliverablesUpdate(
       : {};
 
   return {
-    ...buildClearMddDependentDeliverablesPayload(),
+    ...buildClearMddDependentStageDeliverablesPayload(),
     tasksJson: Prisma.JsonNull,
     changeSpecContent: null,
     deliverableSnapshot: Prisma.JsonNull,
