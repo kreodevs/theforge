@@ -1116,7 +1116,7 @@ export class TasksGenerationPipelineService {
     if (trimmed.startsWith("#") || trimmed.includes("## Backend")) {
       return trimmed;
     }
-    return await this.runRedactor(plan, input, feedback, null);
+    return await this.runRedactor(plan, input, feedback, undefined);
   }
 
   private evaluateQuality(tasksMarkdown: string, input: TasksPipelineInput): TasksQualityReport {

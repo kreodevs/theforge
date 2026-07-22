@@ -26,10 +26,14 @@ export const tasksGlossaryEntrySchema = z.object({
   definition: z.string().optional(),
 });
 
+export type TasksGlossaryEntry = z.infer<typeof tasksGlossaryEntrySchema>;
+
 export const tasksBusinessRuleSchema = z.object({
   rule: z.string().min(1),
   source: z.string().optional(),
 });
+
+export type TasksBusinessRule = z.infer<typeof tasksBusinessRuleSchema>;
 
 export const tasksTechStackContractSchema = z.object({
   framework: z.string().optional(),
@@ -38,12 +42,16 @@ export const tasksTechStackContractSchema = z.object({
   boundaries: z.array(z.string()).default([]),
 });
 
+export type TasksTechStackContract = z.infer<typeof tasksTechStackContractSchema>;
+
 export const tasksEndpointContractSchema = z.object({
   method: z.string().min(1),
   path: z.string().min(1),
   summary: z.string().optional(),
   dtoHints: z.array(z.string()).default([]),
 });
+
+export type TasksEndpointContract = z.infer<typeof tasksEndpointContractSchema>;
 
 export const tasksScreenContractSchema = z.object({
   route: z.string().min(1),
@@ -54,6 +62,8 @@ export const tasksScreenContractSchema = z.object({
   primaryApi: z.string().optional(),
 });
 
+export type TasksScreenContract = z.infer<typeof tasksScreenContractSchema>;
+
 export const tasksUserStoryContractSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
@@ -61,6 +71,8 @@ export const tasksUserStoryContractSchema = z.object({
   role: z.string().optional(),
   want: z.string().optional(),
 });
+
+export type TasksUserStoryContract = z.infer<typeof tasksUserStoryContractSchema>;
 
 /** Contrato liviano por capa de abstracción. */
 export const tasksLayerContractSchema = z.object({

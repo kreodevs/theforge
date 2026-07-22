@@ -126,7 +126,6 @@ export function buildTasksLayerPromptContext(input: TasksLayerContextInput): str
     );
   }
 
-  const domain = layerSlice(reduced, "domain");
   const integration = layerSlice(reduced, "integration");
   const experience = layerSlice(reduced, "experience");
   const architecture = layerSlice(reduced, "architecture");
