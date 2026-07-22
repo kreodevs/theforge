@@ -38,6 +38,7 @@ export interface WorkshopMddPanelProps {
   onOpenSuggestMddPatterns: () => void;
   onOpenEditMddPatterns: () => void;
   onOpenClearMddConfirm: () => void;
+  onOpenClearMddDeliverablesConfirm: () => void;
   onGenerateDeliverables: () => void;
   onMddContentChange: (content: string) => void;
   onRevertMddContent: () => void;

@@ -186,6 +186,7 @@ export interface UseWorkshopDocPanelPropsArgs {
   openSuggestMddPatterns: () => void;
   openEditMddPatterns: () => void;
   setClearMddConfirmOpen: (open: boolean) => void;
+  setClearMddDeliverablesConfirmOpen: (open: boolean) => void;
   handleGenerateDeliverables: () => void | Promise<void>;
   setMddContent: (content: string) => void;
   revertMddContent: () => void;

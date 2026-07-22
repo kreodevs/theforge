@@ -42,6 +42,9 @@ export function WorkshopModals({
   clearMddConfirmOpen,
   setClearMddConfirmOpen,
   onClearMddConfirm,
+  clearMddDeliverablesConfirmOpen,
+  setClearMddDeliverablesConfirmOpen,
+  onClearMddDeliverablesConfirm,
   mddPatternsWizardOpen,
   setMddPatternsWizardOpen,
   mddPatternsWizardMode,
@@ -110,6 +113,32 @@ export function WorkshopModals({
               }}
             >
               Limpiar MDD
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={clearMddDeliverablesConfirmOpen}
+        onOpenChange={setClearMddDeliverablesConfirmOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Limpiar todos los archivos del MDD?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se borran spec, blueprint, arquitectura, contratos API, casos de uso, historias de
+              usuario, flujos lógicos, infra, tasks, guía UX/UI, pantallas y agent governance.
+              El MDD, DBGA, Fase 0, AEM y BRD no se modifican.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-[var(--destructive)] hover:bg-[var(--destructive-hover)]"
+              onClick={() => {
+                void onClearMddDeliverablesConfirm();
+              }}
+            >
+              Limpiar todos los archivos
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

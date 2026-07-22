@@ -20,6 +20,7 @@ export * from "./stage.js";
 export * from "./legacy-change-gate.js";
 export * from "./legacy-change-state.util.js";
 export * from "./stage-deliverable-snapshot.js";
+export * from "./mdd-dependent-deliverables.js";
 export * from "./session.js";
 export * from "./estimation.js";
 export * from "./mdd.js";

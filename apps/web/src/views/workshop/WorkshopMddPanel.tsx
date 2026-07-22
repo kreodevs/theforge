@@ -56,6 +56,7 @@ export function WorkshopMddPanel({
   onOpenSuggestMddPatterns,
   onOpenEditMddPatterns,
   onOpenClearMddConfirm,
+  onOpenClearMddDeliverablesConfirm,
   onGenerateDeliverables,
   onMddContentChange,
   onRevertMddContent,
@@ -227,6 +228,21 @@ export function WorkshopMddPanel({
                               >
                                 <WorkshopButtonIcon icon={Trash2} tone="secondary" />
                                 Limpiar MDD
+                              </WorkshopPanelButton>
+                            )}
+                            {effectiveMddTrimmed.length > 0 && (
+                              <WorkshopPanelButton
+                                tone="secondary"
+                                onClick={() => {
+                                  if (!projectId?.trim()) return;
+                                  onOpenClearMddDeliverablesConfirm();
+                                }}
+                                disabled={loading || mddReviewing || mddReapplyingFormat || cascadeRunning}
+                                className="w-full justify-center lg:w-auto"
+                                title="Borra spec, blueprint, tasks y demás entregables generados desde el MDD (no borra el MDD)"
+                              >
+                                <WorkshopButtonIcon icon={Trash2} tone="secondary" />
+                                Limpiar todos los archivos
                               </WorkshopPanelButton>
                             )}
                             {effectiveMddTrimmed.length > 200 && (
