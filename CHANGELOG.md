@@ -4,6 +4,24 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ## [Unreleased]
 
+> **MDD no se borra tras restart del worker** — Tres capas de defensa contra el bug donde un restart del worker (deploy) borraba los checkpoints de LangGraph, y la siguiente respuesta truncada del LLM sobrescribía el MDD completo.
+
+### Fixed
+
+- **Worker restart borraba los checkpoints de LangGraph y el MDD se truncaba.** El `docker-entrypoint.sh` corría `prisma db push --accept-data-loss` después de `migrate deploy`, lo que detectaba las tablas `public.checkpoint_*` (creadas por DDL directo en `ensureLangGraphCheckpointSchema`, no modeladas en `schema.prisma`) como "drift" y las DROPEABA. Al perder el checkpoint, la siguiente respuesta del LLM (truncada por límite de tokens) pisaba el MDD ya regenerado, borrando secciones como §4 Contratos de API o pegando bloques de otra plantilla (caso real: el proyecto "ForgeOps" perdió §5–§8 y se le insertó un bloque "## UI/UX Design Intent" de un template genérico).
+  - **Capa A (`docker-entrypoint.sh`):** `prisma db push --accept-data-loss` queda DESHABILITADO por defecto. Se reactiva sólo si se define explícitamente `THEFORGE_ALLOW_DB_PUSH=1` en el contenedor. El esquema se mantiene con `prisma migrate deploy` + `safe-schema-sync.sql` (aditivo). Comentario in-line en el entrypoint documenta el incidente.
+  - **Capa B (defensa en profundidad):** las tablas de LangGraph (`checkpoint_migrations`, `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`) se mueven del schema `public` al schema dedicado `langgraph` mediante la nueva migración `20260722100000_move_langgraph_checkpoints_to_dedicated_schema`. Aunque alguien habilite `db push --accept-data-loss` en prod, las tablas ya no están en el schema gestionado por Prisma (`public`) y不会被 dropeadas. La migración es idempotente: en BD fresca crea el schema y las tablas; en BD vieja copia los datos existentes y borra las copias en `public`.
+  - **Capa C (`mergeMddBySection`):** el orchestrator ahora MERGEA el MDD por sección (heading `## N. …`) en lugar de reemplazar el documento completo. Si el LLM devuelve un MDD regenerado pero truncado (cubre mucho menos de la mitad del existente y tiene menos secciones), se aplica merge: las secciones del incoming sustituyen a sus homólogas en el existing, y el resto del existing se preserva. Si el incoming es un placeholder vacío o claramente más corto que la sección buena (ratio < 20%), se descarta y se mantiene la sección existente. Si el incoming es un full-regen limpio (cubre todas las secciones y no se detecta truncado), sí se aplica full-replace. Code fences respetados, sub-secciones (`###`, `####`) no se promueven a secciones. Nuevo util `apps/api/src/modules/ai-orchestrator/mdd-section-merge.util.ts` con 13 tests (vitest) cubriendo: parseo por sección, ignorado de code fences, regeneración de una sola sección, full-replace, truncación defensiva, placeholders vacíos, secciones nuevas, preservación de front matter.
+
+### Changed
+
+- **`AiOrchestratorService.tryPersistMddContent`:** antes de persistir el MDD devuelve por la IA, hace `findOne(projectId)` para obtener el MDD actual, ejecuta `mergeMddBySection(currentMdd, incomingMdd)`, y persiste el resultado. Loggea `[Orchestrator] mddContent merge defensivo (incoming posiblemente truncado)` con `mode`, `truncatedIncoming`, `sectionsReplaced`, `sectionsKept`, `sectionsAdded` y longitudes, para que un futuro debug del flujo Workshop pueda auditar por qué se preservó X sección. Si el merge lanza (BD no accesible, etc.) cae al comportamiento anterior (replace) en lugar de bloquear el chat.
+
+### Added
+
+- **`apps/api/src/modules/ai-orchestrator/mdd-section-merge.util.ts`** + spec: parser y merger de MDD por sección, puro, determinista, sin dependencias externas.
+- **Migración `20260722100000_move_langgraph_checkpoints_to_dedicated_schema`:** mueve los datos de `public.checkpoint_*` a `langgraph.checkpoint_*` (idempotente, seguro en BD fresca y vieja). Marca v=0..4 en `langgraph.checkpoint_migrations` para que `ensureLangGraphCheckpointSchema` arranque como no-op.
+
 ## [v1.6.3] — 2026-07-21
 
 > **Tasks — contratos livianos y map-reduce por capa** — Sustituye el dump masivo de documentos SDD por manifiesto JSON, Context Anchors por HU y prompts segmentados Backend / Frontend / Infra / QA / Integración.

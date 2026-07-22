@@ -57,7 +57,7 @@ export class CheckpointerService implements OnModuleInit {
       throw err;
     }
     this.checkpointer = PostgresSaver.fromConnString(trimmed, {
-      schema: "public",
+      schema: "langgraph",
     });
     this.logger.log("[CheckpointerService] initCheckpointer end");
   }

@@ -190,7 +190,23 @@ resolve_applied_if_project_column "20260609120000_add_agent_governance_content" 
 resolve_applied_if_project_column "20260612120000_project_merge_suite" "archivedAt"
 resolve_applied_if_table "20260702_add_ui_mcp_instance" "UiMcpInstance"
 resolve_applied_if_table_column "20260703180000_ui_mcp_adapter_id" "UiMcpInstance" "adapterId"
-resolve_applied_if_table "20260513180000_langgraph_checkpoint_tables" "checkpoints"
+# Checkpoints de LangGraph ahora viven en `langgraph.checkpoints` (no en `public`).
+# Si la tabla existe en el schema dedicado pero la migración está sin registrar,
+# la marcamos como aplicada para que un re-deploy no intente recrearla.
+if table_exists "checkpoints"; then
+  schema="$(db_name_from_url >/dev/null; echo public)"
+  host="$(db_host_from_url)"
+  user="$(db_user_from_url)"
+  pass="$(db_password_from_url)"
+  db="$(db_name_from_url)"
+  if PGPASSWORD="${pass}" psql -h "$host" -U "$user" -d "$db" -tAc \
+    "SELECT 1 FROM information_schema.tables WHERE table_schema='langgraph' AND table_name='checkpoints'" \
+    2>/dev/null | grep -q 1; then
+    if npx prisma migrate resolve --applied "20260513180000_langgraph_checkpoint_tables" 2>/dev/null; then
+      echo "migrate resolve --applied 20260513180000_langgraph_checkpoint_tables (langgraph.checkpoints present)"
+    fi
+  fi
+fi
 
 # Migraciones en cada arranque del contenedor (producción); fallo → exit 1, sin API
 echo "Running prisma migrate deploy..."
@@ -207,11 +223,35 @@ if [ "${WIPE_BYOK_ON_START:-}" = "1" ]; then
   echo "WIPE_BYOK_ON_START: done. Unset WIPE_BYOK_ON_START in Dokploy before the next redeploy."
 fi
 
-# Sincronizar schema: crea columnas/índices no cubiertos por migraciones versionadas
-echo "Running prisma db push (schema sync)..."
-npx prisma db push --accept-data-loss || true
+# ---------------------------------------------------------------------------
+# ⚠️  DESHABILITADO POR DEFECTO — NO EJECUTAR `prisma db push` EN PRODUCCIÓN
+# ---------------------------------------------------------------------------
+# Razón histórica: cuando el `worker` se reinicia, este paso DROPPA cualquier
+# tabla del esquema gestionado por Prisma que no esté en `schema.prisma`,
+# INCLUIDAS las tablas de checkpoints de LangGraph (`checkpoint_migrations`,
+# `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`) que `CheckpointerService`
+# crea por DDL directo en `ensureLangGraphCheckpointSchema`. La consecuencia
+# fue que la generación stream del MDD perdió el checkpoint a mitad de un
+# `/mdd-completo` y la última respuesta del LLM (incompleta) sobrescribió el
+# documento. Ver CHANGELOG [Unreleased] → Fixed → "MDD se borra tras restart".
+#
+# El esquema se mantiene con `prisma migrate deploy` (línea ~197) + el
+# `safe-schema-sync.sql` aditivo (línea ~114). `db push` queda reservado
+# para entornos de desarrollo explícitos y se activa sólo si se define
+# `THEFORGE_ALLOW_DB_PUSH=1` en el .env del contenedor. Ese flag debe estar
+# APAGADO en Dokploy/prod; si lo prendes en prod, aceptas que cualquier
+# tabla fuera de `schema.prisma` puede ser eliminada al reiniciar.
+# ---------------------------------------------------------------------------
+if [ "${THEFORGE_ALLOW_DB_PUSH:-0}" = "1" ]; then
+  echo "WARN: THEFORGE_ALLOW_DB_PUSH=1 — running prisma db push (puede borrar tablas no modeladas)"
+  npx prisma db push --accept-data-loss || true
+else
+  echo "Skipping prisma db push (default; THEFORGE_ALLOW_DB_PUSH!=1). Use sólo en dev."
+fi
 
-# Fallback vía Prisma (imagen Alpine no incluye psql)
+# Fallback aditivo vía Prisma (imagen Alpine no incluye psql).
+# Sólo ALTER ... ADD COLUMN IF NOT EXISTS / CREATE INDEX IF NOT EXISTS —
+# nunca DROP. Esto es lo único seguro fuera de `migrate deploy`.
 echo "Checking mcpSecret column via SQL..."
 npx prisma db execute --stdin <<'SQL' 2>&1 || true
 ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mcpSecret" TEXT;

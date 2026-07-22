@@ -1,11 +1,23 @@
 /**
  * Setup idempotente de tablas LangGraph PostgresSaver.
  * Evita race pg_type_typname_nsp_index cuando varias réplicas llaman setup() concurrentemente.
+ *
+ * ⚠️  Las tablas viven en el schema `langgraph`, NO en `public`. Esto es defensa
+ * en profundidad frente a `prisma db push --accept-data-loss`: aunque alguien
+ * lo habilite en prod (THEFORGE_ALLOW_DB_PUSH=1), las tablas checkpoint_*
+ * están fuera del schema gestionado por Prisma (`public`) y不会被 dropeadas.
+ * El setup se ejecuta siempre en arranque; si en BD vieja aún existen
+ * `public.checkpoint_*`, la migración `20260722*_move_langgraph_checkpoints_to_dedicated_schema`
+ * las mueve a `langgraph.checkpoint_*` antes de la primera lectura.
  */
 
 import pg from "pg";
 
 type PgPoolClient = pg.PoolClient;
+
+/** Schema dedicado para los checkpoints de LangGraph. NO usar `public`: ahí
+ *  vive el modelo de Prisma y un `prisma db push --accept-data-loss` los borraría. */
+export const LANGGRAPH_CHECKPOINT_SCHEMA = "langgraph";
 
 /** Última versión de migración LangGraph JS (@langchain/langgraph-checkpoint-postgres). */
 export const LANGGRAPH_CHECKPOINT_LATEST_VERSION = 4;
@@ -79,7 +91,7 @@ export function isLangGraphCheckpointSetupRaceError(err: unknown): boolean {
 
 export async function probeLangGraphCheckpointReady(
   client: PgPoolClient,
-  schema = "public",
+  schema: string = LANGGRAPH_CHECKPOINT_SCHEMA,
 ): Promise<{ ready: boolean; maxVersion: number }> {
   const tables = await client.query<{ n: number }>(
     `SELECT COUNT(*)::int AS n
@@ -144,7 +156,7 @@ async function runMigrationsOnClient(client: PgPoolClient, schema: string): Prom
  */
 export async function ensureLangGraphCheckpointSchema(
   connString: string,
-  schema = "public",
+  schema: string = LANGGRAPH_CHECKPOINT_SCHEMA,
 ): Promise<void> {
   const pool = new pg.Pool({ connectionString: connString.trim(), max: 1 });
   const client = await pool.connect();
