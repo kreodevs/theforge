@@ -44,6 +44,10 @@ Responde ÚNICAMENTE con este JSON. Sin markdown, sin explicaciones.
     "edgeCases": [ ... ],
     "preguntasPendientes": [ ... ]
   },
-  "gaps": [ ... gaps recalculados ]
+  "gaps": [ ... gaps recalculados ],
+  "impacto": "1–3 frases: qué cambió en el borrador y por qué importa",
+  "cambios": ["sección o apartado tocado", "…"]
 }
 ```
+
+Los campos `impacto` y `cambios` son opcionales en entrevista clásica; **obligatorios en Modo asistido**.

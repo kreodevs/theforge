@@ -172,6 +172,12 @@ export const PHASE0_EXTRACT_DBGA_PROMPT = loadPrompt(
   "Extrae borrador Fase 0 + gaps desde un DBGA markdown existente. JSON: { borrador: {...}, gaps: [...] }.",
 );
 
+export const PHASE0_ASSISTED_MARKDOWN_UPDATE_PROMPT = loadPrompt(
+  "phase0",
+  "assisted-markdown-update-prompt.md",
+  "Modo asistido: actualiza markdown Fase 0/DBGA/Deep Research con la respuesta. JSON: { markdown, impacto, cambios, gaps }.",
+);
+
 export const PHASE0_MERGE_PROMPT = loadPrompt(
   "phase0",
   "merge-phase0-prompt.md",

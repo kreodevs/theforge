@@ -673,6 +673,36 @@ export class AiAnalysisController {
     return this.phase0Interview.processAnswer(threadId, answer, projectId);
   }
 
+  // ─── Fase 0 — Modo asistido (chat Workshop) ─────────────────────
+
+  @Post("phase0/assisted/start")
+  async startPhase0Assisted(@Body() body: { projectId?: string; idea?: string }) {
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    const idea = typeof body?.idea === "string" ? body.idea.trim() : undefined;
+    if (!projectId) throw new BadRequestException("projectId is required");
+    return this.phase0Interview.startAssisted(projectId, idea);
+  }
+
+  @Post("phase0/assisted/answer")
+  async answerPhase0Assisted(
+    @Body() body: { projectId?: string; answer?: string; threadId?: string },
+  ) {
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    const answer = typeof body?.answer === "string" ? body.answer.trim() : "";
+    const threadId =
+      typeof body?.threadId === "string" ? body.threadId.trim() || undefined : undefined;
+    if (!projectId) throw new BadRequestException("projectId is required");
+    if (!answer) throw new BadRequestException("answer is required");
+    return this.phase0Interview.processAssistedAnswer(projectId, answer, threadId);
+  }
+
+  @Post("phase0/assisted/stop")
+  async stopPhase0Assisted(@Body() body: { projectId?: string }) {
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    if (!projectId) throw new BadRequestException("projectId is required");
+    return this.phase0Interview.stopAssisted(projectId);
+  }
+
   /**
    * Obtiene el estado actual de la entrevista Fase 0.
    */

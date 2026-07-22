@@ -18,6 +18,7 @@ export type Phase0GapsEnvelope = {
     status: Phase0InterviewState["status"];
     mode: Phase0InterviewState["mode"];
     sourceFormat?: Phase0InterviewState["sourceFormat"];
+    workingMarkdown?: string;
   };
 };
 
@@ -38,6 +39,7 @@ export function serializePhase0GapsEnvelope(state: Phase0InterviewState): string
       status: state.status,
       mode: state.mode,
       sourceFormat: state.sourceFormat,
+      workingMarkdown: state.workingMarkdown,
     },
   };
   return JSON.stringify(payload);
@@ -83,5 +85,6 @@ export function rehydrateInterviewState(
     historial: interview.historial ?? [],
     mode: interview.mode ?? "interview",
     sourceFormat: interview.sourceFormat,
+    workingMarkdown: interview.workingMarkdown,
   };
 }

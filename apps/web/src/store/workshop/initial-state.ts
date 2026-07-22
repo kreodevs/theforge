@@ -120,6 +120,11 @@ export const workshopInitialState = {
   generationStatus: null as ProjectGenerationStatus | null,
   activeDeliverablesJobId: null as string | null,
   pluginData: {} as Record<string, unknown>,
+  /** Modo asistido Paso 0 (chat Workshop, una pregunta por turno). */
+  phase0AssistedActive: false,
+  phase0AssistedThreadId: null as string | null,
+  phase0AssistedAwaitingSeed: false,
+  phase0AssistedTemplateLabel: null as string | null,
 };
 
 export type WorkshopInitialState = typeof workshopInitialState;

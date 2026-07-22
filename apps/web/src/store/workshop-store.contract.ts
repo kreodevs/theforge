@@ -18,6 +18,8 @@ export const WORKSHOP_STORE_CONTRACT_ACTIONS = [
   "setActiveStageId",
   "patchWorkshopStage",
   "createWorkshopStage",
+  "startPhase0Assisted",
+  "stopPhase0Assisted",
 ] as const;
 
 export type WorkshopStoreContractAction = (typeof WORKSHOP_STORE_CONTRACT_ACTIONS)[number];
