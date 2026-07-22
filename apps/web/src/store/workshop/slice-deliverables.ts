@@ -441,10 +441,10 @@ export const createDeliverablesSlice: StateCreator<
 
         if (isFireAndForgetQueueResponse(queued)) {
           const status = await get().fetchGenerationStatus(pid);
-          const tasksBusy =
-            status?.busy?.some((j) => j.type === "tasks") ||
-            status?.activeJob?.type === "tasks";
-          if (!tasksBusy && lastTasksLen > baselineLen) {
+          const tasksStillRunning =
+            status?.activeJob?.type === "tasks" ||
+            (status?.queuedJobs.some((j) => j.type === "tasks") ?? false);
+          if (!tasksStillRunning && lastTasksLen > baselineLen) {
             const done = await get().fetchProject(pid);
             set({ agentProgress: completeTasksGenerationProgressItems() });
             void get().fetchPlanValidation(pid);
