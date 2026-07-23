@@ -215,7 +215,11 @@ export interface WorkshopState {
   validateChangePlan: (projectId: string, stageId?: string) => Promise<PlanValidationPersisted | null>;
 
   fetchProject: (projectId: string, options?: { preferServerMdd?: boolean }) => Promise<Project | null>;
-  fetchWelcome: (projectId: string, activeTab?: string) => Promise<void>;
+  fetchWelcome: (
+    projectId: string,
+    activeTab?: string,
+    options?: { skipLoading?: boolean },
+  ) => Promise<void>;
   clearChat: (projectId: string, activeTab?: string) => Promise<void>;
   /** options.regenerateSection (1–7): regenerar solo esa sección del MDD (comando / en chat). §1 = solo sintetizador de contexto. */
   sendMessage: (
@@ -231,6 +235,7 @@ export interface WorkshopState {
   phase0AssistedThreadId: string | null;
   phase0AssistedAwaitingSeed: boolean;
   phase0AssistedTemplateLabel: string | null;
+  phase0AssistedBootstrapMessage: string | null;
   startPhase0Assisted: (idea?: string) => Promise<void>;
   stopPhase0Assisted: () => Promise<void>;
   updateMddContent: (content: string) => void;

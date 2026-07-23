@@ -520,6 +520,7 @@ export default function ChatContainer({
   const pendingPlanApproval = useWorkshopStore((s) => s.pendingPlanApproval);
   const phase0AssistedActive = useWorkshopStore((s) => s.phase0AssistedActive);
   const phase0AssistedTemplateLabel = useWorkshopStore((s) => s.phase0AssistedTemplateLabel);
+  const phase0AssistedBootstrapMessage = useWorkshopStore((s) => s.phase0AssistedBootstrapMessage);
   const stopPhase0Assisted = useWorkshopStore((s) => s.stopPhase0Assisted);
   const isBenchmarkStreaming = activeTab === "benchmark" && loading && loadingReason === "benchmark";
   const isMddStreaming =
@@ -589,10 +590,19 @@ export default function ChatContainer({
 
   useEffect(() => {
     const tab = activeTab ?? "mdd";
-    if (!projectId?.trim() || !session?.id) return;
+    if (!projectId?.trim()) return;
     if (tab === "mdd") return;
     const welcomeTabs: ActiveTab[] = ["brd", "ux-ui-guide", "benchmark"];
     if (!welcomeTabs.includes(tab)) return;
+    if (phase0AssistedActive && tab === "benchmark") return;
+    if (!session?.id) {
+      if (welcomedTabRef.current === tab) return;
+      welcomedTabRef.current = tab;
+      const t = window.setTimeout(() => {
+        void fetchWelcome(projectId, tab);
+      }, 120);
+      return () => window.clearTimeout(t);
+    }
     const count = (session.chatLog ?? []).filter((m: { tab?: string }) => (m.tab ?? "mdd") === tab).length;
     if (count > 0) return;
     // Evitar bucle infinito: si ya intentamos welcome para este tab sin éxito (sin mensaje agregado),
@@ -603,7 +613,7 @@ export default function ChatContainer({
       void fetchWelcome(projectId, tab);
     }, 120);
     return () => window.clearTimeout(t);
-  }, [projectId, activeTab, session?.id, session?.chatLog, fetchWelcome]);
+  }, [projectId, activeTab, session?.id, session?.chatLog, fetchWelcome, phase0AssistedActive]);
 
   useEffect(() => {
     if (!multiStageChat || !activeStageIdForChat) {
@@ -682,6 +692,21 @@ export default function ChatContainer({
   const messagesToShow = useMemo(() => {
     let list = benchmarkEmpty && messages.length > 0 ? [] : messages;
     if (
+      list.length === 0 &&
+      phase0AssistedActive &&
+      activeTab === "benchmark" &&
+      phase0AssistedBootstrapMessage?.trim()
+    ) {
+      list = [
+        { role: "user" as const, content: "Activar modo asistido", tab: "benchmark" },
+        {
+          role: "assistant" as const,
+          content: phase0AssistedBootstrapMessage.trim(),
+          tab: "benchmark",
+        },
+      ];
+    }
+    if (
       activeTab === "mdd" &&
       pendingPlanApproval?.plan.length &&
       pendingPlanApproval.planMessage.trim()
@@ -697,7 +722,14 @@ export default function ChatContainer({
       }
     }
     return list;
-  }, [benchmarkEmpty, messages, activeTab, pendingPlanApproval]);
+  }, [
+    benchmarkEmpty,
+    messages,
+    activeTab,
+    pendingPlanApproval,
+    phase0AssistedActive,
+    phase0AssistedBootstrapMessage,
+  ]);
 
   useEffect(() => {
     const el = chatScrollRef.current;
@@ -922,7 +954,12 @@ export default function ChatContainer({
     [handleComposerSubmit],
   );
 
-  const showCenteredEmpty = embedded && (activeTab === "benchmark" ? benchmarkEmpty : messages.length === 0) && !loading;
+  const showCenteredEmpty =
+    embedded &&
+    !phase0AssistedActive &&
+    !phase0AssistedBootstrapMessage?.trim() &&
+    (activeTab === "benchmark" ? benchmarkEmpty : messages.length === 0) &&
+    !loading;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">

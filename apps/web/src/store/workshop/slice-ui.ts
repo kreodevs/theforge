@@ -23,6 +23,7 @@ export const createUiSlice: StateCreator<WorkshopState, [], [], UiSliceActions> 
       phase0AssistedThreadId: null,
       phase0AssistedAwaitingSeed: false,
       phase0AssistedTemplateLabel: null,
+      phase0AssistedBootstrapMessage: null,
     }),
   setLoading: (v) => set({ loading: v }),
   setSynced: (v) => set({ synced: v }),

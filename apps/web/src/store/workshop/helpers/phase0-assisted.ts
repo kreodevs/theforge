@@ -92,6 +92,30 @@ export async function postPhase0AssistedStop(projectId: string): Promise<Phase0A
   return data;
 }
 
+export function countWorkshopTabMessages(
+  session: Session | null | undefined,
+  tab: string,
+): number {
+  return (session?.chatLog ?? []).filter((m) => (m.tab ?? "mdd") === tab).length;
+}
+
+/** Crea sesión de chat vía welcome si el Workshop aún no tiene `session.id`. */
+export async function ensureWorkshopChatSession(opts: {
+  projectId: string;
+  tab: string;
+  fetchWelcome: (
+    projectId: string,
+    activeTab?: string,
+    options?: { skipLoading?: boolean },
+  ) => Promise<void>;
+  getSession: () => Session | null;
+}): Promise<Session | null> {
+  const existing = opts.getSession();
+  if (existing?.id) return existing;
+  await opts.fetchWelcome(opts.projectId, opts.tab, { skipLoading: true });
+  return opts.getSession();
+}
+
 export async function appendWorkshopChatPair(opts: {
   session: Session | null;
   stageId: string | null | undefined;
@@ -100,7 +124,7 @@ export async function appendWorkshopChatPair(opts: {
   assistantContent: string;
 }): Promise<Session | null> {
   const { session, stageId, tab, userContent, assistantContent } = opts;
-  if (!session?.id) return session;
+  if (!session?.id) return null;
   let next = session;
   if (userContent?.trim()) {
     const userRes = await apiFetch(`${API_BASE}/sessions/${session.id}/messages`, {

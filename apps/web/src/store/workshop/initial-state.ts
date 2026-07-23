@@ -125,6 +125,8 @@ export const workshopInitialState = {
   phase0AssistedThreadId: null as string | null,
   phase0AssistedAwaitingSeed: false,
   phase0AssistedTemplateLabel: null as string | null,
+  /** Respuesta del API si aún no se pudo persistir en sesión (sin session.id). */
+  phase0AssistedBootstrapMessage: null as string | null,
 };
 
 export type WorkshopInitialState = typeof workshopInitialState;

@@ -1002,6 +1002,8 @@ export const createDeliverablesSlice: StateCreator<
         postPhase0AssistedStart,
         appendWorkshopChatPair,
         applyAssistedMarkdownToState,
+        ensureWorkshopChatSession,
+        countWorkshopTabMessages,
       } = await import("./helpers/phase0-assisted");
       const event = await postPhase0AssistedStart(projectId, idea);
       if (event.type === "error") {
@@ -1016,23 +1018,31 @@ export const createDeliverablesSlice: StateCreator<
         typeof event.message === "string" && event.message.trim()
           ? event.message.trim()
           : "Modo asistido activado.";
+      const chatSession = await ensureWorkshopChatSession({
+        projectId,
+        tab: "benchmark",
+        fetchWelcome: (pid, tab, opts) => get().fetchWelcome(pid, tab, opts),
+        getSession: () => get().session,
+      });
       const nextSession = await appendWorkshopChatPair({
-        session: get().session,
+        session: chatSession ?? get().session,
         stageId: get().activeStageId,
         tab: "benchmark",
         userContent: idea?.trim() || "Activar modo asistido",
         assistantContent,
       });
+      const persistedBenchmark = countWorkshopTabMessages(nextSession, "benchmark") > 0;
       const done =
         event.type === "assisted_started" &&
         !event.awaitingSeed &&
         !event.question?.trim();
       set({
-        session: nextSession ?? get().session,
+        session: nextSession ?? chatSession ?? get().session,
         phase0AssistedActive: !done,
         phase0AssistedThreadId: event.threadId?.trim() || null,
         phase0AssistedAwaitingSeed: !!event.awaitingSeed,
         phase0AssistedTemplateLabel: event.templateLabel?.trim() || null,
+        phase0AssistedBootstrapMessage: persistedBenchmark ? null : assistantContent,
         loading: false,
         error: null,
         workshopActiveDocPanel: "benchmark",
@@ -1056,6 +1066,7 @@ export const createDeliverablesSlice: StateCreator<
         phase0AssistedThreadId: null,
         phase0AssistedAwaitingSeed: false,
         phase0AssistedTemplateLabel: null,
+        phase0AssistedBootstrapMessage: null,
       });
       return;
     }
@@ -1080,6 +1091,7 @@ export const createDeliverablesSlice: StateCreator<
         phase0AssistedThreadId: null,
         phase0AssistedAwaitingSeed: false,
         phase0AssistedTemplateLabel: null,
+        phase0AssistedBootstrapMessage: null,
         loading: false,
         error: null,
       });
@@ -1089,6 +1101,7 @@ export const createDeliverablesSlice: StateCreator<
         phase0AssistedThreadId: null,
         phase0AssistedAwaitingSeed: false,
         phase0AssistedTemplateLabel: null,
+        phase0AssistedBootstrapMessage: null,
         loading: false,
         error: e instanceof Error ? e.message : "No se pudo desactivar el modo asistido",
       });

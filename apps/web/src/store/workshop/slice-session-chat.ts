@@ -39,6 +39,8 @@ import { isWorkshopConnectionError } from "../../utils/workshopSyncStatus";
 import {
   appendWorkshopChatPair,
   applyAssistedMarkdownToState,
+  countWorkshopTabMessages,
+  ensureWorkshopChatSession,
   postPhase0AssistedAnswer,
 } from "./helpers/phase0-assisted";
 import { pickDefaultStageId } from "./helpers/pick-default-stage";
@@ -124,11 +126,12 @@ export const createSessionChatSlice: StateCreator<WorkshopState, [], [], Session
       }
     }
   },
-  fetchWelcome: async (projectId, activeTab) => {
+  fetchWelcome: async (projectId, activeTab, options) => {
     const { session, projectId: storeProjectId } = get();
     const pid = (projectId ?? storeProjectId ?? "").trim();
     if (!pid) return;
-    set({ loading: true, error: null });
+    const skipLoading = options?.skipLoading === true;
+    if (!skipLoading) set({ loading: true, error: null });
     try {
       const stageWelcome = get().activeStageId;
       const r = await apiFetch(`${API_BASE}/ai-orchestrator/welcome`, {
@@ -146,7 +149,7 @@ export const createSessionChatSlice: StateCreator<WorkshopState, [], [], Session
         set({
           ...streamErrorPatch(payload),
           synced: true,
-          loading: false,
+          ...(skipLoading ? {} : { loading: false }),
         });
         return;
       }
@@ -195,7 +198,7 @@ export const createSessionChatSlice: StateCreator<WorkshopState, [], [], Session
         synced: true,
       });
     } finally {
-      set({ loading: false });
+      if (!skipLoading) set({ loading: false });
     }
   },
 
@@ -511,19 +514,26 @@ export const createSessionChatSlice: StateCreator<WorkshopState, [], [], Session
           typeof event.message === "string" && event.message.trim()
             ? event.message.trim()
             : "Respuesta aplicada.";
+        const chatSession = await ensureWorkshopChatSession({
+          projectId: requestProjectId,
+          tab: "benchmark",
+          fetchWelcome: (pid, welcomeTab, opts) => get().fetchWelcome(pid, welcomeTab, opts),
+          getSession: () => get().session,
+        });
         const nextSession = await appendWorkshopChatPair({
-          session: get().session,
+          session: chatSession ?? get().session,
           stageId: get().activeStageId,
           tab: "benchmark",
           userContent: msg,
           assistantContent,
         });
+        const persistedBenchmark = countWorkshopTabMessages(nextSession, "benchmark") > 0;
         const finished =
           event.type === "assisted_turn" && event.done === true
             ? true
             : event.type === "assisted_started" && !event.question?.trim() && !event.awaitingSeed;
         set({
-          session: nextSession ?? get().session,
+          session: nextSession ?? chatSession ?? get().session,
           phase0AssistedActive: !finished,
           phase0AssistedThreadId: finished
             ? null
@@ -531,6 +541,9 @@ export const createSessionChatSlice: StateCreator<WorkshopState, [], [], Session
           phase0AssistedAwaitingSeed: !!event.awaitingSeed,
           phase0AssistedTemplateLabel:
             event.templateLabel?.trim() || get().phase0AssistedTemplateLabel,
+          phase0AssistedBootstrapMessage: persistedBenchmark
+            ? null
+            : assistantContent,
           loading: false,
           error: null,
         });
