@@ -48,6 +48,7 @@ export * from "./legacy-codebase-doc.js";
 export * from "./document-changelog.js";
 export * from "./document-persist-validation.js";
 export * from "./mdd-governance-patterns.js";
+export * from "./mdd-governance-pattern-compat.js";
 export * from "./phase0-content.js";
 export * from "./project-integration.js";
 export * from "./project-notion-portability.js";

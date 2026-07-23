@@ -78,7 +78,13 @@ import {
   extractGovernanceSection,
   mddHasSubstantialBody,
   resolveMddGovernancePreservation,
+  updateMddGovernancePatterns,
 } from "@theforge/shared-types/mdd-governance-patterns";
+import {
+  formatGovernancePatternCorrectionsNotice,
+  resolveGovernancePatternIncompatibilities,
+} from "@theforge/shared-types/mdd-governance-pattern-compat";
+import { peelDocumentBodyForPersist } from "@theforge/shared-types";
 import { mddDeliveryGateHasBlockers, mddStreamDeliveryGateFields } from "./utils/mdd-delivery-gate.util.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import type { MddJobData, MddJobProgress, MddJobResult } from "./mdd/mdd-queue.service.js";
@@ -1973,9 +1979,15 @@ export class AiAnalysisService {
    * Ejecuta generación/regeneración MDD desacoplada del SSE (cola background).
    * Persiste borradores y resultado final en BD desde el servidor.
    */
-  private async resolveLockedPatternIdsForMddJob(data: MddJobData): Promise<Set<string>> {
+  private async resolveLockedPatternIdsForMddJob(data: MddJobData): Promise<{
+    lockedPatternIds: Set<string>;
+    stageMddContent: string;
+    stageId: string | undefined;
+  }> {
     const { projectId, stageId, mddContent } = data;
-    if (!projectId?.trim()) return new Set();
+    if (!projectId?.trim()) {
+      return { lockedPatternIds: new Set(), stageMddContent: "", stageId: undefined };
+    }
     const project = await this.prisma.project.findUnique({
       where: { id: projectId.trim() },
       include: { stages: { orderBy: { ordinal: "asc" } } },
@@ -1983,7 +1995,15 @@ export class AiAnalysisService {
     const sid = stageId?.trim();
     const byId = sid ? project?.stages?.find((s) => s.id === sid) : undefined;
     const stage = byId ?? pickPrimaryStage(project?.stages ?? []);
-    return resolveMddGovernancePreservation(mddContent, stage?.mddContent ?? "").lockedPatternIds;
+    const { lockedPatternIds } = resolveMddGovernancePreservation(
+      mddContent,
+      stage?.mddContent ?? "",
+    );
+    return {
+      lockedPatternIds,
+      stageMddContent: stage?.mddContent ?? "",
+      stageId: stage?.id,
+    };
   }
 
   async runMddGenerationJob(
@@ -1993,7 +2013,29 @@ export class AiAnalysisService {
   ): Promise<MddJobResult> {
     const { mode, projectId, stageId } = data;
     let lastPersistedLen = 0;
-    const lockedPatternIds = await this.resolveLockedPatternIdsForMddJob(data);
+    const resolvedPatterns = await this.resolveLockedPatternIdsForMddJob(data);
+    const { correctedIds: lockedPatternIds, corrections } = resolveGovernancePatternIncompatibilities(
+      resolvedPatterns.lockedPatternIds,
+    );
+
+    if (corrections.length > 0) {
+      this.logger.warn(
+        `MDD job ${mode} (${projectId}): ${corrections.length} patrón(es) incompatible(s) corregido(s) automáticamente`,
+      );
+      onProgress({
+        phase: "pattern-compat",
+        message: formatGovernancePatternCorrectionsNotice(corrections),
+      });
+      const stageBody = peelDocumentBodyForPersist(resolvedPatterns.stageMddContent);
+      if (stageBody.trim().length >= 48) {
+        const correctedMd = updateMddGovernancePatterns(stageBody, lockedPatternIds);
+        await this.projects.persistMddFromBackgroundJob(projectId, correctedMd, {
+          stageId: resolvedPatterns.stageId ?? stageId?.trim() || undefined,
+          finalize: false,
+          lockedPatternIds: [...lockedPatternIds],
+        });
+      }
+    }
 
     const persistMarkdown = async (markdown: string, finalize: boolean): Promise<void> => {
       const cleaned = cleanDocumentContent(markdown);

@@ -30,8 +30,15 @@ import {
 } from "../components/MddPatternsWizardDialog";
 import {
   mddNeedsPatternWizard,
+  mddHasSubstantialBody,
   selectedPatternIdsFromMdd,
+  updateMddGovernancePatterns,
 } from "@theforge/shared-types/mdd-governance-patterns";
+import type { GovernancePatternCorrection } from "@theforge/shared-types";
+import {
+  offerGovernancePatternCompat,
+  type PendingMddAfterPatternCompat,
+} from "../utils/mddGovernancePatternCompatFlow";
 import {
   WorkshopDocumentIslandToc,
   isWorkshopMarkdownPreviewActive,
@@ -140,6 +147,19 @@ export default function WorkshopView({
   const [clearMddDeliverablesConfirmOpen, setClearMddDeliverablesConfirmOpen] = useState(false);
   const [mddPatternsWizardMode, setMddPatternsWizardMode] =
     useState<MddPatternsWizardMode>("initial");
+  const [patternCompatOpen, setPatternCompatOpen] = useState(false);
+  const [patternCompatCorrections, setPatternCompatCorrections] = useState<
+    GovernancePatternCorrection[]
+  >([]);
+  const [patternCompatCorrectedIds, setPatternCompatCorrectedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [patternCompatConfirmLabel, setPatternCompatConfirmLabel] = useState(
+    "Continuar y generar MDD",
+  );
+  const [pendingMddAfterPatternCompat, setPendingMddAfterPatternCompat] =
+    useState<PendingMddAfterPatternCompat | null>(null);
+  const [patternCompatLoading, setPatternCompatLoading] = useState(false);
   const [patternsWizardAnalyzing, setPatternsWizardAnalyzing] = useState(false);
   const [patternsWizardPreselected, setPatternsWizardPreselected] = useState<Set<string> | null>(
     null,
@@ -600,24 +620,6 @@ export default function WorkshopView({
     setMddRegenerateDialogOpen(true);
   }, []);
 
-  const handleMddRegenerateFull = useCallback(async () => {
-    if (!projectId?.trim()) return;
-    setMddRegenerateDialogOpen(false);
-    await generateMddFromBenchmark(projectId);
-  }, [projectId, generateMddFromBenchmark]);
-
-  const handleMddRegenerateSync = useCallback(
-    async (sections: number[]) => {
-      if (!projectId?.trim()) return;
-      setMddRegenerateDialogOpen(false);
-      await generateMddUpstreamSync(projectId, {
-        sections,
-        stageId: activeStageId,
-      });
-    },
-    [projectId, generateMddUpstreamSync, activeStageId],
-  );
-
   const openEditMddPatterns = useCallback(() => {
     setMddPatternsWizardMode("edit");
     setPatternsWizardPreselected(new Set(selectedPatternIdsFromMdd(effectiveMddTrimmed)));
@@ -626,29 +628,40 @@ export default function WorkshopView({
     setMddPatternsWizardOpen(true);
   }, [effectiveMddTrimmed]);
 
-  const handleMddPatternsWizardConfirm = useCallback(
-    async (markdown: string, selectedIds: ReadonlySet<string>) => {
-      setMddPatternsWizardOpen(false);
-      const mode = mddPatternsWizardMode;
-      if (mode === "edit") {
-        await persistMddContent(markdown, {
+  const saveEditedGovernancePatterns = useCallback(
+    async (selectedIds: ReadonlySet<string>) => {
+      await persistMddContent(
+        updateMddGovernancePatterns(effectiveMddTrimmed, selectedIds),
+        {
           force: true,
           allowGovernancePatternChange: true,
-        });
-        if (!useWorkshopStore.getState().notice && !isSsotPatternsNotice(useWorkshopStore.getState().error)) {
-          const { projectId: pid, fetchEstimation } = useWorkshopStore.getState();
-          if (pid?.trim()) {
-            await recordGovernancePatternAdrs(pid, selectedIds).catch(() => {});
-            void fetchEstimation(pid);
-          }
+        },
+      );
+      if (
+        !useWorkshopStore.getState().notice &&
+        !isSsotPatternsNotice(useWorkshopStore.getState().error)
+      ) {
+        const pid = useWorkshopStore.getState().projectId;
+        if (pid?.trim()) {
+          await recordGovernancePatternAdrs(pid, selectedIds).catch(() => {});
+          void useWorkshopStore.getState().fetchEstimation(pid);
         }
-        return;
       }
-      await persistMddContent(markdown, {
-        force: true,
-        allowGovernancePatternChange: true,
-        mddGovernanceSeedOnly: true,
-      });
+    },
+    [effectiveMddTrimmed, persistMddContent, recordGovernancePatternAdrs],
+  );
+
+  const runInitialMddGenerationAfterPersist = useCallback(
+    async (seedMarkdown: string, correctedIds: ReadonlySet<string>) => {
+      if (!projectId?.trim()) return;
+      await persistMddContent(
+        updateMddGovernancePatterns(seedMarkdown, correctedIds),
+        {
+          force: true,
+          allowGovernancePatternChange: true,
+          mddGovernanceSeedOnly: true,
+        },
+      );
       const storeAfterPersist = useWorkshopStore.getState();
       if (
         storeAfterPersist.notice ||
@@ -657,18 +670,168 @@ export default function WorkshopView({
       ) {
         return;
       }
-      if (!projectId?.trim()) return;
-      await recordGovernancePatternAdrs(projectId, selectedIds).catch(() => {});
+      await recordGovernancePatternAdrs(projectId, correctedIds).catch(() => {});
       await generateMddFromBenchmark(projectId);
+    },
+    [projectId, persistMddContent, recordGovernancePatternAdrs, generateMddFromBenchmark],
+  );
+
+  const promptPatternCompatBeforeMdd = useCallback(
+    (
+      selectedIds: ReadonlySet<string>,
+      pending: PendingMddAfterPatternCompat,
+      confirmLabel: string,
+      onProceed: () => void | Promise<void>,
+    ) => {
+      const offer = offerGovernancePatternCompat(selectedIds);
+      if (offer.proceed) {
+        void onProceed();
+        return;
+      }
+      setPatternCompatCorrections(offer.corrections);
+      setPatternCompatCorrectedIds(offer.correctedIds);
+      setPatternCompatConfirmLabel(confirmLabel);
+      setPendingMddAfterPatternCompat(pending);
+      setPatternCompatOpen(true);
+    },
+    [],
+  );
+
+  const handlePatternCompatOpenChange = useCallback(
+    (open: boolean) => {
+      setPatternCompatOpen(open);
+      if (!open && !patternCompatLoading) {
+        setPendingMddAfterPatternCompat(null);
+      }
+    },
+    [patternCompatLoading],
+  );
+
+  const executePendingMddAfterPatternCompat = useCallback(async () => {
+    if (!pendingMddAfterPatternCompat || !projectId?.trim()) return;
+    const pending = pendingMddAfterPatternCompat;
+    const correctedIds = patternCompatCorrectedIds;
+    setPatternCompatLoading(true);
+    try {
+      setPatternCompatOpen(false);
+      setPendingMddAfterPatternCompat(null);
+
+      if (pending.kind === "edit-patterns-only") {
+        await saveEditedGovernancePatterns(correctedIds);
+        return;
+      }
+
+      if (pending.kind === "wizard-initial") {
+        await runInitialMddGenerationAfterPersist(pending.seedMarkdown, correctedIds);
+        return;
+      }
+
+      const markdown = updateMddGovernancePatterns(effectiveMddTrimmed, correctedIds);
+      await persistMddContent(markdown, {
+        force: true,
+        allowGovernancePatternChange: true,
+      });
+      const storeAfter = useWorkshopStore.getState();
+      if (storeAfter.notice || isSsotPatternsNotice(storeAfter.error) || storeAfter.error) {
+        return;
+      }
+      await recordGovernancePatternAdrs(projectId, correctedIds).catch(() => {});
+
+      if (pending.kind === "generate-benchmark") {
+        await generateMddFromBenchmark(projectId);
+      } else if (pending.kind === "upstream-sync") {
+        await generateMddUpstreamSync(projectId, {
+          sections: pending.sections,
+          stageId: activeStageId,
+        });
+      }
+    } finally {
+      setPatternCompatLoading(false);
+    }
+  }, [
+    pendingMddAfterPatternCompat,
+    projectId,
+    patternCompatCorrectedIds,
+    effectiveMddTrimmed,
+    persistMddContent,
+    recordGovernancePatternAdrs,
+    generateMddFromBenchmark,
+    generateMddUpstreamSync,
+    activeStageId,
+    saveEditedGovernancePatterns,
+    runInitialMddGenerationAfterPersist,
+  ]);
+
+  const handleMddPatternsWizardConfirm = useCallback(
+    async (markdown: string, selectedIds: ReadonlySet<string>) => {
+      setMddPatternsWizardOpen(false);
+      const mode = mddPatternsWizardMode;
+      if (mode === "edit") {
+        promptPatternCompatBeforeMdd(
+          selectedIds,
+          { kind: "edit-patterns-only" },
+          "Guardar patrones corregidos",
+          () => saveEditedGovernancePatterns(selectedIds),
+        );
+        return;
+      }
+      promptPatternCompatBeforeMdd(
+        selectedIds,
+        { kind: "wizard-initial", seedMarkdown: markdown },
+        "Continuar y generar MDD",
+        () => runInitialMddGenerationAfterPersist(markdown, selectedIds),
+      );
     },
     [
       mddPatternsWizardMode,
-      persistMddContent,
-      generateMddFromBenchmark,
-      projectId,
-      recordGovernancePatternAdrs,
+      promptPatternCompatBeforeMdd,
+      saveEditedGovernancePatterns,
+      runInitialMddGenerationAfterPersist,
     ],
   );
+
+  const handleMddRegenerateFull = useCallback(async () => {
+    if (!projectId?.trim()) return;
+    setMddRegenerateDialogOpen(false);
+    const ids = selectedPatternIdsFromMdd(effectiveMddTrimmed);
+    promptPatternCompatBeforeMdd(
+      ids,
+      { kind: "generate-benchmark" },
+      "Continuar y regenerar MDD",
+      () => generateMddFromBenchmark(projectId),
+    );
+  }, [
+    projectId,
+    effectiveMddTrimmed,
+    promptPatternCompatBeforeMdd,
+    generateMddFromBenchmark,
+  ]);
+
+  const handleMddRegenerateSync = useCallback(
+    async (sections: number[]) => {
+      if (!projectId?.trim()) return;
+      setMddRegenerateDialogOpen(false);
+      const ids = selectedPatternIdsFromMdd(effectiveMddTrimmed);
+      promptPatternCompatBeforeMdd(
+        ids,
+        { kind: "upstream-sync", sections },
+        "Continuar y sincronizar MDD",
+        () =>
+          generateMddUpstreamSync(projectId, {
+            sections,
+            stageId: activeStageId,
+          }),
+      );
+    },
+    [
+      projectId,
+      effectiveMddTrimmed,
+      activeStageId,
+      promptPatternCompatBeforeMdd,
+      generateMddUpstreamSync,
+    ],
+  );
+
   const legacyGenerateDeliverables = useWorkshopStore((s) => s.legacyGenerateDeliverables);
   const persistUxUiGuideContent = useWorkshopStore((s) => s.persistUxUiGuideContent);
   const persistUxGuideDesignRef = useWorkshopStore((s) => s.persistUxGuideDesignRef);
@@ -2021,6 +2184,12 @@ export default function WorkshopView({
     mddRegenerateInitialMode,
     handleMddRegenerateFull,
     handleMddRegenerateSync,
+    patternCompatOpen,
+    setPatternCompatOpen: handlePatternCompatOpenChange,
+    patternCompatCorrections,
+    patternCompatConfirmLabel,
+    patternCompatLoading,
+    executePendingMddAfterPatternCompat,
     aemGenerateDialogOpen,
     setAemGenerateDialogOpen,
     handleGenerateAem,
