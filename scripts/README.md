@@ -67,3 +67,22 @@ En **Docker Compose** (`docker-compose.yml`) el servicio **`theforge-redis-queue
 
 - **Local sin Compose:** levanta Redis (p. ej. `redis-server` o un contenedor en `localhost:6379`) y en `.env` define `REDIS_URL=redis://localhost:6379`. Si `REDIS_URL` está vacío en dev, la API usa cola in-memory (no usar en prod).
 - **No confundir** con **FalkorDB** (`theforge-falkor-sdd`): ese servicio es el grafo SDD (Cypher / MDD_Section), no la cola BullMQ.
+
+## audit-falkor-sdd.mjs
+
+Audita conectividad al grafo SDD local (FalkorDB) y compara nodos de una etapa vs §3/§4 del MDD (tablas SQL y endpoints).
+
+**Requisitos:**
+
+- Falkor SDD en marcha (`theforge-falkor-sdd` vía `ensure-infra.js`, puerto host **6380** en dev local si aplica)
+- `FALKORDB_SDD_URL` o `FALKORDB_URL` (default `redis://localhost:6380`)
+
+**Uso:**
+
+```bash
+node scripts/audit-falkor-sdd.mjs --project-id <UUID> --stage-id <UUID> --mdd-file /tmp/project.json
+```
+
+Opcional: `AUDIT_PROJECT_ID` / `AUDIT_STAGE_ID` en entorno. El `--mdd-file` puede ser JSON de `get_project` (campos `mddContent`, `id`, `activeStageId`) o markdown plano del MDD.
+
+Imprime conteos `DB_Entity` / `API_Endpoint`, huérfanos CONSUMES, diff MDD↔grafo y heurística `sddDomainGraphOk`. Alineado con la lógica de `SddGraphSyncService` / Workshop (`generation-status.sddGraph`).

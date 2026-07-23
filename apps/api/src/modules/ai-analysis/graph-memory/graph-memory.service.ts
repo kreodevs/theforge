@@ -1,6 +1,11 @@
 import { FalkorDB, Graph } from "falkordb";
 import { MddStructured } from "../state/mdd-structured.schema.js";
 import { validateSddReadQuery } from "./sdd-query-guard.js";
+import {
+    extractForeignKeyTargetsByTable,
+    extractTableRefsFromSql,
+    inferConsumedTableStorageNames,
+} from "./sdd-consumes-link.util.js";
 import { BadRequestException, Injectable, Logger, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
 import { AIFactory } from "../../ai/ai.factory.js";
 import { getRequestUserId } from "../../../common/request-user.store.js";
@@ -14,6 +19,10 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
     private readonly vectorIndexDims = new Set<number>();
 
     constructor(private readonly aiFactory: AIFactory) { }
+
+    isConnected(): boolean {
+        return this.graph != null;
+    }
 
     private async embed(text: string, userId?: string): Promise<number[]> {
         const uid = userId ?? getRequestUserId();
@@ -114,7 +123,12 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
     /**
      * Reconstruye el subgrafo SDD de una etapa: Stage, MDD_Section, DB_Entity, API_Endpoint, CONSUMES, IMPLEMENTS.
      */
-    async syncMddToGraph(projectId: string, stageId: string | undefined, structured: MddStructured) {
+    async syncMddToGraph(
+        projectId: string,
+        stageId: string | undefined,
+        structured: MddStructured,
+        opts?: { mddFingerprint?: string },
+    ) {
         if (!this.graph) return;
         const sid = (stageId ?? "").trim();
         if (!sid) {
@@ -149,22 +163,35 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
             await this.graph.query(
                 `
         MERGE (st:Stage {id: $stageId})
-        SET st.projectId = $projectId, st.updatedAt = $ts
+        SET st.projectId = $projectId,
+            st.updatedAt = $ts,
+            st.sddLastSyncedAt = $ts,
+            st.sddMddFingerprint = $fp
         WITH st
         MATCH (p:Project {id: $projectId})
         MERGE (p)-[:HAS_STAGE]->(st)
         RETURN st
       `,
-                { params: { stageId: sid, projectId, ts: Date.now() } },
+                {
+                    params: {
+                        stageId: sid,
+                        projectId,
+                        ts: Date.now(),
+                        fp: opts?.mddFingerprint ?? "",
+                    },
+                },
             );
 
-            const tableNames: string[] = [];
-            if (structured.modeloDatos?.sql) {
-                const tables = this.extractTablesFromSql(structured.modeloDatos.sql);
-                for (const tableName of tables) {
-                    tableNames.push(tableName);
-                    await this.graph.query(
-                        `
+            const tableRefs = structured.modeloDatos?.sql
+                ? extractTableRefsFromSql(structured.modeloDatos.sql)
+                : [];
+            const fkByTable = structured.modeloDatos?.sql
+                ? extractForeignKeyTargetsByTable(structured.modeloDatos.sql)
+                : new Map<string, Set<string>>();
+
+            for (const ref of tableRefs) {
+                await this.graph.query(
+                    `
             MERGE (t:DB_Entity {name: $tableName, projectId: $projectId, stageId: $stageId})
             SET t.label = $tableName
             WITH t
@@ -172,9 +199,8 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
             MERGE (st)-[:OWNS_ENTITY]->(t)
             RETURN t
           `,
-                        { params: { tableName, projectId, stageId: sid } },
-                    );
-                }
+                    { params: { tableName: ref.storageName, projectId, stageId: sid } },
+                );
             }
 
             if (structured.contratosApi?.endpoints) {
@@ -201,10 +227,8 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
                             },
                         },
                     );
-                    for (const tbl of tableNames) {
-                        const pathLower = (ep.path ?? "").toLowerCase();
-                        const tblLower = tbl.toLowerCase();
-                        if (tblLower.length < 2 || !pathLower.includes(tblLower)) continue;
+                    const consumed = inferConsumedTableStorageNames(ep.path ?? "", tableRefs, fkByTable);
+                    for (const tbl of consumed) {
                         await this.graph.query(
                             `
               MATCH (e:API_Endpoint {id: $eid})
@@ -658,22 +682,6 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
             this.logger.error(`Error obteniendo decisiones del proyecto ${projectId}: ${err instanceof Error ? err.message : String(err)}`);
             return [];
         }
-    }
-
-    /**
-     * Helper simple para extraer nombres de tablas de un bloque SQL.
-     */
-    private extractTablesFromSql(sql: string): string[] {
-        const tableNames: string[] = [];
-        const regex = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-zA-Z0-9_".]+)/gi;
-        let match;
-        while ((match = regex.exec(sql)) !== null) {
-            if (match[1]) {
-                const clean = match[1].replace(/["']/g, "");
-                tableNames.push(clean);
-            }
-        }
-        return [...new Set(tableNames)];
     }
 
     /**

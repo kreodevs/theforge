@@ -35,6 +35,9 @@ import { applyDeterministicMddRepairs } from "./mdd-deterministic-repair.util.js
 import { resolveDomainInventory } from "../engine/domain-inventory-persist.util.js";
 import type { DomainInventory } from "@theforge/shared-types";
 import { pickPrimaryStage, type StageWithEstimation } from "./stage-helpers.js";
+import {
+  mergeSddGraphIntoShortTermContext,
+} from "../ai-analysis/graph-memory/sdd-graph-context.util.js";
 
 export type PersistMddFromPatchInput = {
   projectId: string;
@@ -200,15 +203,32 @@ export class ProjectMddPersistService {
         ? (targetStage.shortTermContext as Record<string, unknown>)
         : {};
 
+    const nextCtx = mergeSddGraphIntoShortTermContext(
+      {
+        ...prevCtx,
+        pendingCascadeDelta:
+          cascadeDelta.affectedDeliverables.length > 0 ? cascadeDelta : null,
+      },
+      result.sddGraph ?? {
+        state: "unavailable",
+        entityCount: 0,
+        endpointCount: 0,
+        expectedEntities: 0,
+        expectedEndpoints: 0,
+        isCoherent: false,
+        orphanEntityCount: 0,
+        orphanEndpointCount: 0,
+        lastSyncedAt: null,
+        message: "Sin evaluación de grafo SDD en esta persistencia.",
+      },
+      finalMdd,
+    );
+
     await this.prisma.stage.update({
       where: { id: targetStage.id },
       data: {
         mddContent: storeMddMarkdownForPersist(finalMdd),
-        shortTermContext: {
-          ...prevCtx,
-          pendingCascadeDelta:
-            cascadeDelta.affectedDeliverables.length > 0 ? cascadeDelta : null,
-        } as Prisma.InputJsonValue,
+        shortTermContext: nextCtx as Prisma.InputJsonValue,
       },
     });
     await this.changeLog.log(projectId, "mddContent", finalMdd);
@@ -302,16 +322,33 @@ export class ProjectMddPersistService {
         ? (stageRow.shortTermContext as Record<string, unknown>)
         : {};
 
+    const nextCtx = mergeSddGraphIntoShortTermContext(
+      {
+        ...prevCtx,
+        pendingCascadeDelta:
+          cascadeDelta.affectedDeliverables.length > 0 ? cascadeDelta : null,
+      },
+      ok.sddGraph ?? {
+        state: "unavailable",
+        entityCount: 0,
+        endpointCount: 0,
+        expectedEntities: 0,
+        expectedEndpoints: 0,
+        isCoherent: false,
+        orphanEntityCount: 0,
+        orphanEndpointCount: 0,
+        lastSyncedAt: null,
+        message: "Sin evaluación de grafo SDD en esta persistencia.",
+      },
+      ok.sanitizedMdd,
+    );
+
     await this.prisma.stage.update({
       where: { id: stageId },
       data: {
         mddContent: storeMddMarkdownForPersist(ok.sanitizedMdd),
         ...documentData,
-        shortTermContext: {
-          ...prevCtx,
-          pendingCascadeDelta:
-            cascadeDelta.affectedDeliverables.length > 0 ? cascadeDelta : null,
-        } as Prisma.InputJsonValue,
+        shortTermContext: nextCtx as Prisma.InputJsonValue,
       },
     });
     await this.changeLog.log(projectId, "mddContent", ok.sanitizedMdd);

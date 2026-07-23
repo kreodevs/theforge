@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ComplexityLevel, Status } from "@theforge/database";
-import { GraphMemoryService } from "../ai-analysis/graph-memory/graph-memory.service.js";
-import { markdownToMddStructured } from "../ai-analysis/utils/mdd-markdown-to-structured.js";
+import type { SddGraphSyncStatus } from "@theforge/shared-types";
+import { SddGraphSyncService } from "../ai-analysis/graph-memory/sdd-graph-sync.service.js";
 import { SemaphoreService, type SemaphoreEvaluationInput } from "./semaphore.service.js";
 import { prepareMddForOutput } from "../ai-analysis/utils/mdd-prepare-output.js";
 import { validateMddForDelivery } from "../ai-analysis/utils/mdd-delivery-gate.util.js";
@@ -9,7 +9,7 @@ import { normalizeMddContent } from "./mdd-markdown-parser.js";
 import { preRenderMddSanity } from "./mdd-pre-render.js";
 
 export type MddUpdatePipelineResult =
-  | { ok: true; sanitizedMdd: string; status: Status; precisionScore: number }
+  | { ok: true; sanitizedMdd: string; status: Status; precisionScore: number; sddGraph?: SddGraphSyncStatus }
   | { ok: false; code: string; message: string };
 
 /**
@@ -22,13 +22,12 @@ export class MddUpdatePipelineService {
 
   constructor(
     private readonly semaphore: SemaphoreService,
-    private readonly graphMemory: GraphMemoryService,
+    private readonly sddGraphSync: SddGraphSyncService,
   ) {}
 
   /**
    * Valida el borrador, sanitiza bloques Mermaid y evalúa semáforo.
-   * Con `graphScope`, reingiere el MDD al Grafo SDD y consulta Cypher (coherencia CONSUMES) para relajar AMARILLO→VERDE en HIGH.
-   * Si la validación falla, devuelve ok: false con code y message.
+   * Con `graphScope`, sincroniza Falkor **antes** del semáforo (await) y aplica alivio `sddDomainGraphOk` en HIGH.
    */
   async process(
     rawMddContent: string,
@@ -58,17 +57,16 @@ export class MddUpdatePipelineService {
     const contentForSemaphore = JSON.stringify(normalized);
 
     let sddDomainGraphOk: boolean | undefined;
+    let sddGraph: SddGraphSyncStatus | undefined;
     const pid = graphScope?.projectId?.trim();
     const sid = graphScope?.stageId?.trim();
     if (pid && sid && semaphoreBase.complexity === ComplexityLevel.HIGH) {
       try {
-        const structured = markdownToMddStructured(sanitizedMdd);
-        await this.graphMemory.syncMddToGraph(pid, sid, structured);
-        const health = await this.graphMemory.evaluateSddDependencyHealth(pid, sid);
-        sddDomainGraphOk = health?.isCoherent === true;
-        if (health && !health.isCoherent) {
+        sddGraph = await this.sddGraphSync.syncMddAndEvaluate(pid, sid, sanitizedMdd);
+        sddDomainGraphOk = sddGraph.isCoherent && sddGraph.state === "synced";
+        if (!sddDomainGraphOk) {
           this.logger.debug(
-            `[MddPipeline] Grafo SDD sin alivio semáforo: endpoints=${health.endpointCount} entidades=${health.entityCount} huérfanos(ep)=${health.orphanEndpointCount} huérfanos(tab)=${health.orphanEntityCount}`,
+            `[MddPipeline] Grafo SDD sin alivio semáforo: state=${sddGraph.state} entities=${sddGraph.entityCount}/${sddGraph.expectedEntities} endpoints=${sddGraph.endpointCount}/${sddGraph.expectedEndpoints}`,
           );
         }
       } catch (e) {
@@ -88,6 +86,7 @@ export class MddUpdatePipelineService {
       sanitizedMdd,
       status,
       precisionScore,
+      sddGraph,
     };
   }
 }

@@ -15,6 +15,9 @@ import { ProjectsService } from "./projects.service.js";
 import { DeliverablesQueueService } from "./deliverables-queue.service.js";
 import { MddQueueService } from "../ai-analysis/mdd/mdd-queue.service.js";
 import { MddUpstreamSyncService } from "../ai-analysis/mdd/mdd-upstream-sync.service.js";
+import { SddGraphSyncService } from "../ai-analysis/graph-memory/sdd-graph-sync.service.js";
+import { readSddGraphContext } from "../ai-analysis/graph-memory/sdd-graph-context.util.js";
+import { pickPrimaryStage } from "./stage-helpers.js";
 
 type TrackedBgJob = {
   projectId: string;
@@ -39,6 +42,7 @@ export class ProjectGenerationGuardService {
     private readonly mddQueue: MddQueueService,
     @Inject(forwardRef(() => MddUpstreamSyncService))
     private readonly mddUpstreamSync: MddUpstreamSyncService,
+    private readonly sddGraphSync: SddGraphSyncService,
   ) {}
 
   registerMddStream(projectId: string): void {
@@ -109,6 +113,25 @@ export class ProjectGenerationGuardService {
       mddUpstreamSync = null;
     }
 
+    let sddGraph = null;
+    try {
+      const stages = (project as { stages?: Array<Record<string, unknown>> }).stages ?? [];
+      const stageRaw =
+        (stageId?.trim() && stages.find((s) => String(s.id ?? "") === stageId.trim())) ||
+        pickPrimaryStage(stages as Parameters<typeof pickPrimaryStage>[0]);
+      const stage = stageRaw as
+        | { id?: string; mddContent?: string | null; shortTermContext?: unknown }
+        | null
+        | undefined;
+      if (stage?.id) {
+        const mdd = String(stage.mddContent ?? (project as { mddContent?: string }).mddContent ?? "");
+        const { context } = readSddGraphContext(stage.shortTermContext);
+        sddGraph = await this.sddGraphSync.evaluateFromMdd(projectId, String(stage.id), mdd, context);
+      }
+    } catch {
+      sddGraph = null;
+    }
+
     return {
       busy: light.busy,
       mddStreamActive: light.mddStreamActive,
@@ -119,6 +142,7 @@ export class ProjectGenerationGuardService {
       complexity,
       contentReady,
       mddUpstreamSync,
+      sddGraph,
     };
   }
 
