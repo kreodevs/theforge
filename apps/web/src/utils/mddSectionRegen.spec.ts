@@ -6,6 +6,7 @@ import {
   canRegenerateMddSectionFromWorkshop,
   detectNaturalRegenerateSection,
   getRegenerateSectionFromSlashCommand,
+  mddHasSection5Heading,
   mddHasSection6Heading,
   mddSectionRegenDisabledTitle,
   resolveEffectiveMddContent,
@@ -20,6 +21,16 @@ describe("mddSectionRegen", () => {
 
   it("getRegenerateSectionFromSlashCommand resuelve /seguridad", () => {
     expect(getRegenerateSectionFromSlashCommand("/seguridad")).toBe(6);
+  });
+
+  it("mddHasSection5Heading detecta ## 5. Lógica y Edge Cases", () => {
+    expect(mddHasSection5Heading("## 4. Contratos\n\nx\n## 5. Lógica y Edge Cases\n\nBDD")).toBe(true);
+    expect(mddHasSection5Heading("## 4. Contratos\n\n## 6. Seguridad")).toBe(false);
+  });
+
+  it("getRegenerateSectionFromSlashCommand resuelve /5 y /logica", () => {
+    expect(getRegenerateSectionFromSlashCommand("/5")).toBe(5);
+    expect(getRegenerateSectionFromSlashCommand("/logica")).toBe(5);
   });
 
   it("mddHasSection6Heading detecta ## 6. Seguridad", () => {

@@ -510,10 +510,37 @@ export function replaceMddSection4Body(draft: string, newBody: string): string {
   return replaceSection4Body(draft, newBody);
 }
 
-/** Versión exportada de `replaceSection5Body` para que el nodo
- *  `mdd-section5` pueda reescribir §5 sin tocar el resto del MDD. */
+/** Inserta §5 antes de §6/§7, tras §4, o al final si no existe el heading.canónico. */
+function insertMddSection5Block(draft: string, newBody: string): string {
+  const sectionMd = `## 5. Lógica y Edge Cases\n\n${newBody.trim()}`;
+  const trimmed = (draft ?? "").trim();
+  const range6 = getSection6Or7Range(trimmed, 6);
+  if (range6) {
+    return `${trimmed.slice(0, range6.start).trimEnd()}\n\n${sectionMd}\n\n${trimmed.slice(range6.start).trimStart()}`.trim();
+  }
+  const range7 = getSection6Or7Range(trimmed, 7);
+  if (range7) {
+    return `${trimmed.slice(0, range7.start).trimEnd()}\n\n${sectionMd}\n\n${trimmed.slice(range7.start).trimStart()}`.trim();
+  }
+  const s4Match = trimmed.match(/##\s*4\.\s*Contratos\s+de\s+API/i);
+  if (s4Match?.index != null) {
+    const after4Start = s4Match.index + s4Match[0].length;
+    const rest = trimmed.slice(after4Start);
+    const nextH2 = rest.search(/\n##\s+/);
+    const insertAt = nextH2 >= 0 ? after4Start + nextH2 : trimmed.length;
+    return `${trimmed.slice(0, insertAt).trimEnd()}\n\n${sectionMd}\n\n${trimmed.slice(insertAt).trimStart()}`.trim();
+  }
+  return `${trimmed}\n\n${sectionMd}`.trim();
+}
+
+/** Reescribe §5 o la inserta si el heading canónico no existía (salto §4→§6). */
 export function replaceMddSection5Body(draft: string, newBody: string): string {
-  return replaceSection5Body(draft, newBody);
+  const body = (newBody ?? "").trim();
+  if (!body) return draft;
+  if (/##\s*5\.\s*Lógica\s+y\s*Edge\s+Cases/i.test(draft)) {
+    return replaceSection5Body(draft, body);
+  }
+  return insertMddSection5Block(draft, body);
 }
 
 const MIN_SURGICAL_SECTION_BODY_LEN = 80;
