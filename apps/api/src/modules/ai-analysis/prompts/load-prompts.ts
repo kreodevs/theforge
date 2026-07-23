@@ -178,6 +178,12 @@ export const PHASE0_ASSISTED_MARKDOWN_UPDATE_PROMPT = loadPrompt(
   "Modo asistido: actualiza markdown Fase 0/DBGA/Deep Research con la respuesta. JSON: { markdown, impacto, cambios, gaps }.",
 );
 
+export const PHASE0_ASSISTED_GAP_SYNTHESIS_PROMPT = loadPrompt(
+  "phase0",
+  "assisted-gap-synthesis-prompt.md",
+  "Genera UAT o riesgos desde el documento. JSON: { sufficient, criteriosUAT? | riesgos? | reason? }.",
+);
+
 export const PHASE0_MERGE_PROMPT = loadPrompt(
   "phase0",
   "merge-phase0-prompt.md",

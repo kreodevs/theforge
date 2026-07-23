@@ -5,6 +5,10 @@
 import { analyzeGaps, filterResolvedGaps } from "./phase0-gap-analyzer.js";
 import { mergePhase0StringList } from "./phase0-normalize.util.js";
 import { refreshBorradorFromWorkingMarkdown } from "./phase0-load-borrador.util.js";
+import {
+  assistedFallbackNoopImpact,
+  gapForAssistedQuestion,
+} from "./phase0-assisted-help.util.js";
 import type { Phase0Gap, Phase0InterviewState } from "./phase0.types.js";
 import type { Phase0TemplateKind } from "./phase0-template-detect.util.js";
 
@@ -86,14 +90,7 @@ export function patchMarkdownBulletSection(
 }
 
 function gapForQuestion(state: Phase0InterviewState): Phase0Gap | undefined {
-  const q = (state.ultimaPregunta ?? "").trim().toLowerCase();
-  if (!q) return state.questionPlan[state.planCursor];
-  return (
-    state.gaps.find((g) => {
-      const sug = (g.sugerenciaPregunta ?? "").trim().toLowerCase();
-      return sug && (q.includes(sug) || sug.includes(q));
-    }) ?? state.questionPlan[state.planCursor]
-  );
+  return gapForAssistedQuestion(state);
 }
 
 export function applyAssistedAnswerLocalFallback(opts: {
@@ -140,6 +137,23 @@ export function applyAssistedAnswerLocalFallback(opts: {
           state.workingMarkdown = patchMarkdownProblema(state.workingMarkdown, ans);
         }
         cambios.push("proposito.problema");
+      } else if (gap?.descripcion.includes("criterios de aceptación")) {
+        state.borrador.criteriosUAT = state.borrador.criteriosUAT ?? [];
+        state.borrador.criteriosUAT.push({
+          id: `UAT-${String(state.borrador.criteriosUAT.length + 1).padStart(2, "0")}`,
+          descripcion: ans,
+        });
+        cambios.push("criteriosUAT");
+      } else if (gap?.descripcion.includes("riesgos del proyecto")) {
+        state.borrador.riesgos = state.borrador.riesgos ?? [];
+        state.borrador.riesgos.push({
+          id: `R-${String(state.borrador.riesgos.length + 1).padStart(2, "0")}`,
+          nombre: ans.slice(0, 120),
+          impacto: "Medio",
+          probabilidad: "Media",
+          mitigacion: "Por definir en revisión de negocio.",
+        });
+        cambios.push("riesgos");
       }
       break;
     case "reglasNegocio":
@@ -202,7 +216,7 @@ export function applyAssistedAnswerLocalFallback(opts: {
     impacto:
       cambios.length > 0
         ? "Respuesta incorporada localmente (el modelo no devolvió una actualización válida)."
-        : "Respuesta registrada; revisa el documento manualmente si no ves cambios.",
+        : assistedFallbackNoopImpact(ans, gap),
     cambios,
   };
 }

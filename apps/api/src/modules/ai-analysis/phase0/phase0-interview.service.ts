@@ -14,6 +14,7 @@ import { PrismaService } from "../../../prisma/prisma.service.js";
 import { createDbgaLLM } from "../llm/create-dbga-llm.js";
 import {
   PHASE0_ARRANQUE_PROMPT,
+  PHASE0_ASSISTED_GAP_SYNTHESIS_PROMPT,
   PHASE0_ASSISTED_MARKDOWN_UPDATE_PROMPT,
   PHASE0_EXTRACT_DBGA_PROMPT,
   PHASE0_UPDATE_PROMPT,
@@ -77,6 +78,16 @@ import {
   templateKindFromState,
 } from "./phase0-assisted.helpers.js";
 import { applyAssistedAnswerLocalFallback } from "./phase0-assisted-fallback.util.js";
+import {
+  applyAssistedGapSynthesis,
+  assistedGapKind,
+  assistedHelpDeclinedMessage,
+  gapForAssistedQuestion,
+  hasAssistedSynthesisContext,
+  heuristicSynthesizeRiesgos,
+  heuristicSynthesizeUat,
+  isAssistedHelpRequest,
+} from "./phase0-assisted-help.util.js";
 import { PHASE0_TEMPLATE_LABELS, type Phase0TemplateKind } from "./phase0-template-detect.util.js";
 import { markdownToPhase0Document } from "./phase0-from-markdown.js";
 
@@ -728,22 +739,35 @@ export class Phase0InterviewService {
       };
     }
 
+    let impacto = "Se actualizó el documento con la respuesta.";
+    let cambios: string[] = [];
+    let helpSynthesized = false;
+
+    if (isAssistedHelpRequest(ans)) {
+      const help = await this.resolveAssistedHelpRequest(state, pid, templateKind);
+      if (help.type === "decline") {
+        return this.buildAssistedHelpDeclineTurn(state, help.message, templateKind, targetField);
+      }
+      helpSynthesized = true;
+      impacto = help.impacto;
+      cambios = help.cambios;
+    }
+
     state.historial.push({ pregunta: state.ultimaPregunta ?? "—", respuesta: ans });
     state.preguntasRealizadas += 1;
 
-    let impacto = "Se actualizó el documento con la respuesta.";
-    let cambios: string[] = [];
-
-    if (templateKind === "structured") {
-      const updated = await this.applyAssistedStructuredAnswer(state, ans);
-      if (updated.type !== "ok") return updated;
-      impacto = updated.impacto;
-      cambios = updated.cambios;
-    } else {
-      const updated = await this.applyAssistedMarkdownAnswer(state, ans, templateKind);
-      if (updated.type !== "ok") return updated;
-      impacto = updated.impacto;
-      cambios = updated.cambios;
+    if (!helpSynthesized) {
+      if (templateKind === "structured") {
+        const updated = await this.applyAssistedStructuredAnswer(state, ans);
+        if (updated.type !== "ok") return updated;
+        impacto = updated.impacto;
+        cambios = updated.cambios;
+      } else {
+        const updated = await this.applyAssistedMarkdownAnswer(state, ans, templateKind);
+        if (updated.type !== "ok") return updated;
+        impacto = updated.impacto;
+        cambios = updated.cambios;
+      }
     }
 
     if (templateKind !== "structured") {
@@ -808,6 +832,145 @@ export class Phase0InterviewService {
         total: next.total,
       }),
     };
+  }
+
+  /** Petición de ayuda: sintetiza UAT/riesgos o declina sin consumir turno. */
+  private buildAssistedHelpDeclineTurn(
+    state: Phase0InterviewState,
+    message: string,
+    templateKind: Phase0TemplateKind,
+    targetField: "dbgaContent" | "phase0SummaryContent",
+  ): Phase0StreamEvent {
+    const next = nextAssistedQuestion(state);
+    const markdown = state.workingMarkdown?.trim() ?? "";
+    return {
+      type: "assisted_turn",
+      threadId: state.threadId,
+      templateKind,
+      targetField,
+      markdown,
+      impacto: message,
+      cambios: [],
+      question: next?.question ?? state.ultimaPregunta,
+      n: next?.n ?? state.preguntasRealizadas + 1,
+      total: next?.total ?? state.maxPreguntas,
+      gaps: state.gaps,
+      done: false,
+      message: formatAssistedChatMessage({
+        impacto: message,
+        question: next?.question ?? state.ultimaPregunta,
+        n: next?.n ?? state.preguntasRealizadas + 1,
+        total: next?.total ?? state.maxPreguntas,
+      }),
+    };
+  }
+
+  private async resolveAssistedHelpRequest(
+    state: Phase0InterviewState,
+    projectId: string,
+    templateKind: Phase0TemplateKind,
+  ): Promise<
+    | { type: "decline"; message: string }
+    | { type: "ok"; impacto: string; cambios: string[] }
+  > {
+    const gap = gapForAssistedQuestion(state);
+    const kind = assistedGapKind(gap);
+    const markdown = (state.workingMarkdown ?? "").trim();
+    const borrador = refreshBorradorFromWorkingMarkdown(state.borrador, markdown);
+
+    if (kind === "other" || !hasAssistedSynthesisContext(borrador, markdown, kind)) {
+      return { type: "decline", message: assistedHelpDeclinedMessage(gap, kind) };
+    }
+
+    const llm = await this.getUserLLM(projectId);
+    if (llm) {
+      try {
+        const payload = JSON.stringify(
+          {
+            gap_tipo: kind === "uat" ? "uat" : "riesgos",
+            ultima_pregunta: state.ultimaPregunta,
+            documento_actual: markdown.slice(0, 48_000),
+            borrador: state.borrador,
+          },
+          null,
+          2,
+        );
+        const response = await llm.invoke([
+          { role: "system", content: PHASE0_ASSISTED_GAP_SYNTHESIS_PROMPT },
+          { role: "user", content: payload },
+        ]);
+        const content =
+          typeof response.content === "string" ? response.content : JSON.stringify(response.content);
+        const parsed = parsePhase0LlmJson(content) as Record<string, unknown>;
+        if (parsed.sufficient === false) {
+          const reason =
+            typeof parsed.reason === "string" && parsed.reason.trim()
+              ? parsed.reason.trim()
+              : assistedHelpDeclinedMessage(gap, kind);
+          return { type: "decline", message: reason };
+        }
+        if (kind === "uat" && Array.isArray(parsed.criteriosUAT) && parsed.criteriosUAT.length > 0) {
+          return {
+            type: "ok",
+            ...applyAssistedGapSynthesis({
+              state,
+              kind,
+              criteriosUAT: parsed.criteriosUAT as import("./phase0.types.js").Phase0UATCriterion[],
+              templateKind,
+              source: "llm",
+            }),
+          };
+        }
+        if (kind === "riesgos" && Array.isArray(parsed.riesgos) && parsed.riesgos.length > 0) {
+          return {
+            type: "ok",
+            ...applyAssistedGapSynthesis({
+              state,
+              kind,
+              riesgos: parsed.riesgos as import("./phase0.types.js").Phase0Risk[],
+              templateKind,
+              source: "llm",
+            }),
+          };
+        }
+      } catch (err) {
+        this.logger.warn(`[Phase0] assisted gap synthesis LLM failed: ${err}`);
+      }
+    }
+
+    if (kind === "uat") {
+      const criterios = heuristicSynthesizeUat(borrador);
+      if (criterios.length > 0) {
+        return {
+          type: "ok",
+          ...applyAssistedGapSynthesis({
+            state,
+            kind,
+            criteriosUAT: criterios,
+            templateKind,
+            source: "heuristic",
+          }),
+        };
+      }
+    }
+
+    if (kind === "riesgos") {
+      const riesgos = heuristicSynthesizeRiesgos(borrador);
+      if (riesgos.length > 0) {
+        return {
+          type: "ok",
+          ...applyAssistedGapSynthesis({
+            state,
+            kind,
+            riesgos,
+            templateKind,
+            source: "heuristic",
+          }),
+        };
+      }
+    }
+
+    return { type: "decline", message: assistedHelpDeclinedMessage(gap, kind) };
   }
 
   async stopAssisted(projectId: string): Promise<Phase0StreamEvent> {

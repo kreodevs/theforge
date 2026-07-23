@@ -28,6 +28,13 @@ Conserva la plantilla indicada en `templateKind`. No conviertas un DBGA libre en
 5. Escribe `impacto`: 1–3 frases concretas de qué cambió y por qué importa.
 6. Escribe `cambios`: lista corta (viñetas) de secciones/apartados tocados.
 
+# Si el usuario pide ayuda para generar (en lugar de responder)
+
+Cuando la respuesta pide inferir/redactar desde el documento (p. ej. «¿puedes generarlos con la info que tienes?»):
+
+- Si el documento tiene base suficiente, **genera** UAT o riesgos desde flujos/reglas/problema/edge cases — no repitas la pregunta al usuario.
+- Si **no** hay base, indica en `impacto` que falta información concreta y **no** inventes dominio.
+
 # Formato de salida
 
 Responde ÚNICAMENTE con JSON (sin markdown envolvente):
