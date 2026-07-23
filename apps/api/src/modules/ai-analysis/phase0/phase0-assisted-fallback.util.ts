@@ -4,7 +4,7 @@
 
 import { analyzeGaps, filterResolvedGaps } from "./phase0-gap-analyzer.js";
 import { mergePhase0StringList } from "./phase0-normalize.util.js";
-import type { Phase0Document, Phase0Gap, Phase0InterviewState } from "./phase0.types.js";
+import type { Phase0Gap, Phase0InterviewState } from "./phase0.types.js";
 import type { Phase0TemplateKind } from "./phase0-template-detect.util.js";
 
 export function patchMarkdownUsuarios(markdown: string, answer: string): string {
