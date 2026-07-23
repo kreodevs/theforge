@@ -1,4 +1,8 @@
-import { isWorkshopAgentsBusy, type WorkshopAgentsBusySlice } from "./workshopAgentsBusy";
+import {
+  isServerSideQueuedWork,
+  isWorkshopAgentsBusy,
+  type WorkshopAgentsBusySlice,
+} from "./workshopAgentsBusy";
 
 export type WorkshopBusyRefreshSlice = WorkshopAgentsBusySlice & {
   projectId: string | null;
@@ -15,5 +19,5 @@ export function shouldPreserveWorkshopBusyState(
   const currentId = state.projectId?.trim();
   const requestedId = requestedProjectId.trim();
   if (!currentId || currentId !== requestedId) return false;
-  return isWorkshopAgentsBusy(state);
+  return isWorkshopAgentsBusy(state) || isServerSideQueuedWork(state);
 }
