@@ -64,7 +64,19 @@ flowchart LR
 
 ---
 
-## 4. Referencias
+## 4. Paralelismo de secciones (propuesta)
+
+Hoy la pasada completa ya paraleliza **§6 ∥ §7** (`security_integration`). El cuello restante es **§2→§3→§4→§5** en un solo nodo Software Architect.
+
+**No es viable** generar las siete secciones en paralelo (dependencias de la Constitución: §4←§3←§2←§1, §5←§4, §7←§2+§3).
+
+**Siguiente optimización propuesta:** tras cerrar §2–§4, ejecutar **§5 ∥ §6 ∥ §7** en un nodo `tail_parallel`, merge determinista y luego cross-consistency + auditor (igual que hoy).
+
+Detalle de grafo, touch points y matriz de regresiones: **[MDD-PARALLEL-SECCION-5-6-PROPOSAL.md](MDD-PARALLEL-SECCION-5-6-PROPOSAL.md)**.
+
+---
+
+## 5. Referencias
 
 - Cuaderno NotebookLM: _Architecting Agentic Systems: Frameworks, Patterns, and Advanced Workflows_.
 - Cuaderno NotebookLM: _Specification-Driven Development and the Evolution of AI Engineering_.
