@@ -118,6 +118,12 @@ function isTransientError(err: unknown): boolean {
   );
 }
 
+type DeliverablesActiveJobRef = {
+  jobId: string;
+  type: GenerateJobType;
+  status: "queued" | "active" | "retrying";
+};
+
 @Injectable()
 export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DeliverablesQueueService.name);
@@ -608,11 +614,45 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
     return jobId;
   }
 
+  /** Escaneo único de cola (dashboard / resumen batch). */
+  async listActiveJobsGroupedByProject(): Promise<Map<string, DeliverablesActiveJobRef[]>> {
+    const map = new Map<string, DeliverablesActiveJobRef[]>();
+    const push = (projectId: string, entry: DeliverablesActiveJobRef) => {
+      const list = map.get(projectId) ?? [];
+      list.push(entry);
+      map.set(projectId, list);
+    };
+
+    for (const [jobId, mem] of this.inMemoryJobs) {
+      if (mem.status !== "queued" && mem.status !== "active") continue;
+      push(mem.data.projectId, { jobId, type: mem.data.type, status: mem.status });
+    }
+
+    if (!this.queue) return map;
+
+    const states = ["waiting", "active", "delayed"] as const;
+    for (const state of states) {
+      const jobs = await this.queue.getJobs([state], 0, 200);
+      for (const job of jobs) {
+        const data = job.data as GenerateJobData | undefined;
+        if (!data?.projectId) continue;
+        const actualState = await job.getState();
+        if (actualState === "completed" || actualState === "failed") continue;
+        const status =
+          actualState === "active"
+            ? "active"
+            : actualState === "delayed"
+              ? "retrying"
+              : ("queued" as const);
+        push(data.projectId, { jobId: String(job.id), type: data.type, status });
+      }
+    }
+    return map;
+  }
+
   /** Jobs activos o en cola para un proyecto (BullMQ + in-memory). */
-  async listActiveJobsForProject(projectId: string): Promise<
-    Array<{ jobId: string; type: GenerateJobType; status: "queued" | "active" | "retrying" }>
-  > {
-    const out: Array<{ jobId: string; type: GenerateJobType; status: "queued" | "active" | "retrying" }> = [];
+  async listActiveJobsForProject(projectId: string): Promise<DeliverablesActiveJobRef[]> {
+    const out: DeliverablesActiveJobRef[] = [];
 
     for (const [jobId, mem] of this.inMemoryJobs) {
       if (mem.data.projectId !== projectId) continue;

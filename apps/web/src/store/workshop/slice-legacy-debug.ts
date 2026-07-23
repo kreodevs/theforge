@@ -54,11 +54,14 @@ export const createLegacyDebugSlice: StateCreator<
   [],
   LegacyDebugSliceActions
 > = (set, get) => ({
-  fetchGenerationStatus: async (projectId, stageId) => {
+  fetchGenerationStatus: async (projectId, stageId, options) => {
     const requestedId = projectId.trim();
     if (!requestedId) return null;
     const sid = stageId?.trim() || get().activeStageId?.trim();
-    const qs = sid ? `?stageId=${encodeURIComponent(sid)}` : "";
+    const params = new URLSearchParams();
+    if (sid) params.set("stageId", sid);
+    if (options?.light) params.set("light", "1");
+    const qs = params.toString() ? `?${params.toString()}` : "";
     try {
       const r = await apiFetch(`${API_BASE}/projects/${requestedId}/generation-status${qs}`);
       if (!r.ok) return null;
@@ -66,7 +69,16 @@ export const createLegacyDebugSlice: StateCreator<
       const status: ProjectGenerationStatus = { ...raw, mddJobs: raw.mddJobs ?? [] };
       if (!shouldApplyWorkshopUpdate(get, requestedId)) return status;
       const wasBusy = get().generationStatus?.busy === true;
-      set({ generationStatus: status });
+      set((s) => ({
+        generationStatus: {
+          ...status,
+          gates:
+            Object.keys(status.gates ?? {}).length > 0
+              ? status.gates
+              : (s.generationStatus?.gates ?? {}),
+          mddUpstreamSync: status.mddUpstreamSync ?? s.generationStatus?.mddUpstreamSync ?? null,
+        },
+      }));
       const mddJob = primaryMddJob(status);
       if (
         mddJob &&
@@ -87,7 +99,7 @@ export const createLegacyDebugSlice: StateCreator<
           stopGenerationStatusPolling();
           generationStatusPoll.projectId = requestedId;
           generationStatusPoll.timer = setInterval(() => {
-            void get().fetchGenerationStatus(requestedId);
+            void get().fetchGenerationStatus(requestedId, undefined, { light: true });
           }, 5000);
         }
       } else {
