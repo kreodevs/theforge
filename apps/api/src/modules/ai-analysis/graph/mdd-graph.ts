@@ -434,6 +434,7 @@ export async function createMddGraphWithManager(
     if (state.deliveryGateLoopActive === true) {
       if (state.deliveryGateFixTarget === "integration") return "integration";
       if (state.deliveryGateFixTarget === "clarifier") return "clarifier";
+      if (state.deliveryGateFixTarget === "section5") return "section5";
       return "software_architect";
     }
     return "graph_populator";
