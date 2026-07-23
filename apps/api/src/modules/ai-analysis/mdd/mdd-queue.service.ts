@@ -338,8 +338,14 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
     await this.queue?.close();
   }
 
-  private assertCanEnqueue(projectId: string): void {
+  private async assertCanEnqueue(projectId: string): Promise<void> {
     if (this.isProjectBusy(projectId)) {
+      throw new ConflictException(
+        "Ya hay una generación de MDD en curso para este proyecto. Espera a que termine o recarga el estado.",
+      );
+    }
+    const active = await this.listActiveJobsForProject(projectId);
+    if (active.length > 0) {
       throw new ConflictException(
         "Ya hay una generación de MDD en curso para este proyecto. Espera a que termine o recarga el estado.",
       );
@@ -347,7 +353,7 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   async enqueue(data: MddJobData): Promise<string> {
-    this.assertCanEnqueue(data.projectId);
+    await this.assertCanEnqueue(data.projectId);
     const userId = data.userId ?? getRequestUserId();
     const payload: MddJobData = { ...data, userId };
 

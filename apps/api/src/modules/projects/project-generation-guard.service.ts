@@ -87,8 +87,10 @@ export class ProjectGenerationGuardService {
     const project = await this.projects.findOne(projectId);
     const complexity = ((project as { complexity?: ComplexityLevel }).complexity ?? "HIGH") as ComplexityLevel;
     const contentReady = buildDeliverableReadiness(project as Record<string, unknown>);
+    const mddJobs = await this.mddQueue.listJobsForProject(projectId);
+    const mddJobsBusy = mddJobs.some((job) => job.status === "active" || job.status === "queued");
     const mddStreamActive =
-      this.isMddStreamActive(projectId) || this.mddQueue.isProjectBusy(projectId);
+      this.isMddStreamActive(projectId) || this.mddQueue.isProjectBusy(projectId) || mddJobsBusy;
 
     const queueJobs = await this.deliverablesQueue.listActiveJobsForProject(projectId);
     const bgSnapshots: GenerationJobSnapshot[] = [];
@@ -98,8 +100,6 @@ export class ProjectGenerationGuardService {
         bgSnapshots.push({ jobId, type: job.type, status: job.status });
       }
     }
-
-    const mddJobs = await this.mddQueue.listJobsForProject(projectId);
 
     const merged = [...queueJobs, ...bgSnapshots];
     const cancellingIds = new Set<string>();
