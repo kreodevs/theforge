@@ -84,7 +84,6 @@ import {
   formatGovernancePatternCorrectionsNotice,
   resolveGovernancePatternIncompatibilities,
 } from "@theforge/shared-types/mdd-governance-pattern-compat";
-import { peelDocumentBodyForPersist } from "@theforge/shared-types";
 import { mddDeliveryGateHasBlockers, mddStreamDeliveryGateFields } from "./utils/mdd-delivery-gate.util.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import type { MddJobData, MddJobProgress, MddJobResult } from "./mdd/mdd-queue.service.js";
@@ -2030,7 +2029,7 @@ export class AiAnalysisService {
       if (stageBody.trim().length >= 48) {
         const correctedMd = updateMddGovernancePatterns(stageBody, lockedPatternIds);
         await this.projects.persistMddFromBackgroundJob(projectId, correctedMd, {
-          stageId: resolvedPatterns.stageId ?? stageId?.trim() || undefined,
+          stageId: resolvedPatterns.stageId ?? (stageId?.trim() || undefined),
           finalize: false,
           lockedPatternIds: [...lockedPatternIds],
         });
