@@ -49,6 +49,7 @@ import {
   refreshStoredUserFromApi,
 } from "./utils/apiClient";
 import { cn } from "./lib/utils";
+import { useDashboardGenerationSummary } from "./hooks/useDashboardGenerationSummary";
 import {
   Button,
   Card,
@@ -260,6 +261,12 @@ export default function App() {
     if (!q) return filteredProjects;
     return filteredProjects.filter((p) => p.name.toLowerCase().includes(q));
   }, [filteredProjects, projectSearchQuery]);
+
+  const displayedProjectIds = useMemo(() => displayedProjects.map((p) => p.id), [displayedProjects]);
+  const generationSummaries = useDashboardGenerationSummary(
+    displayedProjectIds,
+    authed && !workshopProject && !settingsViewOpen && !usersViewOpen,
+  );
 
   const projectsByGroupId = useMemo(() => {
     const map = new Map<string, Project[]>();
@@ -1599,6 +1606,8 @@ export default function App() {
                           draggable={isAdmin}
                           isDragging={draggingProject?.projectId === p.id}
                           isMoving={moveProjectLoadingId === p.id}
+                          generationBusy={generationSummaries[p.id]?.busy === true}
+                          generationLabel={generationSummaries[p.id]?.label ?? null}
                           onDragStart={handleProjectDragStart(p)}
                           onDragEnd={handleProjectDragEnd}
                           onToggleFavorite={handleToggleFavorite}
