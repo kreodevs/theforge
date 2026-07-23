@@ -150,6 +150,41 @@ export type ProjectGenerationStatus = {
   mddUpstreamSync?: MddUpstreamSyncStatus | null;
 };
 
+/** Resumen ligero para el panel de proyectos (sin gates ni upstream sync). */
+export type ProjectGenerationDashboardSummary = {
+  busy: boolean;
+  label: string | null;
+};
+
+export function primaryMddJob(
+  status: ProjectGenerationStatus | null | undefined,
+): MddJobSnapshot | null {
+  if (!status?.mddJobs?.length) return null;
+  return status.mddJobs.find((j) => j.status === "active") ?? status.mddJobs[0] ?? null;
+}
+
+/** Etiqueta humana del job/generación en curso (Workshop banner y carpetas del dashboard). */
+export function activeGenerationLabel(status: ProjectGenerationStatus | null | undefined): string | null {
+  if (!status?.busy) return null;
+  const mddJob = primaryMddJob(status);
+  const mddBusy = status.mddStreamActive || (status.mddJobs?.length ?? 0) > 0;
+  if (mddBusy) {
+    if (mddJob?.progressActive?.agent) {
+      return `${mddJob.progressActive.agent}…`;
+    }
+    if (mddJob?.progressAgent && mddJob.progressPhase === "active") {
+      return `${mddJob.progressAgent}…`;
+    }
+    if (mddJob) {
+      return `${MDD_JOB_MODE_LABELS[mddJob.mode]}…`;
+    }
+    return "Regenerando MDD…";
+  }
+  const job = status.activeJob ?? status.queuedJobs[0];
+  if (!job) return "Generación en curso…";
+  return `Generando ${GENERATION_JOB_TYPE_LABELS[job.type]}…`;
+}
+
 function substantial(content: string | null | undefined): boolean {
   return (content ?? "").trim().length >= MIN_GENERATION_CONTENT_LEN;
 }

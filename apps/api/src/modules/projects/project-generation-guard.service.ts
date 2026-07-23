@@ -5,8 +5,10 @@ import {
   buildGenerationGates,
   evaluateGenerationGate,
   toMddUpstreamSyncStatus,
+  activeGenerationLabel,
   type GenerationJobSnapshot,
   type GenerationJobType,
+  type ProjectGenerationDashboardSummary,
   type ProjectGenerationStatus,
 } from "@theforge/shared-types";
 import { ProjectsService } from "./projects.service.js";
@@ -87,6 +89,75 @@ export class ProjectGenerationGuardService {
     const project = await this.projects.findOne(projectId);
     const complexity = ((project as { complexity?: ComplexityLevel }).complexity ?? "HIGH") as ComplexityLevel;
     const contentReady = buildDeliverableReadiness(project as Record<string, unknown>);
+    const light = await this.buildLightStatus(projectId);
+    const activeJobsForGates = [...light.queueJobs, ...light.bgSnapshots].filter(
+      (j) => j.status === "queued" || j.status === "active" || j.status === "retrying",
+    );
+
+    const gates = buildGenerationGates({
+      complexity,
+      contentReady,
+      mddStreamActive: light.mddStreamActive,
+      activeJobs: activeJobsForGates,
+    });
+
+    let mddUpstreamSync = null;
+    try {
+      const analysis = await this.mddUpstreamSync.analyze(projectId, stageId);
+      mddUpstreamSync = toMddUpstreamSyncStatus(analysis);
+    } catch {
+      mddUpstreamSync = null;
+    }
+
+    return {
+      busy: light.busy,
+      mddStreamActive: light.mddStreamActive,
+      mddJobs: light.mddJobs,
+      activeJob: light.activeJob,
+      queuedJobs: light.queuedJobs,
+      gates,
+      complexity,
+      contentReady,
+      mddUpstreamSync,
+    };
+  }
+
+  /** Estado de jobs sin gates ni upstream sync (panel de proyectos). */
+  async getLightStatus(projectId: string): Promise<ProjectGenerationStatus> {
+    const light = await this.buildLightStatus(projectId);
+    return {
+      busy: light.busy,
+      mddStreamActive: light.mddStreamActive,
+      mddJobs: light.mddJobs,
+      activeJob: light.activeJob,
+      queuedJobs: light.queuedJobs,
+      gates: {},
+    };
+  }
+
+  async getDashboardSummaries(projectIds: string[]): Promise<Record<string, ProjectGenerationDashboardSummary>> {
+    const unique = [...new Set(projectIds.map((id) => id.trim()).filter(Boolean))];
+    const entries = await Promise.all(
+      unique.map(async (projectId) => {
+        const status = await this.getLightStatus(projectId);
+        return [
+          projectId,
+          { busy: status.busy, label: activeGenerationLabel(status) },
+        ] as const;
+      }),
+    );
+    return Object.fromEntries(entries);
+  }
+
+  private async buildLightStatus(projectId: string): Promise<{
+    busy: boolean;
+    mddStreamActive: boolean;
+    mddJobs: ProjectGenerationStatus["mddJobs"];
+    activeJob: GenerationJobSnapshot | null;
+    queuedJobs: GenerationJobSnapshot[];
+    queueJobs: GenerationJobSnapshot[];
+    bgSnapshots: GenerationJobSnapshot[];
+  }> {
     const mddJobs = await this.mddQueue.listJobsForProject(projectId);
     const mddJobsBusy = mddJobs.some((job) => job.status === "active" || job.status === "queued");
     const mddStreamActive =
@@ -110,34 +181,13 @@ export class ProjectGenerationGuardService {
         }
       }),
     );
-    /** Jobs aún vivos en worker, pero el usuario ya canceló → no mantener el banner "en ejecución". */
     const visibleJobs = merged.filter((j) => !cancellingIds.has(j.jobId));
     const activeJob =
       visibleJobs.find((j) => j.status === "active") ??
       visibleJobs.find((j) => j.status === "retrying") ??
       null;
     const queuedJobs = visibleJobs.filter((j) => j.status === "queued");
-
-    const activeJobsForGates = merged.filter(
-      (j) => j.status === "queued" || j.status === "active" || j.status === "retrying",
-    );
-
-    const gates = buildGenerationGates({
-      complexity,
-      contentReady,
-      mddStreamActive,
-      activeJobs: activeJobsForGates,
-    });
-
     const busy = mddStreamActive || visibleJobs.length > 0;
-
-    let mddUpstreamSync = null;
-    try {
-      const analysis = await this.mddUpstreamSync.analyze(projectId, stageId);
-      mddUpstreamSync = toMddUpstreamSyncStatus(analysis);
-    } catch {
-      mddUpstreamSync = null;
-    }
 
     return {
       busy,
@@ -145,10 +195,8 @@ export class ProjectGenerationGuardService {
       mddJobs,
       activeJob,
       queuedJobs,
-      gates,
-      complexity,
-      contentReady,
-      mddUpstreamSync,
+      queueJobs,
+      bgSnapshots,
     };
   }
 }

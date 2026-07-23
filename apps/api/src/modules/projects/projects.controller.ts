@@ -95,6 +95,16 @@ export class ProjectsController {
     return this.projects.findAll();
   }
 
+  /** Resumen de generación en curso por proyecto (panel de carpetas). */
+  @Get("generation-summary")
+  generationSummary(@Query("ids") ids?: string) {
+    const projectIds = (ids ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
+    return this.generationGuard.getDashboardSummaries(projectIds);
+  }
+
   @Get(":projectId/stages")
   listStages(@Param("projectId") projectId: string) {
     return this.projects.listStages(projectId);

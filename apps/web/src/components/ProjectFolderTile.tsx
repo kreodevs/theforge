@@ -25,6 +25,10 @@ export interface ProjectFolderTileProps {
   draggable?: boolean;
   isDragging?: boolean;
   isMoving?: boolean;
+  /** Job MDD o entregables en curso (panel de proyectos). */
+  generationBusy?: boolean;
+  /** Etiqueta de etapa/agente en curso (`activeGenerationLabel`). */
+  generationLabel?: string | null;
   onDragStart?: (event: DragEvent<HTMLElement>) => void;
   onDragEnd?: (event: DragEvent<HTMLElement>) => void;
 }
@@ -132,6 +136,8 @@ export function ProjectFolderTile({
   draggable = false,
   isDragging = false,
   isMoving = false,
+  generationBusy = false,
+  generationLabel = null,
   onDragStart,
   onDragEnd,
 }: ProjectFolderTileProps) {
@@ -139,7 +145,10 @@ export function ProjectFolderTile({
   const isShared = visibility === "SHARED";
   const selectId = `select-project-${id}`;
   const visibilityLabel = isShared ? "Compartido" : "Privado";
-  const subtitle = `${precisionScore}% precisión · ${statusLabelEs[status]} · ${visibilityLabel}`;
+  const busyLabel = generationBusy ? (generationLabel?.trim() || "Generación en curso…") : null;
+  const subtitle = generationBusy
+    ? busyLabel
+    : `${precisionScore}% precisión · ${statusLabelEs[status]} · ${visibilityLabel}`;
   const hasActionBar = selectable || !!onToggleFavorite || !!onRename;
 
   return (
@@ -147,6 +156,8 @@ export function ProjectFolderTile({
       className={cn(
         "group relative rounded-2xl border border-transparent p-3 transition-[background-color,border-color,opacity,transform] duration-300 ease-forge-smooth motion-reduce:transition-none",
         "hover:bg-[color-mix(in_oklch,var(--muted)_65%,transparent)]",
+        generationBusy &&
+          "border-[color-mix(in_oklch,var(--primary)_35%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_6%,transparent)]",
         isDragging && "scale-[0.98] opacity-45",
         isMoving && "pointer-events-none opacity-60",
         selected && "border-[var(--primary)]/50 bg-[color-mix(in_oklch,var(--primary)_10%,var(--muted))] ring-2 ring-[var(--primary)]/35 ring-offset-2 ring-offset-[var(--background)]",
@@ -237,12 +248,24 @@ export function ProjectFolderTile({
           draggable && "cursor-grab active:cursor-grabbing",
           hasActionBar ? "pt-9" : "pt-2",
         )}
-        aria-label={`Abrir proyecto ${name}, ${statusLabelEs[status]}, precisión ${precisionScore} por ciento`}
+        aria-label={
+          generationBusy
+            ? `Abrir proyecto ${name}, ${busyLabel}`
+            : `Abrir proyecto ${name}, ${statusLabelEs[status]}, precisión ${precisionScore} por ciento`
+        }
       >
         <div className="relative w-full">
           {isMoving ? (
             <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center">
               <Loader2 className="h-6 w-6 animate-spin text-[var(--primary)]" aria-hidden />
+            </div>
+          ) : null}
+          {generationBusy ? (
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex justify-center">
+              <span className="inline-flex max-w-[95%] items-center gap-1 rounded-full border border-[color-mix(in_oklch,var(--primary)_45%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_12%,var(--card))] px-2 py-0.5 text-[10px] font-semibold leading-tight text-[var(--primary)] shadow-sm">
+                <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden />
+                <span className="truncate">{busyLabel}</span>
+              </span>
             </div>
           ) : null}
           <FolderWithPeekPapers />
@@ -276,7 +299,14 @@ export function ProjectFolderTile({
           <p className="line-clamp-2 text-center text-[0.9375rem] font-semibold leading-snug tracking-tight text-[var(--foreground)]">
             {name}
           </p>
-          <p className="mt-1 line-clamp-2 text-center text-xs leading-snug text-[var(--muted-foreground)]">{subtitle}</p>
+          <p
+            className={cn(
+              "mt-1 line-clamp-2 text-center text-xs leading-snug",
+              generationBusy ? "font-medium text-[var(--primary)]" : "text-[var(--muted-foreground)]",
+            )}
+          >
+            {subtitle}
+          </p>
         </div>
       </button>
     </article>

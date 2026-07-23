@@ -1,5 +1,7 @@
-import type { GenerationJobType, MddJobSnapshot, ProjectGenerationStatus } from "@theforge/shared-types";
-import { GENERATION_JOB_TYPE_LABELS, MDD_JOB_MODE_LABELS } from "@theforge/shared-types";
+import type { GenerationJobType, ProjectGenerationStatus } from "@theforge/shared-types";
+import { activeGenerationLabel, primaryMddJob } from "@theforge/shared-types";
+
+export { activeGenerationLabel, primaryMddJob };
 
 /** Mapeo panel Workshop → tipo de job de cola. */
 export const WORKSHOP_PANEL_TO_GENERATION_JOB: Partial<Record<string, GenerationJobType>> = {
@@ -32,30 +34,3 @@ export function generationGateReason(
   return gate.reason ?? "Generación bloqueada por dependencias u otro job en curso.";
 }
 
-export function activeGenerationLabel(status: ProjectGenerationStatus | null | undefined): string | null {
-  if (!status?.busy) return null;
-  const mddJob = primaryMddJob(status);
-  const mddBusy = status.mddStreamActive || (status.mddJobs?.length ?? 0) > 0;
-  if (mddBusy) {
-    if (mddJob?.progressActive?.agent) {
-      return `${mddJob.progressActive.agent}…`;
-    }
-    if (mddJob?.progressAgent && mddJob.progressPhase === "active") {
-      return `${mddJob.progressAgent}…`;
-    }
-    if (mddJob) {
-      return `${MDD_JOB_MODE_LABELS[mddJob.mode]}…`;
-    }
-    return "Regenerando MDD…";
-  }
-  const job = status.activeJob ?? status.queuedJobs[0];
-  if (!job) return "Generación en curso…";
-  return `Generando ${GENERATION_JOB_TYPE_LABELS[job.type]}…`;
-}
-
-export function primaryMddJob(
-  status: ProjectGenerationStatus | null | undefined,
-): MddJobSnapshot | null {
-  if (!status?.mddJobs?.length) return null;
-  return status.mddJobs.find((j) => j.status === "active") ?? status.mddJobs[0] ?? null;
-}
