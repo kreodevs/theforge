@@ -22,6 +22,8 @@ Flujo: detectar plantilla (A/B/C) → analizar gaps → reformatear → responde
 
 **Detección DBGA vs Fase 0:** un documento titulado «Domain Benchmark & Gap Analysis (DBGA)» o con §3 distinto a «Reglas de Negocio» se trata como **freeform_dbga** (se conserva el markdown íntegro). Solo se serializa a la plantilla de 8 secciones cuando el título es `# Fase 0 — …` o el esquema canónico §1–§4 coincide. Si un reformato estructurado reduciría el cuerpo más de ~35%, se conserva el documento original.
 
+**Fallback local:** si el LLM no devuelve JSON válido al responder, `phase0-assisted-fallback.util.ts` incorpora la respuesta en borrador/markdown (p. ej. usuarios) y avanza el plan de gaps. La heurística DBGA (`heuristicBorradorFromFreeformDbga`) lee §1 Propósito, §5 Reglas, §6 Flujos, §7 Roles aunque la numeración no sea la canónica.
+
 `AiAnalysisModule` importa y re-exporta `Phase0Module`.
 
 **Chat Fase 0 / Benchmark:** en el Workshop, pestañas `benchmark` o `phase0`, puedes escribir «Según Context7, …» para forzar una consulta documentada (ver `technology-docs-mcp/README.md`).

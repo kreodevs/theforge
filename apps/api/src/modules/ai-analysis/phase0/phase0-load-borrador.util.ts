@@ -7,8 +7,8 @@
  */
 
 import { isPhase0StructuredMarkdown, markdownToPhase0Document } from "./phase0-from-markdown.js";
-import { normalizePhase0Document } from "./phase0-normalize.util.js";
-import type { Phase0Document } from "./phase0.types.js";
+import { mergePhase0Borrador, mergePhase0StringList, normalizePhase0Document } from "./phase0-normalize.util.js";
+import type { Phase0Document, Phase0Flow, Phase0Role } from "./phase0.types.js";
 
 export const MIN_DBGA_AUDIT_CHARS = 150;
 
@@ -67,8 +67,11 @@ export function loadProjectBorrador(
   }
 
   if (markdown) {
-    const fromMd = markdownToPhase0Document(markdown);
-    if (hasBorradorContent(fromMd)) return fromMd;
+    if (isPhase0StructuredMarkdown(markdown)) {
+      return markdownToPhase0Document(markdown);
+    }
+    const heuristic = heuristicBorradorFromFreeformDbga(markdown);
+    if (hasBorradorContent(heuristic)) return heuristic;
   }
 
   return (
@@ -85,9 +88,9 @@ export function loadProjectBorrador(
   );
 }
 
-/** Fallback sin LLM: infiere borrador mínimo desde DBGA libre para gap analysis. */
+/** Fallback sin LLM: infiere borrador desde DBGA libre (incl. numeración no canónica §5 Reglas, §6 Flujos). */
 export function heuristicBorradorFromFreeformDbga(markdown: string): Phase0Document {
-  const doc: Phase0Document = {
+  let doc: Phase0Document = {
     proposito: { problema: "", usuarios: [], outOfScope: [] },
     entidades: [],
     reglasNegocio: [],
@@ -98,34 +101,117 @@ export function heuristicBorradorFromFreeformDbga(markdown: string): Phase0Docum
     preguntasPendientes: [],
   };
 
-  const lines = markdown.split("\n").map((l) => l.trim()).filter(Boolean);
-  const h1 = lines.find((l) => l.startsWith("# "));
-  const h2 = lines.find((l) => l.startsWith("## ") && !l.toLowerCase().includes("índice"));
-  const title = (h1 ?? h2 ?? lines[0] ?? "").replace(/^#+\s*/, "").trim();
-  doc.proposito.problema = title || markdown.slice(0, 400).trim();
+  const rawLines = markdown.split("\n");
 
-  for (const line of lines) {
-    if (line.startsWith("### ")) {
-      const name = line.slice(4).trim();
-      if (name.length > 1 && !name.toLowerCase().includes("índice")) {
-        doc.entidades.push({
-          nombre: name,
-          descripcion: "Mencionado en el documento DBGA",
-          atributosClave: [],
-        });
+  if (/##\s*1\.\s*Prop[oó]sito/i.test(markdown)) {
+    doc = mergePhase0Borrador(doc, markdownToPhase0Document(markdown));
+  } else {
+    const lines = rawLines.map((l) => l.trim()).filter(Boolean);
+    const h1 = lines.find((l) => l.startsWith("# "));
+    doc.proposito.problema =
+      (h1 ?? "").replace(/^#+\s*/, "").trim() || markdown.slice(0, 400).trim();
+  }
+
+  doc.reglasNegocio = mergePhase0StringList(
+    doc.reglasNegocio,
+    extractBulletsUnderHeading(rawLines, /##\s+\d+\.\s*Reglas de Negocio/i),
+  );
+  doc.integraciones = mergePhase0StringList(
+    doc.integraciones,
+    extractBulletsUnderHeading(rawLines, /##\s+\d+\.\s*Integraciones/i),
+  );
+  doc.edgeCases = mergePhase0StringList(
+    doc.edgeCases,
+    extractBulletsUnderHeading(rawLines, /##\s+\d+\.\s*Edge Cases/i),
+  );
+
+  const flujos = extractFlowsUnderHeading(rawLines, /##\s+\d+\.\s*Flujos/i);
+  if (flujos.length > 0) {
+    doc.flujos = flujos;
+  }
+
+  const roles = extractRolesUnderHeading(rawLines, /##\s+\d+\.\s*Roles/i);
+  if (roles.length > 0) {
+    doc.roles = roles;
+  }
+
+  if (doc.entidades.length === 0) {
+    for (const line of rawLines) {
+      const t = line.trim();
+      if (t.startsWith("### ")) {
+        const name = t.slice(4).trim();
+        if (name.length > 1 && !name.toLowerCase().includes("índice")) {
+          doc.entidades.push({
+            nombre: name,
+            descripcion: "Mencionado en el documento DBGA",
+            atributosClave: [],
+          });
+        }
       }
     }
-    if (line.startsWith("- ") && line.length > 20) {
-      doc.reglasNegocio.push(line.slice(2).trim());
+  }
+
+  return normalizePhase0Document(doc);
+}
+
+function extractBulletsUnderHeading(lines: string[], headingRe: RegExp): string[] {
+  const idx = lines.findIndex((l) => headingRe.test(l.trim()));
+  if (idx < 0) return [];
+  const out: string[] = [];
+  for (let i = idx + 1; i < lines.length; i++) {
+    const t = lines[i]!.trim();
+    if (/^##\s+\d+\./.test(t)) break;
+    if (t.startsWith("- ")) out.push(t.slice(2).trim());
+    else if (/^\*\*R\d/.test(t)) out.push(t);
+  }
+  return out;
+}
+
+function extractFlowsUnderHeading(lines: string[], headingRe: RegExp): Phase0Flow[] {
+  const idx = lines.findIndex((l) => headingRe.test(l.trim()));
+  if (idx < 0) return [];
+  const flows: Phase0Flow[] = [];
+  let current: Phase0Flow | null = null;
+  for (let i = idx + 1; i < lines.length; i++) {
+    const t = lines[i]!.trim();
+    if (/^##\s+\d+\./.test(t)) break;
+    if (t.startsWith("### ")) {
+      if (current?.nombre) flows.push(current);
+      current = { nombre: t.slice(4).trim(), pasos: [] };
+      continue;
+    }
+    const step = t.match(/^(?:##\s+)?(\d+)\.\s+(.+)$/);
+    if (step && current) {
+      current.pasos.push(step[2]!.trim());
     }
   }
+  if (current?.nombre) flows.push(current);
+  return flows;
+}
 
-  if (doc.reglasNegocio.length > 8) {
-    doc.reglasNegocio = doc.reglasNegocio.slice(0, 8);
+function extractRolesUnderHeading(lines: string[], headingRe: RegExp): Phase0Role[] {
+  const idx = lines.findIndex((l) => headingRe.test(l.trim()));
+  if (idx < 0) return [];
+  const roles: Phase0Role[] = [];
+  for (let i = idx + 1; i < lines.length; i++) {
+    const t = lines[i]!.trim();
+    if (/^##\s+\d+\./.test(t)) break;
+    const row = t.match(/^\|\s*\*?\*?([^|*]+)\*?\*?\s*\|/);
+    if (row && !/^:?-+:?$/.test(row[1]!.trim()) && !/^\s*Rol\s/i.test(row[1]!)) {
+      const rol = row[1]!.trim();
+      if (rol.length > 1) roles.push({ rol, permisos: [] });
+      continue;
+    }
+    const bullet = t.match(/^-\s+\*\*(.+?):\*\*\s*(.+)$/);
+    if (bullet) {
+      roles.push({
+        rol: bullet[1]!.trim(),
+        permisos: bullet[2]!
+          .split(",")
+          .map((p) => p.trim())
+          .filter(Boolean),
+      });
+    }
   }
-  if (doc.entidades.length > 12) {
-    doc.entidades = doc.entidades.slice(0, 12);
-  }
-
-  return doc;
+  return roles;
 }

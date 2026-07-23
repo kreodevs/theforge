@@ -75,6 +75,7 @@ import {
   reformatForTemplate,
   templateKindFromState,
 } from "./phase0-assisted.helpers.js";
+import { applyAssistedAnswerLocalFallback } from "./phase0-assisted-fallback.util.js";
 import { PHASE0_TEMPLATE_LABELS, type Phase0TemplateKind } from "./phase0-template-detect.util.js";
 import { markdownToPhase0Document } from "./phase0-from-markdown.js";
 
@@ -741,6 +742,12 @@ export class Phase0InterviewService {
       cambios = updated.cambios;
     }
 
+    state.gaps = filterResolvedGaps(
+      mergeGaps(analyzeGaps(state.borrador), state.gaps),
+      state.borrador,
+      state.ultimaPregunta,
+    );
+
     refreshAssistedPlanAfterAnswer(state);
     const markdown = await this.persistAssistedDocument(state);
 
@@ -1113,15 +1120,13 @@ export class Phase0InterviewService {
     } catch (err) {
       this.logger.error(`[Phase0] assisted structured answer error: ${err}`);
       if (isPhase0FatalLlmError(err)) return toPhase0ErrorEvent(err);
-      state.gaps = filterResolvedGaps(
-        analyzeGaps(state.borrador),
-        state.borrador,
-        state.ultimaPregunta,
-      );
       return {
         type: "ok",
-        impacto: "Respuesta aplicada con análisis local de gaps.",
-        cambios: [],
+        ...applyAssistedAnswerLocalFallback({
+          state,
+          answer,
+          templateKind: "structured",
+        }),
       };
     }
   }
@@ -1193,8 +1198,7 @@ export class Phase0InterviewService {
       if (isPhase0FatalLlmError(err)) return toPhase0ErrorEvent(err);
       return {
         type: "ok",
-        impacto: "No se pudo reescribir el markdown; se conservó la versión anterior.",
-        cambios: [],
+        ...applyAssistedAnswerLocalFallback({ state, answer, templateKind }),
       };
     }
   }
