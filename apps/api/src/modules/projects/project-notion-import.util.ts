@@ -64,11 +64,16 @@ function listZipPaths(zip: JSZip): string[] {
   return Object.keys(zip.files).filter((path) => !zip.files[path]?.dir);
 }
 
+/**
+ * Root folder inside the ZIP (e.g. `Copiloto IMJ`), without trailing slash.
+ * Export writes `{projectName}/…`; stripping must match that so stage `.md` paths resolve.
+ */
 function detectRootPrefix(paths: string[]): string {
   const manifestPath = paths.find((p) => p.endsWith("_theforge/manifest.json"));
   if (manifestPath) {
     const idx = manifestPath.indexOf("_theforge/manifest.json");
-    return idx > 0 ? manifestPath.slice(0, idx) : "";
+    if (idx <= 0) return "";
+    return manifestPath.slice(0, idx).replace(/\/+$/, "");
   }
   const first = paths[0];
   if (!first?.includes("/")) return "";
@@ -76,7 +81,16 @@ function detectRootPrefix(paths: string[]): string {
 }
 
 function prefixed(prefix: string, relative: string): string {
-  return prefix ? `${prefix}${relative}` : relative;
+  return prefix ? `${prefix}/${relative}` : relative;
+}
+
+/** Strip ZIP root folder from an entry path; tolerates prefix with/without trailing `/`. */
+function toRelativeZipPath(path: string, prefix: string): string {
+  if (!prefix) return path;
+  const normalized = prefix.replace(/\/+$/, "");
+  if (path === normalized) return "";
+  if (path.startsWith(`${normalized}/`)) return path.slice(normalized.length + 1);
+  return path;
 }
 
 function parseJsonFile<T>(raw: string | null): T | null {
@@ -147,7 +161,7 @@ export async function parseNotionImportZip(zip: JSZip): Promise<ParsedNotionImpo
   }
 
   for (const path of paths) {
-    const relative = prefix && path.startsWith(`${prefix}/`) ? path.slice(prefix.length + 1) : path;
+    const relative = toRelativeZipPath(path, prefix);
 
     if (relative.startsWith("_theforge/") || relative === "index.html" || relative === "Etapas.csv") {
       continue;
