@@ -6,6 +6,8 @@ import {
   SHORT_AGREEMENT_PATTERN,
   CONTINUE_REFINING_PATTERN,
 } from "./manager-constants.js";
+import type { MddComplexityLevel } from "../../state/mdd-state.schema.js";
+import { agentsForArchitectSection } from "../../utils/mdd-architect-pipeline.util.js";
 import { STACK_SECTION2_REGEX } from "./manager-plan.js";
 
 /** Infiere qué agentes toca la petición a partir del texto (modelo de datos, seguridad, integración). */
@@ -110,9 +112,9 @@ export function parseRegenerateSectionNumber(msg: string): number | null {
 }
 
 /** Mapea número de sección MDD → agente del pipeline (§6 → security). */
-export function agentsForMddSection(section: number): string[] {
+export function agentsForMddSection(section: number, complexity?: MddComplexityLevel): string[] {
   if (section === 1) return ["clarifier"];
-  if (section >= 2 && section <= 4) return ["software_architect"];
+  if (section >= 2 && section <= 4) return agentsForArchitectSection(section as 2 | 3 | 4, complexity);
   if (section === 5) return ["section5"];
   if (section === 6) return ["security"];
   if (section === 7) return ["integration"];

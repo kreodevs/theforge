@@ -48,6 +48,10 @@ import { createMddIntegrationNode } from "./nodes/mdd-integration.node.js";
 import { createMddSecurityNode } from "./nodes/mdd-security.node.js";
 import { createMddSection5Node } from "./nodes/mdd-section5.node.js";
 import { createMddSoftwareArchitectNode } from "./nodes/mdd-software-architect.node.js";
+import {
+  agentsForArchitectSection,
+  type MddSoftwareArchitectScope,
+} from "./utils/mdd-architect-pipeline.util.js";
 import { createMddClarifierNode } from "./nodes/mdd-clarifier.node.js";
 import { getMddArchitectTools } from "./tools/tool-registry.js";
 import { contextSynthesizerComplexityAppendix } from "./utils/mdd-complexity-rigor.js";
@@ -1729,17 +1733,27 @@ export class AiAnalysisService {
         return;
       }
       if (section >= 2 && section <= 4) {
-        const softwareArchitectNode = createMddSoftwareArchitectNode(llm, getMddArchitectTools(), {
+        const agentNames = agentsForArchitectSection(section as 2 | 3 | 4, state.mddComplexity);
+        const agentKey = agentNames[0] ?? "software_architect";
+        const scope: MddSoftwareArchitectScope =
+          agentKey === "stack_architect"
+            ? "stack"
+            : agentKey === "data_model"
+              ? "data_model"
+              : agentKey === "api_contracts"
+                ? "api_contracts"
+                : "full";
+        const architectNode = createMddSoftwareArchitectNode(llm, getMddArchitectTools(), {
           theforge: this.theforge,
+          scope,
         });
         const result = yield* runRegenWithHeartbeat(
-          softwareArchitectNode(state as MDDStateType),
-          getAgentLabel("software_architect"),
+          architectNode(state as MDDStateType),
+          getAgentLabel(agentKey),
           `Regenerando §${section}…`,
           tracer,
         );
         const architectDraft = (result.mddDraft ?? "").trim();
-        // Architect produce §2–§5; solo aplicamos la sección pedida al baseline.
         const finalDraft = mergeSingleArchitectSectionIntoDraft(
           mddContent,
           architectDraft || mddContent,

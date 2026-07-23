@@ -584,6 +584,9 @@ export function getSectionsToPreserveFromExecutorPlan(sectionsToRun: string[] | 
   const touched = new Set<number>();
   for (const node of sectionsToRun) {
     if (node === "clarifier" || node === "merge_section1_only") touched.add(1);
+    if (node === "stack_architect") touched.add(2);
+    if (node === "data_model") touched.add(3);
+    if (node === "api_contracts") touched.add(4);
     if (node === "software_architect") {
       touched.add(2);
       touched.add(3);

@@ -140,14 +140,16 @@ export async function runDeterministicManagerHandlers(
   
   const regenSection = parseRegenerateSectionNumber(userMessage);
   if (hasDraft && regenSection !== null) {
-    const agents = expandSectionsToRun(agentsForMddSection(regenSection));
+    const agents = expandSectionsToRun(agentsForMddSection(regenSection, state.mddComplexity), {
+      complexity: state.mddComplexity,
+    });
     if (agents.length > 0) {
       const planDirective =
         [getPlanDirective(state), `Regenerar §${regenSection} del MDD según la petición del usuario.`]
           .filter(Boolean)
           .join("\n\n") || userMessage;
       const sectionsToRun = agents;
-      const mddPlan = buildMddPlan("sections", sectionsToRun, getUserBrief(state), planDirective);
+      const mddPlan = buildMddPlan("sections", sectionsToRun, getUserBrief(state), planDirective, state.mddComplexity);
       LOG("regenerar §%s solicitado → Executor sections=%s", regenSection, sectionsToRun.join(","));
       return new Command({
         update: {
@@ -226,7 +228,7 @@ export async function runDeterministicManagerHandlers(
       planDirective.length > MDD_MAX_PLAN_DIRECTIVE_CHARS
         ? planDirective.slice(0, MDD_MAX_PLAN_DIRECTIVE_CHARS) + "…"
         : planDirective;
-    const mddPlan = buildMddPlan("full_pipeline", undefined, getUserBrief(state), clipped);
+    const mddPlan = buildMddPlan("full_pipeline", undefined, getUserBrief(state), clipped, state.mddComplexity);
     if (mddPlan.length > 0) {
       const accumulatedWithRequest = [state.userInputAccumulated?.trim(), `Petición: ${userMessage}`].filter(Boolean).join("\n\n---\n\n");
       const dbgaWithRequest = [state.dbgaContent?.trim(), `Petición: ${userMessage}`].filter(Boolean).join("\n\n");
@@ -357,7 +359,7 @@ export async function runDeterministicManagerHandlers(
       const newAccumulated = [state.userInputAccumulated?.trim(), resumeAnswer].filter(Boolean).join("\n\n---\n\n");
       const newDbgaContent = [state.dbgaContent?.trim(), `Respuesta del usuario (ronda ${round}):\n${resumeAnswer}`].filter(Boolean).join("\n\n");
       const planDirective = getPlanDirective(state);
-      const mddPlan = buildMddPlan("full_pipeline", undefined, getUserBrief(state), planDirective);
+      const mddPlan = buildMddPlan("full_pipeline", undefined, getUserBrief(state), planDirective, state.mddComplexity);
       if (mddPlan.length > 0) {
         const impactSummary = await generateImpactAnalysis(llm, state, resumeAnswer);
         return new Command({
@@ -427,7 +429,7 @@ export async function runDeterministicManagerHandlers(
   // Usuario pide seguir refinando → plan (full_pipeline) y aprobación.
   if (hasDraft && score < QUALITY_THRESHOLD && userMessage && wantsToContinueRefining(userMessage)) {
     const planDirective = getPlanDirective(state);
-    const mddPlan = buildMddPlan("full_pipeline", undefined, getUserBrief(state), planDirective);
+    const mddPlan = buildMddPlan("full_pipeline", undefined, getUserBrief(state), planDirective, state.mddComplexity);
     if (mddPlan.length > 0) {
       const accumulatedWithRequest = [state.userInputAccumulated?.trim(), userMessage ? `Petición: ${userMessage}` : ""].filter(Boolean).join("\n\n---\n\n");
       const dbgaWithRequest = [state.dbgaContent?.trim(), userMessage ? `Petición: ${userMessage}` : ""].filter(Boolean).join("\n\n");
@@ -453,9 +455,10 @@ export async function runDeterministicManagerHandlers(
     const directive = state.auditorFeedback.trim();
     const sectionsToRun = expandSectionsToRun(
       resolveCorrectionAgents(state.auditorGaps, state.auditorFeedback, inferAgentsFromAuditorFeedback),
+      { complexity: state.mddComplexity },
     );
     const planDirective = getPlanDirective(state);
-    const mddPlan = buildMddPlan("sections", sectionsToRun, getUserBrief(state), planDirective);
+    const mddPlan = buildMddPlan("sections", sectionsToRun, getUserBrief(state), planDirective, state.mddComplexity);
     if (mddPlan.length > 0) {
       const accumulatedWithRequest = [state.userInputAccumulated?.trim(), userMessage ? `Usuario: ${userMessage}` : ""].filter(Boolean).join("\n\n---\n\n");
       const dbgaWithRequest = [state.dbgaContent?.trim(), userMessage ? `Usuario: ${userMessage}` : ""].filter(Boolean).join("\n\n");
@@ -488,9 +491,9 @@ export async function runDeterministicManagerHandlers(
     );
     const hasStructuredGaps = (state.auditorGaps?.critical_gaps?.length ?? 0) > 0;
     const useSections = hasStructuredGaps && !correctionAgents.every((a) => a === "clarifier");
-    const sectionsToRun = useSections ? expandSectionsToRun(correctionAgents) : undefined;
+    const sectionsToRun = useSections ? expandSectionsToRun(correctionAgents, { complexity: state.mddComplexity }) : undefined;
     const delegateTarget = useSections ? ("sections" as const) : ("clarifier_only" as const);
-    const mddPlan = buildMddPlan(delegateTarget, sectionsToRun, getUserBrief(state), getPlanDirective(state));
+    const mddPlan = buildMddPlan(delegateTarget, sectionsToRun, getUserBrief(state), getPlanDirective(state), state.mddComplexity);
     if (mddPlan.length > 0) {
       const impactSummary = state.auditorFeedback
         ? await generateImpactAnalysis(llm, state, state.auditorFeedback)
@@ -602,7 +605,7 @@ export async function runDeterministicManagerHandlers(
   // "Solo contexto y alcance" → plan clarifier_only y aprobación.
   if (hasDraft && userMessage && looksLikeContextScopeOnlyRequest(userMessage)) {
     const planDirective = getPlanDirective(state);
-    const mddPlan = buildMddPlan("clarifier_only", undefined, getUserBrief(state), planDirective);
+    const mddPlan = buildMddPlan("clarifier_only", undefined, getUserBrief(state), planDirective, state.mddComplexity);
     if (mddPlan.length > 0) {
       const accumulatedWithRequest = [state.userInputAccumulated?.trim(), userMessage ? `Petición: ${userMessage}` : ""].filter(Boolean).join("\n\n---\n\n");
       const dbgaWithRequest = [state.dbgaContent?.trim(), userMessage ? `Petición: ${userMessage}` : ""].filter(Boolean).join("\n\n");
@@ -630,14 +633,14 @@ export async function runDeterministicManagerHandlers(
   // Cambio explícito (p. ej. «no Kubernetes, usar Dokploy»): plan + impacto aunque el mensaje sea corto.
   if (hasDraft && userMessage && looksLikeExplicitMddModificationRequest(userMessage)) {
     const planDirective = getPlanDirective(state);
-    const minimalPlan = { tail: "minimal" as const };
+    const minimalPlan = { tail: "minimal" as const, complexity: state.mddComplexity };
     let sectionsToRun = expandSectionsToRun(inferSectionsFromMessage(userMessage), minimalPlan);
     if (sectionsToRun.length === 0) {
       sectionsToRun = expandSectionsToRun(["software_architect", "security", "integration"], minimalPlan);
     }
     let mddPlan = await generateMddPlanWithLLM(llm, state, "sections", sectionsToRun);
     if (!mddPlan.length) {
-      mddPlan = buildMddPlan("sections", sectionsToRun, getUserBrief(state), planDirective);
+      mddPlan = buildMddPlan("sections", sectionsToRun, getUserBrief(state), planDirective, state.mddComplexity);
     }
     if (mddPlan.length > 0) {
       const accumulatedWithRequest = [state.userInputAccumulated?.trim(), `Petición: ${userMessage}`]
@@ -686,10 +689,13 @@ export async function runDeterministicManagerHandlers(
     const planDirective = getPlanDirective(stateForDirective);
     let sectionsToRun = expandSectionsToRun(
       inferSectionsFromMessage(userMessage + " " + (state.userInputAccumulated ?? "")),
+      { complexity: state.mddComplexity },
     );
-    if (sectionsToRun.length === 0) sectionsToRun = expandSectionsToRun(["software_architect"]);
+    if (sectionsToRun.length === 0) {
+      sectionsToRun = expandSectionsToRun(["software_architect"], { complexity: state.mddComplexity });
+    }
     let mddPlan = await generateMddPlanWithLLM(llm, stateForDirective, "sections", sectionsToRun);
-    if (!mddPlan.length) mddPlan = buildMddPlan("sections", sectionsToRun, undefined, planDirective);
+    if (!mddPlan.length) mddPlan = buildMddPlan("sections", sectionsToRun, undefined, planDirective, state.mddComplexity);
     if (mddPlan.length > 0) {
       const accumulatedWithRequest = stateForDirective.userInputAccumulated ?? state.userInputAccumulated;
       const dbgaWithRequest = [state.dbgaContent?.trim(), userMessage ? `Petición: ${userMessage}` : ""].filter(Boolean).join("\n\n");
@@ -719,10 +725,14 @@ export async function runDeterministicManagerHandlers(
   if (workWithWhatWeHave) {
     const planDirective = getPlanDirective(state);
     const textForSections = (state.userInputAccumulated ?? "") + " " + (state.clarifiedScope ?? "");
-    let sectionsToRun = expandSectionsToRun(inferSectionsFromMessage(textForSections));
-    if (sectionsToRun.length === 0) sectionsToRun = expandSectionsToRun(["software_architect"]);
+    let sectionsToRun = expandSectionsToRun(inferSectionsFromMessage(textForSections), {
+      complexity: state.mddComplexity,
+    });
+    if (sectionsToRun.length === 0) {
+      sectionsToRun = expandSectionsToRun(["software_architect"], { complexity: state.mddComplexity });
+    }
     let mddPlan = await generateMddPlanWithLLM(llm, state, "sections", sectionsToRun);
-    if (!mddPlan.length) mddPlan = buildMddPlan("sections", sectionsToRun, getUserBrief(state), planDirective);
+    if (!mddPlan.length) mddPlan = buildMddPlan("sections", sectionsToRun, getUserBrief(state), planDirective, state.mddComplexity);
     if (mddPlan.length > 0) {
       const accumulatedWithRequest = [state.userInputAccumulated?.trim(), userMessage ? `Usuario: ${userMessage}` : ""].filter(Boolean).join("\n\n---\n\n");
       const impactSummary = await generateImpactAnalysis(llm, state, userMessage);
@@ -749,7 +759,7 @@ export async function runDeterministicManagerHandlers(
     userMessage.trim().length >= 80;
   if (justAnsweredQuestions) {
     const planDirective = getPlanDirective(state);
-    const mddPlan = buildMddPlan("full_pipeline", undefined, getUserBrief(state), planDirective);
+    const mddPlan = buildMddPlan("full_pipeline", undefined, getUserBrief(state), planDirective, state.mddComplexity);
     if (mddPlan.length > 0) {
       const accumulatedWithRequest = [state.userInputAccumulated?.trim(), userMessage ? `Petición: ${userMessage}` : ""].filter(Boolean).join("\n\n---\n\n");
       const dbgaWithRequest = [state.dbgaContent?.trim(), userMessage ? `Petición: ${userMessage}` : ""].filter(Boolean).join("\n\n");

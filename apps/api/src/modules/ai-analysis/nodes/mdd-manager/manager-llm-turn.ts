@@ -98,6 +98,7 @@ function buildManagerPromptContext(
 async function parseManagerLlmResponse(
   llm: BaseChatModel,
   messages: HumanMessage[],
+  complexity?: MDDStateType["mddComplexity"],
 ): Promise<Pick<ManagerLlmTurnResult, "action" | "replyContent" | "delegateTarget" | "sectionsToRun"> & { memoryQuery?: string }> {
   let action: "reply" | "delegate" | "search_memory" = "reply";
   let replyContent = "¿En qué más puedo ayudarte con el MDD? Puedes pedir refinamientos o revisar el documento.";
@@ -120,7 +121,7 @@ async function parseManagerLlmResponse(
       if (parsed.action === "delegate") {
         delegateTarget = parsed.target;
         if (parsed.target === "sections" && Array.isArray(parsed.sections) && parsed.sections.length > 0) {
-          sectionsToRun = expandSectionsToRun(parsed.sections);
+          sectionsToRun = expandSectionsToRun(parsed.sections, { complexity });
         }
       }
       if (parsed.action === "search_memory") {
@@ -138,7 +139,7 @@ async function parseManagerLlmResponse(
           if (parsed.action === "delegate" && "target" in parsed) {
             delegateTarget = parsed.target;
             if (parsed.target === "sections" && Array.isArray(parsed.sections) && parsed.sections.length > 0) {
-              sectionsToRun = expandSectionsToRun(parsed.sections);
+              sectionsToRun = expandSectionsToRun(parsed.sections, { complexity });
             }
           }
           if (parsed.action === "search_memory") {
@@ -158,7 +159,7 @@ async function parseManagerLlmResponse(
         if (parsed.action === "delegate" && "target" in parsed) {
           delegateTarget = parsed.target;
           if (parsed.target === "sections" && Array.isArray(parsed.sections) && parsed.sections.length > 0) {
-            sectionsToRun = expandSectionsToRun(parsed.sections);
+            sectionsToRun = expandSectionsToRun(parsed.sections, { complexity });
           }
         }
         if (parsed.action === "search_memory") {
@@ -184,7 +185,7 @@ export async function runManagerLlmTurn(options: RunManagerLlmTurnOptions): Prom
   let sectionsToRun: string[] | undefined;
 
   for (let i = 0; i < 2; i++) {
-    const parsed = await parseManagerLlmResponse(llm, messages);
+    const parsed = await parseManagerLlmResponse(llm, messages, state.mddComplexity);
     action = parsed.action;
     replyContent = parsed.replyContent;
     delegateTarget = parsed.delegateTarget;
@@ -248,9 +249,11 @@ export async function runManagerLlmTurn(options: RunManagerLlmTurnOptions): Prom
     LOG("reply anulado: cambio explícito MDD → forzar delegate/sections");
     action = "delegate";
     delegateTarget = "sections";
-    sectionsToRun = expandSectionsToRun(inferSectionsFromMessage(userMessage));
+    sectionsToRun = expandSectionsToRun(inferSectionsFromMessage(userMessage), { complexity: state.mddComplexity });
     if (sectionsToRun.length === 0) {
-      sectionsToRun = expandSectionsToRun(["software_architect", "security", "integration"]);
+      sectionsToRun = expandSectionsToRun(["software_architect", "security", "integration"], {
+        complexity: state.mddComplexity,
+      });
     }
   }
 
@@ -259,9 +262,11 @@ export async function runManagerLlmTurn(options: RunManagerLlmTurnOptions): Prom
     action = "delegate";
     delegateTarget = "sections";
     const hint = [userMessage ?? "", replyContent].filter(Boolean).join(" ");
-    sectionsToRun = expandSectionsToRun(inferSectionsFromMessage(hint));
+    sectionsToRun = expandSectionsToRun(inferSectionsFromMessage(hint), { complexity: state.mddComplexity });
     if (sectionsToRun.length === 0) {
-      sectionsToRun = expandSectionsToRun(["software_architect", "security", "integration"]);
+      sectionsToRun = expandSectionsToRun(["software_architect", "security", "integration"], {
+        complexity: state.mddComplexity,
+      });
     }
     replyContent = "";
   }

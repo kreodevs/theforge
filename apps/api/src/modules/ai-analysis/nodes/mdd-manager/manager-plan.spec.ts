@@ -24,9 +24,21 @@ describe("manager-plan", () => {
       assert.deepEqual(seq.slice(0, 4), [
         "clarifier",
         "software_architect",
+        "architect_critic",
         "format_after_architect",
-        "tail_parallel",
       ]);
+    });
+
+    it("HIGH usa pipeline dividido stack→data→critic→api", () => {
+      delete process.env.MDD_TAIL_PARALLEL;
+      const seq = getFullPipelineNodeSequence("HIGH");
+      assert.deepEqual(seq.slice(1, 5), [
+        "stack_architect",
+        "data_model",
+        "architect_critic",
+        "api_contracts",
+      ]);
+      assert.equal(seq.includes("software_architect"), false);
     });
 
     it("usa security+integration cuando MDD_TAIL_PARALLEL=0", () => {
@@ -64,9 +76,21 @@ describe("manager-plan", () => {
       delete process.env.MDD_TAIL_PARALLEL;
       const expanded = expandSectionsToRun(["software_architect", "security", "integration"]);
       assert.ok(expanded.includes("tail_parallel"));
+      assert.ok(expanded.includes("architect_critic"));
       assert.equal(expanded.includes("security"), false);
       assert.equal(expanded.includes("integration"), false);
       assert.ok(expanded.indexOf("format_after_architect") < expanded.indexOf("tail_parallel"));
+    });
+
+    it("HIGH expande software_architect a pipeline dividido", () => {
+      delete process.env.MDD_TAIL_PARALLEL;
+      const expanded = expandSectionsToRun(["software_architect", "security", "integration"], {
+        complexity: "HIGH",
+      });
+      assert.ok(expanded.includes("stack_architect"));
+      assert.ok(expanded.includes("data_model"));
+      assert.ok(expanded.includes("api_contracts"));
+      assert.equal(expanded.includes("software_architect"), false);
     });
 
     it("conserva section5 aislado sin tail_parallel", () => {

@@ -5,6 +5,7 @@ import type { MDDStateType } from "../state/index.js";
 import { extractSection3Body, extractSection4Body } from "../utils/mdd-sanitize.js";
 import { detectSection3CompositionBlockers } from "../utils/schema-owner.util.js";
 import { getUserExplicitRequirements } from "../utils/mdd-user-brief.js";
+import type { ArchitectCriticPhase } from "../utils/mdd-architect-pipeline.util.js";
 import {
   domainInventoryPromptBlock,
   mddStateHasDomainAuthSkew,
@@ -62,11 +63,17 @@ export function createMddArchitectCriticNode(llm: BaseChatModel) {
 
     const section3 = extractSection3Body(draft);
     const section4 = extractSection4Body(draft);
-    const fragment = [section3 ? `## 3. Modelo de Datos\n\n${section3}` : "", section4 ? `## 4. Contratos de API\n\n${section4}` : ""]
-      .filter(Boolean)
-      .join("\n\n");
+    const phase: ArchitectCriticPhase | undefined = state.architectCriticPhase;
+    const afterSection3Only = phase === "after_section3";
+    const fragment = afterSection3Only
+      ? section3
+        ? `## 3. Modelo de Datos\n\n${section3}`
+        : ""
+      : [section3 ? `## 3. Modelo de Datos\n\n${section3}` : "", section4 ? `## 4. Contratos de API\n\n${section4}` : ""]
+          .filter(Boolean)
+          .join("\n\n");
     if (!fragment || fragment.length < 50) {
-      LOG("fragmento §3+§4 insuficiente, omitir critic");
+      LOG("fragmento §3%s insuficiente, omitir critic", afterSection3Only ? "" : "+§4");
       return {
         architectCriticFeedback: undefined,
         architectCriticAttempts: (state.architectCriticAttempts ?? 0) + 1,
@@ -78,11 +85,12 @@ export function createMddArchitectCriticNode(llm: BaseChatModel) {
     const context =
       `**Directiva o requisitos del usuario:**\n${directiveBlock}\n\n` +
       (inventoryBlock ? `${inventoryBlock.trim()}\n\n` : "") +
-      `**Fragmento de MDD recién generado (§3 y §4):**\n${fragment.slice(0, 6000)}`;
+      `**Fragmento de MDD recién generado (${afterSection3Only ? "solo §3" : "§3 y §4"}):**\n${fragment.slice(0, 6000)}`;
     const prompt = `${ARCHITECT_CRITIC_MDD_PROMPT}\n\n---\n${context}`;
 
-    const fallbackGapFeedback =
-      "No se pudo verificar §3 y §4 automáticamente. Revisa que la directiva del usuario y las entidades/procesos del inventario de dominio estén aplicados en el SQL, diagrama ER y sección 4.";
+    const fallbackGapFeedback = afterSection3Only
+      ? "No se pudo verificar §3 automáticamente. Revisa SQL, diagrama ER y cobertura del inventario de dominio antes de generar contratos API."
+      : "No se pudo verificar §3 y §4 automáticamente. Revisa que la directiva del usuario y las entidades/procesos del inventario de dominio estén aplicados en el SQL, diagrama ER y sección 4.";
     try {
       const response = await llm.invoke([new HumanMessage(prompt)]);
       const text = typeof response.content === "string" ? response.content : "";

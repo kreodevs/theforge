@@ -57,7 +57,7 @@ export async function handleManagerDelegateOutcome(ctx: ManagerDelegateContext):
   let mddPlan = await generateMddPlanWithLLM(llm, state, delegateTarget, sectionsToRun);
   if (!mddPlan.length) {
     LOG("plan generado por LLM vacío o inválido, usando buildMddPlan");
-    mddPlan = buildMddPlan(delegateTarget, sectionsToRun, getUserBrief(state), planDirective);
+    mddPlan = buildMddPlan(delegateTarget, sectionsToRun, getUserBrief(state), planDirective, state.mddComplexity);
   } else {
     LOG("plan generado por LLM steps=%s", mddPlan.length);
   }

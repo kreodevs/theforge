@@ -120,6 +120,8 @@ export const mddStateSchema = z.object({
   architectCriticFeedback: z.string().optional(),
   /** Número de veces que se ha pasado por Architect Critic en esta delegación (evita bucle infinito; máx. 1 reintento). */
   architectCriticAttempts: z.number().int().min(0).optional(),
+  /** Fase del critic en pipeline HIGH: tras §3 (antes de §4) o revisión §3+§4 (monolítico). */
+  architectCriticPhase: z.enum(["after_section3", "after_full"]).optional(),
   /** ID del proyecto activo (para memoria semántica). */
   projectId: z.string().optional(),
   /** Etapa SDD activa (FalkorDB / estimación); resuelto por AgentSupervisor. */
@@ -192,6 +194,7 @@ export const defaultMDDState: MDDState = {
   currentStepGoal: undefined,
   architectCriticFeedback: undefined,
   architectCriticAttempts: undefined,
+  architectCriticPhase: undefined,
   projectId: undefined,
   activeStageId: undefined,
   isLegacyProject: undefined,

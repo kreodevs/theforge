@@ -28,9 +28,16 @@ import {
   preserveUntouchedMddSectionsFromBaseline,
   replaceContextWhenOnlyMetadata,
   sanitizeContextSection,
+  mergeSingleArchitectSectionIntoDraft,
 } from "../utils/mdd-sanitize.js";
+import {
+  architectScopePromptPrefix,
+  architectScopeSectionNumber,
+  isHighSplitArchitectPipeline,
+  shouldDecoupleSection5FromArchitect,
+  type MddSoftwareArchitectScope,
+} from "../utils/mdd-architect-pipeline.util.js";
 import { getUserBrief, getUserExplicitRequirements } from "../utils/mdd-user-brief.js";
-import { isMddTailParallelEnabled } from "../utils/mdd-tail-parallel.config.js";
 import { ensureSection5TailParallelPlaceholder } from "../utils/mdd-tail-parallel.util.js";
 import {
   buildUserDeclaredStackPromptBlock,
@@ -436,6 +443,8 @@ export type MddSoftwareArchitectNodeOptions = {
   theforge?: TheForgeService | null;
   /** MCP gráfico compatible activo → hint en §2 Frontend / UI Library. */
   uiMcpFrontendLibraryLabel?: string | null;
+  /** Alcance del nodo: full (LOW/MEDIUM), stack/data_model/api_contracts (HIGH). */
+  scope?: MddSoftwareArchitectScope;
 };
 
 /** Extrae el cuerpo de ## 6. Seguridad del draft (hasta ## 7. o fin). */
@@ -477,6 +486,9 @@ export function createMddSoftwareArchitectNode(
   opts?: MddSoftwareArchitectNodeOptions | null,
 ) {
   return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {
+    const scope: MddSoftwareArchitectScope = opts?.scope ?? "full";
+    const scopeSection = architectScopeSectionNumber(scope);
+    const decoupleSection5 = shouldDecoupleSection5FromArchitect(state, scope);
     const tfPid = (state.theforgeProjectId ?? "").trim();
     const useTheForgeTools =
       !!opts?.theforge &&
@@ -518,8 +530,20 @@ export function createMddSoftwareArchitectNode(
       const goalBlock = stepGoal ? `**Objetivo de este paso (del plan):** ${stepGoal}\n\n` : "";
       const briefBlock = brief
         ? mustRewriteSection3
-          ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Debes **actualizar** ## 3. Modelo de Datos y ## 4. Contratos de API para reflejar el dominio de negocio (BRD/inventario) y los requisitos explícitos. **No copies §3 del borrador** si está sesgado a auth o incompleto frente al inventario; genera el SQL, diagrama ER y endpoints que cubran las capacidades de dominio. Copia solo ## 1. Contexto del borrador. Elabora §2 (Arquitectura y Stack) y §5 (Lógica y Edge Cases).${affectsSection2 ? " Actualiza también ## 2. Arquitectura y Stack si la directiva lo indica." : ""}\n\n---\n\n`
-          : `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Elaborar secciones 2 (Arquitectura y Stack), 4 (Contratos de API) y 5 (Lógica y Edge Cases) para una aplicación que cumple este objetivo. Copia 1 y 3 del borrador; no las reescribas.\n\n---\n\n`
+          ? scope === "stack"
+            ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Actualiza **solo ## 2. Arquitectura y Stack** según la directiva. Copia §1 del borrador. No modifiques §3 ni §4.${decoupleSection5 ? " Deja §5 con placeholder de paso dedicado." : ""}\n\n---\n\n`
+            : scope === "data_model"
+              ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Reescribe **solo ## 3. Modelo de Datos** (SQL + ER) según el dominio y requisitos. Copia §1–§2 del borrador. No modifiques §4.${decoupleSection5 ? " Deja §5 con placeholder." : ""}\n\n---\n\n`
+              : scope === "api_contracts"
+                ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Redacta **solo ## 4. Contratos de API** alineados a §3. Copia §1–§3 del borrador.${decoupleSection5 ? " Deja §5 con placeholder." : ""}\n\n---\n\n`
+                : `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Debes **actualizar** ## 3. Modelo de Datos y ## 4. Contratos de API para reflejar el dominio de negocio (BRD/inventario) y los requisitos explícitos. **No copies §3 del borrador** si está sesgado a auth o incompleto frente al inventario; genera el SQL, diagrama ER y endpoints que cubran las capacidades de dominio. Copia solo ## 1. Contexto del borrador. Elabora §2 (Arquitectura y Stack)${decoupleSection5 ? "; deja §5 con placeholder de paso dedicado" : " y §5 (Lógica y Edge Cases)"}.${affectsSection2 ? " Actualiza también ## 2. Arquitectura y Stack si la directiva lo indica." : ""}\n\n---\n\n`
+          : scope === "stack"
+            ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Elaborar **solo ## 2. Arquitectura y Stack** para una aplicación que cumple este objetivo. Copia §1 del borrador; no reescribas §3 ni §4.${decoupleSection5 ? " Deja §5 con placeholder." : ""}\n\n---\n\n`
+            : scope === "data_model"
+              ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Elaborar **solo ## 3. Modelo de Datos** coherente con §1–§2. Copia §1–§2 del borrador.${decoupleSection5 ? " Deja §5 con placeholder." : ""}\n\n---\n\n`
+              : scope === "api_contracts"
+                ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Elaborar **solo ## 4. Contratos de API** a partir de §3. Copia §1–§3 del borrador.${decoupleSection5 ? " Deja §5 con placeholder." : ""}\n\n---\n\n`
+                : `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Elaborar secciones 2 (Arquitectura y Stack) y 4 (Contratos de API)${decoupleSection5 ? "" : " y 5 (Lógica y Edge Cases)"} para una aplicación que cumple este objetivo. Copia 1 y 3 del borrador; no las reescribas salvo directiva explícita.\n\n---\n\n`
         : "";
       const contextParts = [
         goalBlock,
@@ -652,9 +676,9 @@ export function createMddSoftwareArchitectNode(
       if (stackBlock) {
         contextParts.unshift(stackBlock, "");
       }
-      if (isMddTailParallelEnabled() && !state.sectionsToRun?.length) {
+      if (decoupleSection5) {
         contextParts.unshift(
-          "**Pasada paralela (sistema):** Genera **solo §2, §3 y §4** en esta pasada. Deja ## 5. Lógica y Edge Cases con el placeholder exacto `(Pendiente: paso dedicado Lógica y Edge Cases)`. Un agente dedicado redactará §5 en paralelo con Seguridad e Infraestructura. **No** elabores §5 aquí.",
+          "**Pasada del pipeline (sistema):** Genera **solo las secciones de tu alcance** (§2, §3 o §4 según tu rol). Deja ## 5. Lógica y Edge Cases con el placeholder exacto `(Pendiente: paso dedicado Lógica y Edge Cases)`. Un agente dedicado redactará §5 en paralelo con Seguridad e Infraestructura. **No** elabores §5 aquí.",
           "",
         );
       }
@@ -689,7 +713,8 @@ export function createMddSoftwareArchitectNode(
         contextParts.unshift(uiMcpHint, "");
       }
       const context = contextParts.join("\n");
-      const prompt = `${SOFTWARE_ARCHITECT_MDD_PROMPT}${softwareArchitectComplexityAppendix(state.mddComplexity)}\n\n---\n${context}`;
+      const scopePrefix = architectScopePromptPrefix(scope);
+      const prompt = `${scopePrefix ? `${scopePrefix}\n\n---\n\n` : ""}${SOFTWARE_ARCHITECT_MDD_PROMPT}${softwareArchitectComplexityAppendix(state.mddComplexity)}\n\n---\n${context}`;
       const messages = [new HumanMessage(prompt)];
 
       let text = "";
@@ -913,7 +938,7 @@ export function createMddSoftwareArchitectNode(
       mddDraft = replaceContextWhenOnlyMetadata(mddDraft);
       mddDraft = ensureContratosSection(mddDraft);
       mddDraft = normalizeMddFormat(mddDraft);
-      if (isMddTailParallelEnabled() && !state.sectionsToRun?.length) {
+      if (decoupleSection5) {
         mddDraft = ensureSection5TailParallelPlaceholder(mddDraft);
       }
       // Preservar §6 y §7 del borrador de merge si el LLM los reemplazó con placeholders
@@ -932,6 +957,10 @@ export function createMddSoftwareArchitectNode(
       if (sectionsToPreserve.length > 0 && mergeBaseline.length >= minLength) {
         mddDraft = preserveUntouchedMddSectionsFromBaseline(mddDraft, mergeBaseline, sectionsToPreserve);
         LOG("preservadas secciones fuera de plan desde baseline: %s", sectionsToPreserve.join(","));
+      }
+      if (scopeSection !== null && mergeBaseline.length >= minLength) {
+        mddDraft = mergeSingleArchitectSectionIntoDraft(mergeBaseline, mddDraft, scopeSection);
+        LOG("merge quirúrgico scope=%s section=%s", scope, scopeSection);
       }
       if (directive && affectsSection2) {
         mddDraft = applyDeploymentStackDirectiveToDraft(mddDraft, directive);
@@ -962,26 +991,35 @@ export function createMddSoftwareArchitectNode(
         text.slice(0, 200).replace(/\n/g, " "),
       );
       const slice: Partial<MDDStateType["mddStructured"]> = {};
-      if (modeloDatosParsed?.sql) slice.modeloDatos = modeloDatosParsed;
-      if (section4Body) slice.contratosApi = { summary: section4Body };
+      if (scope === "full" || scope === "data_model") {
+        if (modeloDatosParsed?.sql) slice.modeloDatos = modeloDatosParsed;
+      }
+      if (scope === "full" || scope === "api_contracts") {
+        if (section4Body) slice.contratosApi = { summary: section4Body };
+      }
       if (
+        scope === "full" &&
         section5Body &&
-        !(
-          isMddTailParallelEnabled() &&
-          !state.sectionsToRun?.length &&
-          isMddSectionPipelinePlaceholderBody(section5Body)
-        )
+        !(decoupleSection5 && isMddSectionPipelinePlaceholderBody(section5Body))
       ) {
         slice.logicaEdgeCases = section5Body;
       }
       const internalDirectives = extractInternalDirectives(text, "software_architect");
       const meshUpdate = internalDirectives.length > 0 ? { internalDirectives } : {};
+      const phaseUpdate =
+        scope === "data_model" && isHighSplitArchitectPipeline(state)
+          ? { architectCriticPhase: "after_section3" as const }
+          : scope === "api_contracts"
+            ? { architectCriticPhase: undefined, architectCriticFeedback: undefined }
+            : scope === "full" && !isHighSplitArchitectPipeline(state)
+              ? { architectCriticPhase: "after_full" as const }
+              : {};
 
       if (Object.keys(slice).length > 0) {
         const merged = mergeMddStructured(state.mddStructured ?? undefined, slice, state.mddDraft ?? "");
-        return { mddStructured: merged, mddDraft, ...meshUpdate };
+        return { mddStructured: merged, mddDraft, ...meshUpdate, ...phaseUpdate };
       }
-      return { mddDraft, ...meshUpdate };
+      return { mddDraft, ...meshUpdate, ...phaseUpdate };
     } catch (err) {
       LOG("error: %s", err instanceof Error ? err.message : String(err));
       throw err;

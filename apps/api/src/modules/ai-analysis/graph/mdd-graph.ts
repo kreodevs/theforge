@@ -45,6 +45,7 @@ import {
   securityIntegrationInput,
   crossConsistencyInput,
 } from "../checkpoint/node-input-hash.js";
+import { isHighSplitArchitectPipeline } from "../utils/mdd-architect-pipeline.util.js";
 
 const MAX_MDD_ITERATIONS = 2;
 
@@ -58,6 +59,31 @@ const STRUCTURAL_TEMPERATURE = 0.2;
 
 type NodeFn = (state: MDDStateType) => Partial<MDDStateType> | Promise<Partial<MDDStateType>>;
 type InputHashFn = (state: MDDStateType) => Record<string, unknown>;
+
+function createScopedArchitectNode(
+  nodeName: "stack_architect" | "data_model" | "api_contracts",
+  scope: "stack" | "data_model" | "api_contracts",
+  structuralLlm: Awaited<ReturnType<typeof createDbgaLLM>>,
+  architectTools: ReturnType<typeof getMddArchitectTools>,
+  compileOptions: MddGraphCompileOptions | undefined,
+  nodeCache: NodeCacheService | null,
+  onNodeStart?: (nodeName: string) => void,
+): NodeFn {
+  return wrapNodeStart(
+    nodeName,
+    wrapCache(
+      nodeCache,
+      nodeName,
+      softwareArchitectInput,
+      createMddSoftwareArchitectNode(structuralLlm, architectTools, {
+        theforge: compileOptions?.theforge ?? null,
+        uiMcpFrontendLibraryLabel: compileOptions?.uiMcpFrontendLibraryLabel ?? null,
+        scope,
+      }),
+    ),
+    onNodeStart,
+  );
+}
 
 function wrapNodeStart(
   nodeName: string,
@@ -136,8 +162,36 @@ export async function createMddGraph(
       createMddSoftwareArchitectNode(structuralLlm, getMddArchitectTools(), {
         theforge: options?.theforge ?? null,
         uiMcpFrontendLibraryLabel: options?.uiMcpFrontendLibraryLabel ?? null,
+        scope: "full",
       }),
     ),
+    onNodeStart,
+  );
+  const stackArchitectNode = createScopedArchitectNode(
+    "stack_architect",
+    "stack",
+    structuralLlm,
+    getMddArchitectTools(),
+    options,
+    nodeCache,
+    onNodeStart,
+  );
+  const dataModelNode = createScopedArchitectNode(
+    "data_model",
+    "data_model",
+    structuralLlm,
+    getMddArchitectTools(),
+    options,
+    nodeCache,
+    onNodeStart,
+  );
+  const apiContractsNode = createScopedArchitectNode(
+    "api_contracts",
+    "api_contracts",
+    structuralLlm,
+    getMddArchitectTools(),
+    options,
+    nodeCache,
     onNodeStart,
   );
   const architectCriticNode = wrapNodeStart(
@@ -271,9 +325,19 @@ export async function createMddGraph(
     return "format_after_architect";
   }
 
+  /** One-shot: HIGH → pipeline dividido; LOW/MEDIUM → arquitecto monolítico. */
+  function routeAfterClarifierOneShot(state: MDDStateType): string {
+    return isHighSplitArchitectPipeline(state) ? "stack_architect" : "software_architect";
+  }
+
+  /** One-shot: critic entre §3 y §4 (HIGH) o revisión §3+§4 (monolítico). */
   function routeAfterArchitectCriticOneShot(state: MDDStateType): string {
     const hasFeedback = !!(state.architectCriticFeedback?.trim());
     const attempts = state.architectCriticAttempts ?? 0;
+    if (state.architectCriticPhase === "after_section3") {
+      if (hasFeedback && attempts <= 1) return "data_model";
+      return "api_contracts";
+    }
     if (hasFeedback && attempts <= 1) return "software_architect";
     return "format_after_architect";
   }
@@ -281,6 +345,9 @@ export async function createMddGraph(
   const builder = new StateGraph(MDDStateAnnotation)
     .addNode("clarifier", clarifierNode)
     .addNode("software_architect", softwareArchitectNode)
+    .addNode("stack_architect", stackArchitectNode)
+    .addNode("data_model", dataModelNode)
+    .addNode("api_contracts", apiContractsNode)
     .addNode("architect_critic", architectCriticNode)
     .addNode("format_after_architect", formatterNode("format_after_architect"))
     // Nodo combinado (Promise.all §6+§7) para la primera pasada; integration/format_sec_int
@@ -300,12 +367,20 @@ export async function createMddGraph(
     .addNode("section5", section5Node)
     .addNode("tail_parallel", tailParallelNode)
     .addEdge(START, "clarifier")
-    .addEdge("clarifier", "software_architect")
+    .addConditionalEdges("clarifier", routeAfterClarifierOneShot, {
+      stack_architect: "stack_architect",
+      software_architect: "software_architect",
+    })
+    .addEdge("stack_architect", "data_model")
+    .addEdge("data_model", "architect_critic")
+    .addEdge("api_contracts", "format_after_architect")
     .addConditionalEdges("software_architect", routeAfterSoftwareArchitectOneShot, {
       architect_critic: "architect_critic",
       format_after_architect: "format_after_architect",
     })
     .addConditionalEdges("architect_critic", routeAfterArchitectCriticOneShot, {
+      data_model: "data_model",
+      api_contracts: "api_contracts",
       software_architect: "software_architect",
       format_after_architect: "format_after_architect",
     })
@@ -375,6 +450,37 @@ export async function createMddGraphWithManager(
     createMddSoftwareArchitectNode(structuralLlm, getMddArchitectTools(), {
       theforge: theForgeForArchitect,
       uiMcpFrontendLibraryLabel: compileOptions?.uiMcpFrontendLibraryLabel ?? null,
+      scope: "full",
+    }),
+  );
+  const stackArchitectNode = wrapCache(
+    nodeCache,
+    "stack_architect",
+    softwareArchitectInput,
+    createMddSoftwareArchitectNode(structuralLlm, getMddArchitectTools(), {
+      theforge: theForgeForArchitect,
+      uiMcpFrontendLibraryLabel: compileOptions?.uiMcpFrontendLibraryLabel ?? null,
+      scope: "stack",
+    }),
+  );
+  const dataModelNode = wrapCache(
+    nodeCache,
+    "data_model",
+    softwareArchitectInput,
+    createMddSoftwareArchitectNode(structuralLlm, getMddArchitectTools(), {
+      theforge: theForgeForArchitect,
+      uiMcpFrontendLibraryLabel: compileOptions?.uiMcpFrontendLibraryLabel ?? null,
+      scope: "data_model",
+    }),
+  );
+  const apiContractsNode = wrapCache(
+    nodeCache,
+    "api_contracts",
+    softwareArchitectInput,
+    createMddSoftwareArchitectNode(structuralLlm, getMddArchitectTools(), {
+      theforge: theForgeForArchitect,
+      uiMcpFrontendLibraryLabel: compileOptions?.uiMcpFrontendLibraryLabel ?? null,
+      scope: "api_contracts",
     }),
   );
   const architectCriticNode = createMddArchitectCriticNode(llm);
@@ -457,19 +563,39 @@ export async function createMddGraphWithManager(
     return "format_after_architect";
   }
 
-  /** Tras critic: si hay feedback (gap) y solo 1 intento, volver a software_architect; si no, seguir a format. */
+  /** Tras critic: retry §3 (HIGH) o SA monolítico; si ok tras §3 → api_contracts. */
   function routeAfterArchitectCritic(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
     const hasFeedback = !!(state.architectCriticFeedback?.trim());
     const attempts = state.architectCriticAttempts ?? 0;
+    if (state.architectCriticPhase === "after_section3") {
+      if (hasFeedback && attempts <= 1) return "data_model";
+      return "api_contracts";
+    }
     if (hasFeedback && attempts <= 1) return "software_architect";
     return "format_after_architect";
   }
 
-  function routeAfterClarifier(state: MDDStateType): "manager" | "merge_section1_only" | "software_architect" | "executor" {
+  function routeAfterStackArchitect(state: MDDStateType): string {
+    if (state.executorControlled === true) return "executor";
+    return nextInSections(state, "stack_architect") ?? "data_model";
+  }
+
+  function routeAfterDataModel(state: MDDStateType): string {
+    if (state.executorControlled === true) return "executor";
+    return nextInSections(state, "data_model") ?? "architect_critic";
+  }
+
+  function routeAfterApiContracts(state: MDDStateType): string {
+    if (state.executorControlled === true) return "executor";
+    return nextInSections(state, "api_contracts") ?? "format_after_architect";
+  }
+
+  function routeAfterClarifier(state: MDDStateType): "manager" | "merge_section1_only" | "software_architect" | "stack_architect" | "executor" {
     if (state.executorControlled === true) return "executor";
     if (state.clarifierJustGeneratedQuestions === true) return "manager";
     if (state.delegateTarget === "clarifier_only") return "merge_section1_only";
+    if (isHighSplitArchitectPipeline(state)) return "stack_architect";
     return "software_architect";
   }
 
@@ -557,6 +683,9 @@ export async function createMddGraphWithManager(
     "executor",
     "auditor",
     "software_architect",
+    "stack_architect",
+    "data_model",
+    "api_contracts",
     "architect_critic",
     "format_after_architect",
     "security",
@@ -575,6 +704,9 @@ export async function createMddGraphWithManager(
     "clarifier",
     "merge_section1_only",
     "software_architect",
+    "stack_architect",
+    "data_model",
+    "api_contracts",
     "architect_critic",
     "format_after_architect",
     "security",
@@ -599,6 +731,9 @@ export async function createMddGraphWithManager(
     .addNode("clarifier", clarifierNode)
     .addNode("merge_section1_only", mergeSection1Node)
     .addNode("software_architect", softwareArchitectNode)
+    .addNode("stack_architect", stackArchitectNode)
+    .addNode("data_model", dataModelNode)
+    .addNode("api_contracts", apiContractsNode)
     .addNode("architect_critic", architectCriticNode)
     .addNode("format_after_architect", formatterNode)
     .addNode("security", securityNode)
@@ -620,11 +755,27 @@ export async function createMddGraphWithManager(
       manager: "manager",
       merge_section1_only: "merge_section1_only",
       software_architect: "software_architect",
+      stack_architect: "stack_architect",
       executor: "executor",
     })
     .addConditionalEdges("merge_section1_only", routeAfterMergeSection1, {
       executor: "executor",
       [END]: END,
+    })
+    .addConditionalEdges("stack_architect", routeAfterStackArchitect, {
+      data_model: "data_model",
+      executor: "executor",
+      manager: "manager",
+    })
+    .addConditionalEdges("data_model", routeAfterDataModel, {
+      architect_critic: "architect_critic",
+      executor: "executor",
+      manager: "manager",
+    })
+    .addConditionalEdges("api_contracts", routeAfterApiContracts, {
+      format_after_architect: "format_after_architect",
+      executor: "executor",
+      manager: "manager",
     })
     .addConditionalEdges("software_architect", routeAfterSoftwareArchitect, {
       architect_critic: "architect_critic",
@@ -639,6 +790,8 @@ export async function createMddGraphWithManager(
       executor: "executor",
     })
     .addConditionalEdges("architect_critic", routeAfterArchitectCritic, {
+      data_model: "data_model",
+      api_contracts: "api_contracts",
       software_architect: "software_architect",
       format_after_architect: "format_after_architect",
     })

@@ -80,6 +80,7 @@ export const MDDStateAnnotation = Annotation.Root({
   currentStepGoal: Annotation<string | undefined>(),
   architectCriticFeedback: Annotation<string | undefined>(),
   architectCriticAttempts: Annotation<number | undefined>(),
+  architectCriticPhase: Annotation<"after_section3" | "after_full" | undefined>(),
   projectId: Annotation<string | undefined>({ reducer: reducePreferDefined }),
   activeStageId: Annotation<string | undefined>({ reducer: reducePreferDefined }),
   isLegacyProject: Annotation<boolean | undefined>({ reducer: reducePreferDefined }),

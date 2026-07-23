@@ -6,22 +6,45 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { HumanMessage } from "@langchain/core/messages";
 import { MANAGER_PLAN_GENERATOR_PROMPT } from "../../prompts/load-prompts.js";
 import type { MDDStateType } from "../../state/index.js";
-import type { MddPlanStep } from "../../state/mdd-state.schema.js";
+import type { MddComplexityLevel, MddPlanStep } from "../../state/mdd-state.schema.js";
 import { getPlanDirective, getUserBrief } from "../../utils/mdd-user-brief.js";
 import { extractFirstJsonObject } from "../../utils/parse-json.js";
 import { isMddTailParallelEnabled } from "../../utils/mdd-tail-parallel.config.js";
+import {
+  expandArchitectAgentNames,
+  getArchitectNodeSequence,
+} from "../../utils/mdd-architect-pipeline.util.js";
 import { z } from "zod";
 
-/** Orden de agentes en el pipeline (sin Clarifier). Tras software_architect viene format_after_architect (y crítico si aplica). */
-const PIPELINE_AGENTS = ["software_architect", "section5", "security", "integration"] as const;
+/** Orden de agentes en el pipeline (sin Clarifier). */
+const PIPELINE_AGENTS = [
+  "software_architect",
+  "stack_architect",
+  "data_model",
+  "architect_critic",
+  "api_contracts",
+  "section5",
+  "security",
+  "integration",
+] as const;
 const PIPELINE_TAIL = ["format_after_redactor", "diagram_injector", "auditor"] as const;
+const ARCHITECT_WRITERS = new Set([
+  "software_architect",
+  "stack_architect",
+  "data_model",
+  "api_contracts",
+]);
 
 /** Descripción por nodo para el plan explícito (patrón Planner–Executor). */
 const NODE_TASK_DESCRIPTIONS: Record<string, string> = {
   ask_initial_topic: "Preguntar tema o problema del MDD",
   clarifier: "Clarificar contexto y alcance",
   merge_section1_only: "Fusionar solo sección 1 (contexto y alcance)",
-  software_architect: "Definir schema SQL y contratos de API",
+  software_architect: "Definir stack, schema SQL y contratos de API (LOW/MEDIUM)",
+  stack_architect: "Definir arquitectura y stack (§2)",
+  data_model: "Definir modelo de datos SQL y ER (§3)",
+  architect_critic: "Verificar coherencia del modelo de datos antes de contratos API",
+  api_contracts: "Definir contratos de API (§4)",
   section5: "Definir lógica y edge cases (§5)",
   format_after_architect: "Formatear documento tras arquitecto",
   tail_parallel: "Generar §5 Lógica, §6 Seguridad y §7 Infraestructura en paralelo",
@@ -35,6 +58,7 @@ const NODE_TASK_DESCRIPTIONS: Record<string, string> = {
 /** 4.3 Least privilege: tools por nodo (solo nodos con tools en el grafo MDD). */
 const NODE_REQUIRED_TOOLS: Record<string, string[]> = {
   software_architect: ["format_section3_endpoints"],
+  api_contracts: ["format_section3_endpoints"],
   auditor: ["validate_mdd_structure", "validate_sql_syntax", "validate_json_payloads"],
 };
 
@@ -69,10 +93,45 @@ function truncateForGoal(text: string, max: number): string {
   return t.length > max ? t.slice(0, max) + "…" : t;
 }
 
+function goalForArchitectFamily(node: string, architectGoal: string, full: string): string | undefined {
+  const rolesPorApp =
+    /(?:roles?\s+por\s+aplicaci[oó]n|roles?\s+a\s+nivel\s+de\s+aplicaci[oó]n|permisos?\s+basados\s+en\s+roles?\s+definidos\s+por\s+cada\s+aplicaci[oó]n)/i.test(full);
+  if (rolesPorApp && (node === "software_architect" || node === "data_model")) {
+    return "Cambiar el modelo de datos para que incluya applications, application_roles por aplicación y user_application_roles. No copies §3 del borrador; genera §3 desde cero con esas tablas. Luego elabora §4 Contratos de API.";
+  }
+  if (directiveRequiresModelAndDiagramChange(full) && (node === "software_architect" || node === "data_model" || node === "api_contracts")) {
+    return `Requisito de seguridad/almacenamiento: ${architectGoal} Debes actualizar §3 Modelo de Datos (quitar de las tablas SQL cualquier campo que no deba persistirse, p. ej. jwt_token) y el diagrama entidad-relación para que coincida; y §4 Contratos de API (añadir o ajustar endpoints, p. ej. refresh_token). Revisa todo el SQL y el erDiagram y elimina columnas que el usuario indica que no deben guardarse en BD.`;
+  }
+  const affectsModel = MODEL_REQUIREMENT_REGEX.test(full);
+  const affectsSection2 = STACK_SECTION2_REGEX.test(full);
+  if (node === "stack_architect") {
+    return affectsSection2
+      ? `Actualizar §2 Arquitectura y Stack según: ${architectGoal}`
+      : `Definir §2 Arquitectura y Stack según: ${architectGoal}`;
+  }
+  if (node === "data_model") {
+    return affectsModel
+      ? `Elaborar §3 (SQL, diagrama ER) según: ${architectGoal}`
+      : `Completar §3 Modelo de Datos según alcance: ${architectGoal}`;
+  }
+  if (node === "api_contracts") {
+    return `Elaborar §4 Contratos de API alineados a §3 según: ${architectGoal}`;
+  }
+  if (affectsModel && affectsSection2) {
+    return `Actualizar §2 Arquitectura y Stack y el modelo de datos según lo que pide el usuario. Elabora §2, §3 (SQL, diagrama ER), §4 según: ${architectGoal}`;
+  }
+  if (affectsSection2) {
+    return `Actualizar §2 Arquitectura y Stack según lo que pide el usuario. Elabora §2 (y §3, §4 si aplica) según: ${architectGoal}`;
+  }
+  if (affectsModel) {
+    return `Cambiar el modelo de datos para que incluya lo que pide el usuario. Elabora §3 (SQL, diagrama ER) y §4 Contratos según: ${architectGoal}`;
+  }
+  return `Incorporar en §2, §3 y §4 lo indicado: ${architectGoal}`;
+}
+
 /**
  * Goal para un paso a partir del plan/directiva. El manager es la única fuente de instrucciones
  * explícitas para los agentes: aquí se construye el texto que recibe cada nodo (currentStepGoal).
- * Sin condicionales en los nodos: el Arquitecto solo obedece lo que viene en el goal/directive.
  */
 function goalForStep(node: string, directiveOrBrief: string | undefined): string | undefined {
   if (!directiveOrBrief || directiveOrBrief.length < 10) return undefined;
@@ -81,27 +140,13 @@ function goalForStep(node: string, directiveOrBrief: string | undefined): string
   const architectGoal = truncateForGoal(full, MDD_MAX_GOAL_SOFTWARE_ARCHITECT_CHARS);
   if (architectGoal.length < 10) return undefined;
   if (node === "clarifier") return `Aclarar contexto y alcance para: ${shortGoal}`;
-  if (node === "software_architect") {
-    const rolesPorApp =
-      /(?:roles?\s+por\s+aplicaci[oó]n|roles?\s+a\s+nivel\s+de\s+aplicaci[oó]n|permisos?\s+basados\s+en\s+roles?\s+definidos\s+por\s+cada\s+aplicaci[oó]n)/i.test(full);
-    if (rolesPorApp) {
-      return "Cambiar el modelo de datos para que incluya applications, application_roles por aplicación y user_application_roles. No copies §3 del borrador; genera §3 desde cero con esas tablas. Luego elabora §4 Contratos de API.";
-    }
-    if (directiveRequiresModelAndDiagramChange(full)) {
-      return `Requisito de seguridad/almacenamiento: ${architectGoal} Debes actualizar §3 Modelo de Datos (quitar de las tablas SQL cualquier campo que no deba persistirse, p. ej. jwt_token) y el diagrama entidad-relación para que coincida; y §4 Contratos de API (añadir o ajustar endpoints, p. ej. refresh_token). Revisa todo el SQL y el erDiagram y elimina columnas que el usuario indica que no deben guardarse en BD.`;
-    }
-    const affectsModel = MODEL_REQUIREMENT_REGEX.test(full);
-    const affectsSection2 = STACK_SECTION2_REGEX.test(full);
-    if (affectsModel && affectsSection2) {
-      return `Actualizar §2 Arquitectura y Stack y el modelo de datos según lo que pide el usuario. Elabora §2, §3 (SQL, diagrama ER), §4 y §5 según: ${architectGoal}`;
-    }
-    if (affectsSection2) {
-      return `Actualizar §2 Arquitectura y Stack según lo que pide el usuario. Elabora §2 (y §3, §4, §5 si aplica) según: ${architectGoal}`;
-    }
-    if (affectsModel) {
-      return `Cambiar el modelo de datos para que incluya lo que pide el usuario. Elabora §3 (SQL, diagrama ER) y §4 Contratos según: ${architectGoal}`;
-    }
-    return `Incorporar en §2, §3, §4 y §5 lo indicado: ${architectGoal}`;
+  if (
+    node === "software_architect" ||
+    node === "stack_architect" ||
+    node === "data_model" ||
+    node === "api_contracts"
+  ) {
+    return goalForArchitectFamily(node, architectGoal, full);
   }
   if (node === "tail_parallel") {
     return `Completar §5 Lógica y Edge Cases, §6 Seguridad y §7 Infraestructura según: ${shortGoal}`;
@@ -112,14 +157,15 @@ function goalForStep(node: string, directiveOrBrief: string | undefined): string
   return undefined;
 }
 
-/** Secuencia completa del pipeline Manager (clarifier → auditor), respetando MDD_TAIL_PARALLEL. */
-export function getFullPipelineNodeSequence(): readonly string[] {
+/** Secuencia completa del pipeline Manager (clarifier → auditor), respetando MDD_TAIL_PARALLEL y complejidad. */
+export function getFullPipelineNodeSequence(complexity?: MddComplexityLevel): readonly string[] {
   const afterArchitect = isMddTailParallelEnabled()
     ? (["tail_parallel"] as const)
     : (["security", "integration"] as const);
+  const architectSeq = getArchitectNodeSequence(complexity);
   return [
     "clarifier",
-    "software_architect",
+    ...architectSeq,
     "format_after_architect",
     ...afterArchitect,
     "format_after_redactor",
@@ -144,6 +190,7 @@ export function buildMddPlan(
   sectionsToRun: string[] | undefined,
   userBrief?: string,
   planDirective?: string,
+  complexity?: MddComplexityLevel,
 ): MddPlanStep[] {
   const effectiveBrief =
     planDirective?.trim() && planDirective.trim().length > 50 ? planDirective.trim() : (userBrief ?? "");
@@ -164,7 +211,7 @@ export function buildMddPlan(
     );
   }
   if (delegateTarget === "full_pipeline" || !delegateTarget) {
-    return getFullPipelineNodeSequence().map((node, i) =>
+    return getFullPipelineNodeSequence(complexity).map((node, i) =>
       step(node, String(i + 1), NODE_TASK_DESCRIPTIONS[node] ?? node, i === 0),
     );
   }
@@ -177,7 +224,19 @@ export type ExpandSectionsToRunOptions = {
    * minimal: solo agentes de dominio (sin format ni cola) — planes acotados stack/infra.
    */
   tail?: "full" | "minimal";
+  complexity?: MddComplexityLevel;
 };
+
+function insertFormatAfterLastArchitect(out: string[]): string[] {
+  let lastIdx = -1;
+  for (let i = 0; i < out.length; i++) {
+    if (ARCHITECT_WRITERS.has(out[i]!)) lastIdx = i;
+  }
+  if (lastIdx >= 0 && !out.includes("format_after_architect")) {
+    out.splice(lastIdx + 1, 0, "format_after_architect");
+  }
+  return out;
+}
 
 /** Expande la lista de agentes solicitados a la secuencia real de nodos (incluye format entre escritores y tail). */
 export function expandSectionsToRun(
@@ -185,7 +244,15 @@ export function expandSectionsToRun(
   options?: ExpandSectionsToRunOptions,
 ): string[] {
   const tailMode = options?.tail ?? "full";
-  const valid = new Set(agentNames.filter((a) => PIPELINE_AGENTS.includes(a as (typeof PIPELINE_AGENTS)[number])));
+  const expandedNames = expandArchitectAgentNames(agentNames, options?.complexity);
+  const valid = new Set(expandedNames.filter((a) => PIPELINE_AGENTS.includes(a as (typeof PIPELINE_AGENTS)[number])));
+  if (options?.complexity === "HIGH") {
+    if (valid.has("stack_architect") || valid.has("data_model") || valid.has("api_contracts")) {
+      valid.add("architect_critic");
+    }
+  } else if (valid.has("software_architect")) {
+    valid.add("architect_critic");
+  }
   const useTailParallel =
     isMddTailParallelEnabled() && valid.has("security") && valid.has("integration");
   const skipWhenTailParallel = useTailParallel
@@ -195,8 +262,8 @@ export function expandSectionsToRun(
   for (const node of PIPELINE_AGENTS) {
     if (!valid.has(node) || skipWhenTailParallel.has(node)) continue;
     out.push(node);
-    if (tailMode === "full" && node === "software_architect") out.push("format_after_architect");
   }
+  insertFormatAfterLastArchitect(out);
   if (useTailParallel) {
     const fmtIdx = out.indexOf("format_after_architect");
     if (fmtIdx >= 0) out.splice(fmtIdx + 1, 0, "tail_parallel");
@@ -207,7 +274,6 @@ export function expandSectionsToRun(
   return [...out, ...PIPELINE_TAIL];
 }
 
-const FULL_PIPELINE_NODES = getFullPipelineNodeSequence();
 const CLARIFIER_ONLY_NODES = ["clarifier", "merge_section1_only"] as const;
 
 const planGeneratorOutputSchema = z.object({
@@ -231,12 +297,13 @@ export async function generateMddPlanWithLLM(
   delegateTarget: "clarifier_only" | "full_pipeline" | "sections" | undefined,
   sectionsToRun: string[] | undefined,
 ): Promise<MddPlanStep[]> {
+  const complexity = state.mddComplexity;
   const allowedNodes =
     delegateTarget === "clarifier_only"
       ? new Set(CLARIFIER_ONLY_NODES)
       : delegateTarget === "sections" && sectionsToRun?.length
         ? new Set(sectionsToRun)
-        : new Set(FULL_PIPELINE_NODES);
+        : new Set(getFullPipelineNodeSequence(complexity));
   const planDirective = getPlanDirective(state);
   const userBrief = getUserBrief(state);
   const context = [
@@ -244,6 +311,7 @@ export async function generateMddPlanWithLLM(
     planDirective?.trim() || userBrief?.trim() || state.lastUserMessage?.trim() || "(sin mensaje)",
     state.clarifiedScope?.trim() ? `\n**Alcance clarificado:**\n${state.clarifiedScope.trim().slice(0, 2000)}` : "",
     `\n**Tipo de delegación:** ${delegateTarget ?? "full_pipeline"}${sectionsToRun?.length ? `; agentes: ${sectionsToRun.join(", ")}` : ""}`,
+    complexity ? `\n**Complejidad del proyecto:** ${complexity}` : "",
     "\n**Instrucción:** Genera un plan (lista de pasos) con `step_id`, `node`, `task_description` y `goal` para cada paso. Usa solo nodos de la lista permitida. El `goal` debe ser una instrucción concreta para ese agente (qué hacer en §3, §4, etc.). Responde solo con el JSON.",
   ]
     .filter(Boolean)
