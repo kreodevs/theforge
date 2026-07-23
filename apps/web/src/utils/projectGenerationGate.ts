@@ -34,8 +34,9 @@ export function generationGateReason(
 
 export function activeGenerationLabel(status: ProjectGenerationStatus | null | undefined): string | null {
   if (!status?.busy) return null;
-  if (status.mddStreamActive) {
-    const mddJob = primaryMddJob(status);
+  const mddJob = primaryMddJob(status);
+  const mddBusy = status.mddStreamActive || (status.mddJobs?.length ?? 0) > 0;
+  if (mddBusy) {
     if (mddJob?.progressActive?.agent) {
       return `${mddJob.progressActive.agent}…`;
     }

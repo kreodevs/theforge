@@ -36,4 +36,16 @@ describe("primaryMddJob", () => {
     };
     assert.match(activeGenerationLabel(status) ?? "", /Sincronización MDD desde upstream/);
   });
+
+  it("muestra etiqueta MDD cuando hay jobs en cola aunque mddStreamActive sea false", () => {
+    const status: ProjectGenerationStatus = {
+      busy: true,
+      mddStreamActive: false,
+      mddJobs: [{ jobId: "q1", mode: "pipeline", status: "queued" }],
+      activeJob: null,
+      queuedJobs: [],
+      gates: {},
+    };
+    assert.match(activeGenerationLabel(status) ?? "", /MDD desde benchmark/);
+  });
 });

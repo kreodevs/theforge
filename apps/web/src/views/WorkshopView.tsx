@@ -402,6 +402,9 @@ export default function WorkshopView({
   const loading = useWorkshopStore((s) => s.loading);
   const loadingReason = useWorkshopStore((s) => s.loadingReason);
   const cascadeRunning = loading && (loadingReason === "deliverables-cascade" || loadingReason === "legacy-deliverables");
+  const mddBackgroundJob =
+    loading &&
+    (loadingReason === "mdd" || loadingReason === "legacy-mdd" || loadingReason === "mdd-section");
   const agentGovernanceGenerating =
     loading &&
     (loadingReason === "agent-governance" ||
@@ -2306,14 +2309,19 @@ export default function WorkshopView({
         onOpenHelp={() => setShowHelpModal(true)}
       />
 
-      {(backgroundGenerationLabel || cascadeRunning) && (
+      {(backgroundGenerationLabel || cascadeRunning || mddBackgroundJob) && (
         <div className="shrink-0 border-b border-[color-mix(in_oklch,var(--primary)_35%,var(--border))] bg-[color-mix(in_oklch,var(--primary)_10%,transparent)] px-4 py-2">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0 flex-1 space-y-1">
               <p className="text-sm text-[color-mix(in_oklch,var(--primary)_80%,white)]">
                 {cascadeRunning
                   ? "Generación de entregables en curso…"
-                  : `${backgroundGenerationLabel ?? "Generación en curso…"} Puedes cerrar el navegador; al volver, recarga el proyecto para ver el resultado.`}
+                  : `${backgroundGenerationLabel ??
+                      (loadingReason === "mdd-section"
+                        ? "Regeneración de sección MDD en curso…"
+                        : loadingReason === "legacy-mdd" || loadingReason === "mdd"
+                          ? "Regeneración MDD en curso…"
+                          : "Generación en curso…")} Puedes cerrar el navegador; al volver, recarga el proyecto para ver el resultado.`}
               </p>
               {activeMddJob ? (
                 <p className="text-xs text-[color-mix(in_oklch,var(--primary)_65%,white)]">
