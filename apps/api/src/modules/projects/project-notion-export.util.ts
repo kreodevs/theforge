@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Project, Stage } from "@theforge/database";
+import { StageStatus } from "@theforge/database";
 import {
   buildNotionIndexHtml,
   buildProjectMetadataMarkdown,
@@ -124,8 +125,18 @@ export function buildNotionExportEntries(
       stage.handoffImportedAt?.toISOString() ?? "",
     ]);
 
+    // Pantallas vive en Project (no Stage); se exporta una sola vez en la etapa primaria.
+    const isPrimaryStageForUiScreens =
+      stage.workflowStatus === StageStatus.ACTIVE ||
+      (!stages.some((s) => s.workflowStatus === StageStatus.ACTIVE) && stage.ordinal === stages[0]?.ordinal);
+
     for (const doc of NOTION_STAGE_DOC_ENTRIES) {
-      let content = stageFieldValue(stage, doc.field)?.trim() ?? "";
+      let content =
+        doc.field === "uiScreensContent"
+          ? isPrimaryStageForUiScreens
+            ? projectFieldValue(project, "uiScreensContent")?.trim() ?? ""
+            : ""
+          : stageFieldValue(stage, doc.field)?.trim() ?? "";
       if (!content) continue;
 
       if (doc.field === "uiScreensContent") {

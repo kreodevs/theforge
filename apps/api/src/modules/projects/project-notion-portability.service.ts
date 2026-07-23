@@ -26,6 +26,7 @@ import {
   mapHandoffItemsWithStageIds,
   parseNotionImportZip,
   resolveImportedProjectName,
+  resolveImportedUiScreensContent,
   type ParsedNotionImportBundle,
 } from "./project-notion-import.util.js";
 
@@ -284,6 +285,8 @@ export class ProjectNotionPortabilityService {
           ];
 
     const stageExportToId = new Map<string, string>();
+    // Project-only column (not on Stage); ZIP may still ship Pantallas under stage folders.
+    const uiScreensContent = resolveImportedUiScreensContent(stagesInput);
 
     const created = await this.prisma.$transaction(async (tx) => {
       const project = await tx.project.create({
@@ -297,6 +300,7 @@ export class ProjectNotionPortabilityService {
           hasUxTeam: false,
           dbgaContent: bundle.projectDocs.dbgaContent ?? null,
           phase0SummaryContent: bundle.projectDocs.phase0SummaryContent ?? null,
+          uiScreensContent,
           integrationHandoff: jsonValue(emptyHandoffIfNeeded([])),
           stages: {
             create: stagesInput.map((stage, index) => {
@@ -349,7 +353,6 @@ export class ProjectNotionPortabilityService {
                 infraContent: stage.docs.infraContent ?? null,
                 agentGovernanceContent: stage.docs.agentGovernanceContent ?? null,
                 uxUiGuideContent: stage.docs.uxUiGuideContent ?? null,
-                uiScreensContent: stage.docs.uiScreensContent ?? null,
                 phase0SummaryContent: stage.docs.phase0SummaryContent ?? null,
                 aemContent: stage.docs.aemContent ?? null,
                 changeSpecContent: stage.docs.changeSpecContent ?? null,

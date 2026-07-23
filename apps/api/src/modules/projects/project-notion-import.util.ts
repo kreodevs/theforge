@@ -3,6 +3,7 @@ import {
   csvRowToRecord,
   emptyIntegrationHandoff,
   integrationHandoffItemSchema,
+  joinPantallasAndUiProject,
   NOTION_PORTABILITY_FORMAT,
   parseCsv,
   parseIntegrationHandoff,
@@ -280,6 +281,42 @@ export async function parseNotionImportZip(zip: JSZip): Promise<ParsedNotionImpo
 
 export function resolveImportedProjectName(manifest: NotionPortabilityManifest, body: NotionImportBody): string {
   return body.name?.trim() || manifest.projectName || "Proyecto importado";
+}
+
+/**
+ * `uiScreensContent` es solo columna de Project (no Stage). El ZIP Notion lo guarda
+ * como página Pantallas (+ opcional `_assets/ui-project.json`) dentro de carpetas de etapa.
+ * Preferimos la etapa ACTIVE; si no hay, la de mayor ordinal con contenido.
+ */
+export function resolveImportedUiScreensContent(stages: ParsedNotionImportStage[]): string | null {
+  const withContent = stages
+    .map((stage) => {
+      const md = stage.docs.uiScreensContent?.trim() ?? "";
+      if (!md) return null;
+      const asset = stage.assets["ui-project.json"];
+      let json: string | null = null;
+      if (typeof asset === "string" && asset.trim()) {
+        json = asset.trim();
+      } else if (asset && typeof asset === "object") {
+        try {
+          json = JSON.stringify(asset, null, 2);
+        } catch {
+          json = null;
+        }
+      }
+      return {
+        stage,
+        content: joinPantallasAndUiProject(md, json),
+      };
+    })
+    .filter((row): row is { stage: ParsedNotionImportStage; content: string } => row != null && row.content.length > 0);
+
+  if (withContent.length === 0) return null;
+
+  const active = withContent.find((row) => row.stage.workflowStatus === "ACTIVE");
+  if (active) return active.content;
+
+  return [...withContent].sort((a, b) => b.stage.ordinal - a.stage.ordinal)[0]!.content;
 }
 
 export function emptyHandoffIfNeeded(rows: ParsedNotionHandoffRow[]): { items: IntegrationHandoffItem[] } {
