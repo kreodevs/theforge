@@ -137,16 +137,45 @@ export class ProjectGenerationGuardService {
 
   async getDashboardSummaries(projectIds: string[]): Promise<Record<string, ProjectGenerationDashboardSummary>> {
     const unique = [...new Set(projectIds.map((id) => id.trim()).filter(Boolean))];
-    const entries = await Promise.all(
-      unique.map(async (projectId) => {
+    const requested = new Set(unique);
+    const result: Record<string, ProjectGenerationDashboardSummary> = Object.fromEntries(
+      unique.map((id) => [id, { busy: false, label: null }]),
+    );
+    if (unique.length === 0) return result;
+
+    const [mddByProject, deliverablesByProject] = await Promise.all([
+      this.mddQueue.listActiveJobsGroupedByProject(),
+      this.deliverablesQueue.listActiveJobsGroupedByProject(),
+    ]);
+
+    const candidateIds = new Set<string>();
+    for (const pid of mddByProject.keys()) {
+      if (requested.has(pid)) candidateIds.add(pid);
+    }
+    for (const pid of deliverablesByProject.keys()) {
+      if (requested.has(pid)) candidateIds.add(pid);
+    }
+    for (const [, job] of this.bgJobs) {
+      if (
+        requested.has(job.projectId) &&
+        (job.status === "queued" || job.status === "active" || job.status === "retrying")
+      ) {
+        candidateIds.add(job.projectId);
+      }
+    }
+    for (const pid of unique) {
+      if (this.isMddStreamActive(pid) || this.mddQueue.isProjectBusy(pid)) {
+        candidateIds.add(pid);
+      }
+    }
+
+    await Promise.all(
+      [...candidateIds].map(async (projectId) => {
         const status = await this.getLightStatus(projectId);
-        return [
-          projectId,
-          { busy: status.busy, label: activeGenerationLabel(status) },
-        ] as const;
+        result[projectId] = { busy: status.busy, label: activeGenerationLabel(status) };
       }),
     );
-    return Object.fromEntries(entries);
+    return result;
   }
 
   private async buildLightStatus(projectId: string): Promise<{

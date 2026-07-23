@@ -261,7 +261,14 @@ export class ProjectsController {
   }
 
   @Get(":id/generation-status")
-  async generationStatus(@Param("id") id: string, @Query("stageId") stageId?: string) {
+  async generationStatus(
+    @Param("id") id: string,
+    @Query("stageId") stageId?: string,
+    @Query("light") light?: string,
+  ) {
+    if (light === "1" || light === "true") {
+      return this.generationGuard.getLightStatus(id);
+    }
     const status = await this.generationGuard.getStatus(id, stageId?.trim() || undefined);
     const { complexity: _c, contentReady: _r, ...publicStatus } = status;
     return publicStatus;

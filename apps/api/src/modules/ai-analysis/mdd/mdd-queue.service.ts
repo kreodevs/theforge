@@ -125,6 +125,8 @@ type InMemoryMddJobRecord = {
   finishedAt?: number;
 };
 
+type MddActiveJobRef = { jobId: string; mode: MddJobMode; status: "queued" | "active" };
+
 @Injectable()
 export class MddQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MddQueueService.name);
@@ -162,10 +164,37 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
     return false;
   }
 
-  async listActiveJobsForProject(
-    projectId: string,
-  ): Promise<Array<{ jobId: string; mode: MddJobMode; status: "queued" | "active" }>> {
-    const out: Array<{ jobId: string; mode: MddJobMode; status: "queued" | "active" }> = [];
+  /** Escaneo único de cola (dashboard / resumen batch). */
+  async listActiveJobsGroupedByProject(): Promise<Map<string, MddActiveJobRef[]>> {
+    const map = new Map<string, MddActiveJobRef[]>();
+    const push = (projectId: string, entry: MddActiveJobRef) => {
+      const list = map.get(projectId) ?? [];
+      list.push(entry);
+      map.set(projectId, list);
+    };
+    for (const [jobId, mem] of this.inMemoryJobs) {
+      if (mem.status !== "queued" && mem.status !== "active") continue;
+      push(mem.data.projectId, { jobId, mode: mem.data.mode, status: mem.status });
+    }
+    if (!this.queue) return map;
+    const states = ["waiting", "active", "delayed"] as const;
+    for (const state of states) {
+      const jobs = await this.queue.getJobs([state], 0, 100);
+      for (const job of jobs) {
+        const data = job.data as MddJobData | undefined;
+        if (!data?.projectId) continue;
+        push(data.projectId, {
+          jobId: String(job.id),
+          mode: data.mode,
+          status: state === "active" ? "active" : "queued",
+        });
+      }
+    }
+    return map;
+  }
+
+  async listActiveJobsForProject(projectId: string): Promise<MddActiveJobRef[]> {
+    const out: MddActiveJobRef[] = [];
     for (const [jobId, mem] of this.inMemoryJobs) {
       if (mem.data.projectId !== projectId) continue;
       if (mem.status === "queued" || mem.status === "active") {
