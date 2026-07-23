@@ -1,6 +1,7 @@
 import type { ComplexityLevel } from "./project.js";
 import type { MddJobProgressStep } from "./mdd-job-progress.js";
 import type { MddUpstreamSyncAnalysis } from "./mdd-upstream-sync.js";
+import type { SddGraphSyncStatus } from "./sdd-graph-sync.js";
 import {
   DELIVERABLE_PROJECT_CONTENT_FIELD,
   DELIVERABLE_WAVES_BY_COMPLEXITY,
@@ -148,6 +149,8 @@ export type ProjectGenerationStatus = {
   gates: Partial<Record<GenerationJobType, GenerationGateEntry>>;
   /** Cambios upstream pendientes de reflejar en el MDD (si hay MDD y baseline). */
   mddUpstreamSync?: MddUpstreamSyncStatus | null;
+  /** Estado del grafo SDD (FalkorDB) vs §3/§4 del MDD de la etapa. */
+  sddGraph?: SddGraphSyncStatus | null;
 };
 
 /** Resumen ligero para el panel de proyectos (sin gates ni upstream sync). */

@@ -87,3 +87,4 @@ export * from "./system-config.js";
 export * from "./readiness-audit.util.js";
 export * from "./external-integration-registry.js";
 export * from "./mdd-cascade-delta.util.js";
+export * from "./sdd-graph-sync.js";
