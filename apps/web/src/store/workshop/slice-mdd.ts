@@ -85,6 +85,9 @@ export const createMddSlice: StateCreator<WorkshopState, [], [], MddSliceActions
               void get().fetchProject(pid, { preferServerMdd: true });
             }
           },
+          onEnqueued: () => {
+            void get().fetchGenerationStatus(pid);
+          },
         },
       );
       set({ mddJustGeneratedFromBenchmark: true, error: null });
@@ -165,6 +168,9 @@ export const createMddSlice: StateCreator<WorkshopState, [], [], MddSliceActions
             if (ev.phase === "persisted" || ev.phase === "draft") {
               void get().fetchProject(pid, { preferServerMdd: true });
             }
+          },
+          onEnqueued: () => {
+            void get().fetchGenerationStatus(pid, stageId);
           },
         },
       );

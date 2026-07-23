@@ -386,6 +386,9 @@ export const createLegacyDebugSlice: StateCreator<
             });
           }
         },
+        onEnqueued: () => {
+          void get().fetchGenerationStatus(pid);
+        },
       });
       if (jobStatus.result?.outcome === "interrupt" && jobStatus.result.threadId) {
         set({ managerThreadId: jobStatus.result.threadId });

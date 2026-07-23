@@ -50,6 +50,13 @@ export type MddJobStatusResponse = {
 export type PollMddJobOptions = {
   onProgress?: (progress: MddJobStatusResponse["progress"]) => void;
   signal?: AbortSignal;
+  /**
+   * Dispara justo después de que el POST a `/ai-analysis/mdd/jobs` devuelve
+   * un `jobId` válido (es decir, cuando el job ya está encolado en el servidor).
+   * Útil para refrescar `generationStatus` y arrancar el polling del banner
+   * "Puedes cerrar el navegador" sin esperar a que termine el job.
+   */
+  onEnqueued?: (jobId: string) => void;
 };
 
 /**
@@ -119,6 +126,7 @@ export async function enqueueAndPollMddJob(
   if (!data.queued || !data.jobId) {
     throw new Error("Respuesta inesperada al encolar MDD");
   }
+  options?.onEnqueued?.(data.jobId);
   return pollMddJob(data.jobId, projectId, options);
 }
 
@@ -144,6 +152,7 @@ export async function enqueueAndPollLegacyMdd(
   }
   const data = (await r.json()) as { queued?: boolean; jobId?: string; ok?: boolean };
   if (data.queued && data.jobId) {
+    options?.onEnqueued?.(data.jobId);
     return pollMddJob(data.jobId, projectId, options);
   }
   return { status: "completed", result: { ok: data.ok ?? true, outcome: "done" } };

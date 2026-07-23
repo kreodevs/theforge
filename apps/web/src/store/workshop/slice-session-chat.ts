@@ -630,6 +630,9 @@ export const createSessionChatSlice: StateCreator<WorkshopState, [], [], Session
             onProgress: (p) => {
               patchAgentProgressFromMddEvent(set, p);
             },
+            onEnqueued: () => {
+              void get().fetchGenerationStatus(requestProjectId);
+            },
           },
         );
         if (!shouldApplyWorkshopUpdate(get, requestProjectId)) return;
