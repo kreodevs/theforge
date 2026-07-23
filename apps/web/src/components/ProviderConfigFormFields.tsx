@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { ExternalLink, Eye, EyeOff } from "lucide-react";
+import { highMddTopModelCostHintEs } from "@theforge/business-rules";
 import { Input } from "./ui";
 import { cn } from "@/lib/utils";
 import type { ProviderCatalogEntry } from "@/types/user-providers";
@@ -242,6 +243,26 @@ export function ProviderConfigFormFields({
           placeholder="p. ej. anthropic/claude-opus-4"
           aria-invalid={!!showError("auditorChatModel")}
           className={cn("font-mono text-xs", inputErrorClass("auditorChatModel"))}
+        />
+      </FormField>
+
+      <FormField
+        id={`${idPrefix}-high-complexity-model`}
+        label="Modelo top MDD HIGH (opcional)"
+        hint={highMddTopModelCostHintEs()}
+        error={showError("highComplexityChatModel")}
+      >
+        <Input
+          id={`${idPrefix}-high-complexity-model`}
+          value={form.highComplexityChatModel}
+          onChange={(e) => {
+            onPatch({ highComplexityChatModel: e.target.value });
+            onClearFieldError("highComplexityChatModel");
+          }}
+          onBlur={() => onBlurField("highComplexityChatModel")}
+          placeholder="p. ej. anthropic/claude-opus-4"
+          aria-invalid={!!showError("highComplexityChatModel")}
+          className={cn("font-mono text-xs", inputErrorClass("highComplexityChatModel"))}
         />
       </FormField>
 

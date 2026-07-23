@@ -6,7 +6,8 @@ import { getSection6Or7Range } from "./mdd-sanitize.js";
 export const MAX_MDD_DELIVERY_GATE_ATTEMPTS = 3;
 
 /** Nodo del grafo al que el auto-loop redirige tras un fallo del gate.
- *  - "software_architect": re-genera §2/§3/§4/§5 (slice completo).
+ *  - "software_architect": re-genera §2/§3/§4/§5 (slice completo, LOW/MEDIUM).
+ *  - "stack_architect" | "data_model" | "api_contracts": pipeline HIGH acotado.
  *  - "integration": re-genera §6/§7 en paralelo.
  *  - "clarifier": re-pide alcance al usuario.
  *  - "section5": re-genera SOLO §5 (cuando el substance check falla
@@ -14,15 +15,27 @@ export const MAX_MDD_DELIVERY_GATE_ATTEMPTS = 3;
  *    CHANGELOG [Unreleased] → Added → "Dedicated §5 pass". */
 export type DeliveryGateFixTarget =
   | "software_architect"
+  | "stack_architect"
+  | "data_model"
+  | "api_contracts"
   | "integration"
   | "clarifier"
   | "section5";
 
+export type ResolveDeliveryGateFixTargetOptions = {
+  /** Pipeline HIGH §2→§3→§4: enruta al nodo acotado según blockers. */
+  splitArchitectPipeline?: boolean;
+};
+
 const SECTION5_BLOCKER_RE = /5\.\s*Lógica\s+y\s*Edge\s+Cases/i;
 const INTEGRATION_BLOCKER_RE =
   /§7|infraestructura|jwt|manifest|node:|microservicios|hashing_algorithm|jwks|api_prefix|tabla\s+outbox\b/i;
+const SECTION2_BLOCKER_RE =
+  /§2|2\.\s*arquitectura|stack\b|frontend|backend|orm\b/i;
 const SECTION3_BLOCKER_RE =
-  /§3|§4|sql|prosa inválida|create table|erdiagram|technicalmetadata|outbox-like|§6 menciona tabla|fences desbalanceados|tabla huérfana|json inválido/i;
+  /§3|sql|prosa inválida|create table|erdiagram|technicalmetadata|outbox-like|§6 menciona tabla|fences desbalanceados|tabla huérfana|json inválido|domain-auth-only|domain-entities|domain-dbga|modelo de datos/i;
+const SECTION4_BLOCKER_RE =
+  /§4|contratos de api|endpoints reales|request\/response|domain-section4/i;
 // §1 substance: el Clarifier debe re-pedir el alcance al usuario. §2 también
 // si falta el stack (heading ausente); pero §2 con heading presente y
 // body corto es un problema del Architect, no del Clarifier. Para distinguir,
@@ -37,7 +50,25 @@ const MISSING_SECTION7_BLOCKER_RE =
  *  clarifier (§1) o section5 (§5 sólo). Prioriza el match más específico:
  *  si el substance check sólo menciona §5, enruta a "section5" (más eficiente
  *  que re-correr software_architect). */
-export function resolveDeliveryGateFixTarget(blockers: string[]): DeliveryGateFixTarget {
+function resolveSplitArchitectFixTarget(items: string[]): DeliveryGateFixTarget {
+  let stackScore = 0;
+  let dataScore = 0;
+  let apiScore = 0;
+  for (const b of items) {
+    if (SECTION4_BLOCKER_RE.test(b)) apiScore++;
+    else if (SECTION3_BLOCKER_RE.test(b)) dataScore++;
+    else if (SECTION2_BLOCKER_RE.test(b)) stackScore++;
+  }
+  if (apiScore > 0 && apiScore >= dataScore && apiScore >= stackScore) return "api_contracts";
+  if (dataScore > 0 && dataScore >= stackScore) return "data_model";
+  if (stackScore > 0) return "stack_architect";
+  return "data_model";
+}
+
+export function resolveDeliveryGateFixTarget(
+  blockers: string[],
+  options?: ResolveDeliveryGateFixTargetOptions,
+): DeliveryGateFixTarget {
   const items = blockers.length > 0 ? blockers : [];
   const text = items.join(" ");
 
@@ -56,14 +87,23 @@ export function resolveDeliveryGateFixTarget(blockers: string[]): DeliveryGateFi
   let clarifierScore = 0;
   for (const b of items) {
     if (INTEGRATION_BLOCKER_RE.test(b)) integrationScore++;
-    if (SECTION3_BLOCKER_RE.test(b)) architectScore++;
+    if (SECTION3_BLOCKER_RE.test(b) || SECTION4_BLOCKER_RE.test(b) || SECTION2_BLOCKER_RE.test(b)) {
+      architectScore++;
+    }
     if (CLARIFIER_BLOCKER_RE.test(b)) clarifierScore++;
   }
   if (clarifierScore > 0 && clarifierScore >= architectScore && clarifierScore >= integrationScore) {
     return "clarifier";
   }
   if (integrationScore > architectScore) return "integration";
-  if (architectScore > integrationScore) return "software_architect";
+  if (architectScore > integrationScore) {
+    return options?.splitArchitectPipeline
+      ? resolveSplitArchitectFixTarget(items)
+      : "software_architect";
+  }
+  if (options?.splitArchitectPipeline && architectScore > 0) {
+    return resolveSplitArchitectFixTarget(items);
+  }
   return INTEGRATION_BLOCKER_RE.test(text) ? "integration" : "software_architect";
 }
 

@@ -59,6 +59,7 @@ export type MddJobProgress = {
   phase?: string;
   mddLength?: number;
   section?: number;
+  phaseGroup?: { current: number; total: number; label: string };
 };
 
 function pushMddJobProgress(
@@ -71,7 +72,12 @@ function pushMddJobProgress(
 
 function snapshotFromProgressState(state: MddJobProgressState): Pick<
   MddJobSnapshot,
-  "progressAgent" | "progressMessage" | "progressPhase" | "progressSteps" | "progressActive"
+  | "progressAgent"
+  | "progressMessage"
+  | "progressPhase"
+  | "progressSteps"
+  | "progressActive"
+  | "progressPhaseGroup"
 > {
   const active = state.active;
   const latest = state.latest;
@@ -81,6 +87,7 @@ function snapshotFromProgressState(state: MddJobProgressState): Pick<
     progressPhase: active ? "active" : latest?.phase,
     progressSteps: state.steps,
     progressActive: state.active,
+    progressPhaseGroup: state.phaseGroup ?? latest?.phaseGroup ?? null,
   };
 }
 

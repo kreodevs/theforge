@@ -35,6 +35,7 @@ const baseInstance = (
   chatModel: "gpt-4o-mini",
   chatModelFallbacks: [],
   auditorChatModel: null,
+  highComplexityChatModel: null,
   embeddingModel: null,
   embeddingDimension: null,
   sttModel: null,

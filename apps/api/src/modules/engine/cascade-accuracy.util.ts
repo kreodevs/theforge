@@ -400,9 +400,11 @@ export function domainDeliveryGateFindings(input: {
   dbgaMarkdown?: string | null;
   mddMarkdown: string;
   specMarkdown?: string | null;
+  complexity?: "LOW" | "MEDIUM" | "HIGH";
 }): { blockers: string[]; warnings: string[] } {
   const blockers: string[] = [];
   const warnings: string[] = [];
+  const isHigh = input.complexity === "HIGH";
   const mddEntities = extractEntities(
     extractSectionByNumber(input.mddMarkdown, 3) || input.mddMarkdown,
   );
@@ -424,13 +426,21 @@ export function domainDeliveryGateFindings(input: {
   if (businessSuggested.length >= 4 && inventory.capabilities.filter((c) => !c.isAuthRelated).length >= 3) {
     const missing = businessSuggested.filter((e) => !mddEntities.has(e));
     const coverage = (businessSuggested.length - missing.length) / businessSuggested.length;
-    if (coverage < 0.35) {
-      blockers.push(
-        `domain-entities-missing-vs-brd: cobertura de entidades de negocio en §3 = ${Math.round(coverage * 100)}% (faltan p.ej. ${missing.slice(0, 6).join(", ")}).`,
-      );
-    } else if (coverage < 0.7) {
+    const blockerThreshold = isHigh ? 0.25 : 0.35;
+    const warningThreshold = isHigh ? 0.55 : 0.7;
+    if (coverage < blockerThreshold) {
+      if (isHigh) {
+        warnings.push(
+          `[HIGH] Cobertura entidades de negocio en §3 = ${Math.round(coverage * 100)}% (objetivo ≥55%). Faltan: ${missing.slice(0, 8).join(", ")}`,
+        );
+      } else {
+        blockers.push(
+          `domain-entities-missing-vs-brd: cobertura de entidades de negocio en §3 = ${Math.round(coverage * 100)}% (faltan p.ej. ${missing.slice(0, 6).join(", ")}).`,
+        );
+      }
+    } else if (coverage < warningThreshold) {
       warnings.push(
-        `Cobertura entidades de negocio en §3 = ${Math.round(coverage * 100)}% (objetivo ≥70%). Faltan: ${missing.slice(0, 8).join(", ")}`,
+        `Cobertura entidades de negocio en §3 = ${Math.round(coverage * 100)}% (objetivo ≥${Math.round(warningThreshold * 100)}%). Faltan: ${missing.slice(0, 8).join(", ")}`,
       );
     }
   }
@@ -445,9 +455,16 @@ export function domainDeliveryGateFindings(input: {
   });
   for (const gap of invConf.gaps) {
     if (invConf.missingDbgaCoreInMdd.length > 0 && gap.includes("DBGA faltantes")) {
-      blockers.push(gap.replace(/^\[MDD §3\]\s*/, "domain-dbga-core-missing: "));
+      const msg = gap.replace(/^\[MDD §3\]\s*/, "domain-dbga-core-missing: ");
+      if (isHigh && invConf.missingDbgaCoreInMdd.length <= 3) {
+        warnings.push(msg);
+      } else {
+        blockers.push(msg);
+      }
     } else if (invConf.platformTablesWithoutJustification.length > 0) {
-      blockers.push(gap.replace(/^\[MDD §3\]\s*/, "domain-platform-orphan: "));
+      const msg = gap.replace(/^\[MDD §3\]\s*/, "domain-platform-orphan: ");
+      if (isHigh) warnings.push(msg);
+      else blockers.push(msg);
     } else {
       warnings.push(gap);
     }

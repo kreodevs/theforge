@@ -111,9 +111,17 @@ export function WorkshopAgentProgressPanel({
 
   const activeStep = items.find((p) => isAgentProgressActive(p));
   const completedSteps = items.filter((p) => !isAgentProgressActive(p));
-  const visibleCompleted =
-    completedSteps.length > 6 ? completedSteps.slice(-5) : completedSteps;
-  const hiddenCompletedCount = completedSteps.length - visibleCompleted.length;
+  const phaseHeading =
+    activeStep?.phaseGroup != null
+      ? `Fase ${activeStep.phaseGroup.current}/${activeStep.phaseGroup.total}: ${activeStep.phaseGroup.label}`
+      : null;
+  const usePhaseMode = phaseHeading != null;
+  const visibleCompleted = usePhaseMode
+    ? []
+    : completedSteps.length > 6
+      ? completedSteps.slice(-5)
+      : completedSteps;
+  const hiddenCompletedCount = usePhaseMode ? 0 : completedSteps.length - visibleCompleted.length;
 
   return (
     <div
@@ -128,6 +136,11 @@ export function WorkshopAgentProgressPanel({
       <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--foreground-subtle)]">
         {heading}
       </p>
+      {phaseHeading ? (
+        <p className="mb-2 text-sm font-semibold tracking-tight text-[color-mix(in_oklch,var(--primary)_88%,var(--foreground))]">
+          {phaseHeading}
+        </p>
+      ) : null}
       {items.length > 0 ? (
         <ul className="flex flex-col gap-2.5">
           {hiddenCompletedCount > 0 ? (
@@ -150,7 +163,7 @@ export function WorkshopAgentProgressPanel({
             <ProgressStepRow
               key={`active-${activeStep.agent}-${items.length - 1}`}
               item={activeStep}
-              label={agentDisplayLabel(items, items.indexOf(activeStep), true)}
+              label={usePhaseMode ? activeStep.message : agentDisplayLabel(items, items.indexOf(activeStep), true)}
             />
           ) : null}
           {loading && !activeStep ? (

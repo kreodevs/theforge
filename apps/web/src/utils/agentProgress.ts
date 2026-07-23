@@ -10,6 +10,7 @@ export type AgentProgressItem = {
   message: string;
   step?: string;
   status?: AgentProgressStatus;
+  phaseGroup?: { current: number; total: number; label: string };
 };
 
 export type { MddJobProgressStep };
@@ -19,7 +20,11 @@ export function agentProgressFromMddJobProgress(raw: unknown): AgentProgressItem
   const state = normalizeMddJobProgressState(raw);
   const items: AgentProgressItem[] = state.steps.map((s) => ({ ...s, status: "done" as const }));
   if (state.active) {
-    items.push({ ...state.active, status: "generando" as const });
+    items.push({
+      ...state.active,
+      status: "generando" as const,
+      ...(state.phaseGroup ? { phaseGroup: state.phaseGroup } : {}),
+    });
   }
   return items;
 }
@@ -27,10 +32,12 @@ export function agentProgressFromMddJobProgress(raw: unknown): AgentProgressItem
 export function agentProgressFromMddJobSnapshot(snapshot: {
   progressSteps?: MddJobProgressStep[];
   progressActive?: MddJobProgressStep | null;
+  progressPhaseGroup?: { current: number; total: number; label: string } | null;
 }): AgentProgressItem[] {
   return agentProgressFromMddJobProgress({
     steps: snapshot.progressSteps ?? [],
     active: snapshot.progressActive ?? null,
+    phaseGroup: snapshot.progressPhaseGroup ?? null,
   });
 }
 
@@ -124,14 +131,18 @@ function mergeDoneAgentProgressSteps(
 
 function setAgentProgressActiveStep(
   prev: readonly AgentProgressItem[],
-  active: { agent: string; message: string },
+  active: { agent: string; message: string; phaseGroup?: AgentProgressItem["phaseGroup"] },
 ): AgentProgressItem[] {
   const done = mergeDoneAgentProgressSteps(prev, []);
   const existingActive = prev.find(isAgentProgressActive);
+  const nextActive = {
+    ...active,
+    status: "generando" as const,
+  };
   if (existingActive && sameAgentProgressStep(existingActive, active)) {
-    return [...done, { ...active, status: "generando" as const }];
+    return [...done, nextActive];
   }
-  return [...done, { ...active, status: "generando" as const }];
+  return [...done, nextActive];
 }
 
 /**
@@ -161,8 +172,21 @@ export function mergeAgentProgressFromMddEvent(
   const ev = mddJobProgressEventFields(raw);
   if (!ev.agent || !ev.message) return [...prev];
 
+  const phaseGroup =
+    o.phaseGroup &&
+    typeof o.phaseGroup === "object" &&
+    typeof (o.phaseGroup as Record<string, unknown>).current === "number" &&
+    typeof (o.phaseGroup as Record<string, unknown>).total === "number" &&
+    typeof (o.phaseGroup as Record<string, unknown>).label === "string"
+      ? (o.phaseGroup as AgentProgressItem["phaseGroup"])
+      : undefined;
+
   if (ev.phase === "active") {
-    return setAgentProgressActiveStep(prev, { agent: ev.agent, message: ev.message });
+    return setAgentProgressActiveStep(prev, {
+      agent: ev.agent,
+      message: ev.message,
+      phaseGroup,
+    });
   }
 
   return appendAgentProgressDone(prev, { agent: ev.agent, message: ev.message });

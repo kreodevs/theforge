@@ -92,6 +92,7 @@ export const createLegacyDebugSlice: StateCreator<
           agentProgress: mergeAgentProgressFromMddEvent(s.agentProgress, {
             steps: mddJob.progressSteps ?? [],
             active: mddJob.progressActive ?? null,
+            phaseGroup: mddJob.progressPhaseGroup ?? null,
           }),
         }));
       }

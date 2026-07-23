@@ -516,11 +516,34 @@ export class UserProvidersService {
     return this.resolveRuntime(userId);
   }
 
+  /**
+   * Runtime para §3 (modelo de datos) en pipeline MDD HIGH.
+   * Usa `highComplexityChatModel` en la instancia activa; si no hay override, `resolveRuntime`.
+   */
+  async resolveHighComplexityRuntime(userId: string): Promise<UserLLMRuntime> {
+    const tenant = await this.resolveTenantInstanceForUser(userId);
+    if (tenant) return this.runtimeFromTenantInstanceForHighComplexity(userId, tenant);
+    return this.resolveRuntime(userId);
+  }
+
   private async runtimeFromTenantInstanceForAuditor(
     userId: string,
     instance: ProviderInstance,
   ): Promise<UserLLMRuntime> {
     const override = instance.auditorChatModel?.trim();
+    if (override) {
+      return this.runtimeFromTenantInstance(userId, instance, {
+        chatModelOverride: override,
+      });
+    }
+    return this.runtimeFromTenantInstance(userId, instance);
+  }
+
+  private async runtimeFromTenantInstanceForHighComplexity(
+    userId: string,
+    instance: ProviderInstance,
+  ): Promise<UserLLMRuntime> {
+    const override = instance.highComplexityChatModel?.trim();
     if (override) {
       return this.runtimeFromTenantInstance(userId, instance, {
         chatModelOverride: override,
@@ -815,6 +838,7 @@ export class UserProvidersService {
       chatModelFallbacks,
       allowedChatModels: instance.allowedChatModels,
       auditorChatModel: instance.auditorChatModel,
+      highComplexityChatModel: instance.highComplexityChatModel,
       extras,
     });
 

@@ -28,4 +28,10 @@ export {
   ROLE_LABELS_ES,
 } from "./team-delivery.js";
 export { parseInfraFixedHours } from "./infra-fixed-hours.js";
+export {
+  estimateHighMddPipelineTokens,
+  estimateHighMddTopModelCostMxn,
+  highMddTopModelCostHintEs,
+  HIGH_MDD_IA_REFERENCE,
+} from "./mdd-ia-cost-reference.js";
 export type { Status, TeamStructure } from "@theforge/shared-types";

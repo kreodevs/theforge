@@ -9,6 +9,7 @@ export interface UserProviderFormState {
   chatModel: string;
   chatModelFallbacks: string;
   auditorChatModel: string;
+  highComplexityChatModel: string;
   embeddingModel: string;
   sttModel: string;
   visionModel: string;
@@ -46,6 +47,7 @@ export function configFormFromInstance(
     chatModel: inst.chatModel,
     chatModelFallbacks: inst.chatModelFallbacks?.join(", ") ?? "",
     auditorChatModel: inst.auditorChatModel ?? "",
+    highComplexityChatModel: inst.highComplexityChatModel ?? "",
     embeddingModel: inst.embeddingModel ?? "",
     sttModel: inst.sttModel ?? "",
     visionModel: inst.visionModel ?? "",
@@ -64,6 +66,7 @@ export function configFormFromUserConfig(
     chatModel: cfg.chatModel || catalog.defaultChatModel,
     chatModelFallbacks: cfg.chatModelFallbacks?.join(", ") ?? "",
     auditorChatModel: "",
+    highComplexityChatModel: "",
     embeddingModel: cfg.embeddingModel ?? catalog.defaultEmbeddingModel ?? "",
     sttModel: cfg.sttModel ?? catalog.defaultSttModel ?? "",
     visionModel: cfg.visionModel ?? catalog.defaultVisionModel ?? "",
@@ -82,6 +85,7 @@ export function createEmptyUserProviderForm(
     chatModel: catalog.defaultChatModel,
     chatModelFallbacks: "",
     auditorChatModel: "",
+    highComplexityChatModel: "",
     embeddingModel: catalog.defaultEmbeddingModel ?? "",
     sttModel: catalog.defaultSttModel ?? "",
     visionModel: catalog.defaultVisionModel ?? "",
@@ -98,6 +102,7 @@ export type UserProviderFormFields =
   | "chatModel"
   | "chatModelFallbacks"
   | "auditorChatModel"
+  | "highComplexityChatModel"
   | "embeddingModel"
   | "sttModel"
   | "visionModel"
@@ -178,11 +183,21 @@ export function validateUserProviderForm(args: {
 
   if (form.auditorChatModel.trim() && form.auditorChatModel.trim().length < 2) {
     errors.auditorChatModel = "Indica un modelo auditor/planner válido";
-  } else if (
+  } else   if (
     form.auditorChatModel.trim() &&
     form.auditorChatModel.trim() === form.chatModel.trim()
   ) {
     errors.auditorChatModel =
+      "Si es el mismo que el de chat, déjalo vacío (se usará el modelo de chat)";
+  }
+
+  if (form.highComplexityChatModel.trim() && form.highComplexityChatModel.trim().length < 2) {
+    errors.highComplexityChatModel = "Indica un modelo top válido para MDD HIGH";
+  } else if (
+    form.highComplexityChatModel.trim() &&
+    form.highComplexityChatModel.trim() === form.chatModel.trim()
+  ) {
+    errors.highComplexityChatModel =
       "Si es el mismo que el de chat, déjalo vacío (se usará el modelo de chat)";
   }
 

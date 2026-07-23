@@ -34,6 +34,8 @@ export type MddJobSnapshot = {
   progressSteps?: MddJobProgressStep[];
   /** Paso en ejecución (presente continuo). */
   progressActive?: MddJobProgressStep | null;
+  /** Fase agregada pipeline HIGH (p. ej. «Fase 2/4: Modelo de datos»). */
+  progressPhaseGroup?: { current: number; total: number; label: string } | null;
 };
 
 /** Estado de sincronización incremental MDD ← DBGA/BRD/Benchmark. */

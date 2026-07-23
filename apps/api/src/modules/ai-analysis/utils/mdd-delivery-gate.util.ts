@@ -31,6 +31,8 @@ export type ValidateMddForDeliveryOptions = {
   brdMarkdown?: string | null;
   dbgaMarkdown?: string | null;
   specMarkdown?: string | null;
+  /** Relaja blockers de dominio/sustancia en proyectos HIGH (menos loops del gate). */
+  mddComplexity?: "LOW" | "MEDIUM" | "HIGH";
 };
 
 /** Títulos canónicos de las 7 secciones del MDD (ordenados). Usados para construir
@@ -123,6 +125,9 @@ export function validateMddForDelivery(
   const blockers: string[] = [];
   const warnings: string[] = [];
   let score = 100;
+  const isHigh = options?.mddComplexity === "HIGH";
+  const minSectionBodyLength = isHigh ? 150 : MIN_SECTION_BODY_LENGTH;
+  const minSection3BodyLength = isHigh ? 80 : MIN_SECTION3_BODY_LENGTH;
 
   const structure = validateMddStructure(trimmed);
   if (structure.missingSections.length > 0) {
@@ -147,7 +152,7 @@ export function validateMddForDelivery(
   const hasCrossReference = (body: string) => /Ver\s+§\d/i.test(body);
   for (const entry of CANONICAL_SECTION_TITLES) {
     const body = extractSectionBody(trimmed, entry.num);
-    const minLength = entry.num === 3 ? MIN_SECTION3_BODY_LENGTH : MIN_SECTION_BODY_LENGTH;
+    const minLength = entry.num === 3 ? minSection3BodyLength : minSectionBodyLength;
     if (body == null) {
       // Ya cubierto por `missingSections` arriba (heading ausente).
       continue;
@@ -245,6 +250,7 @@ export function validateMddForDelivery(
       dbgaMarkdown: options.dbgaMarkdown,
       mddMarkdown: trimmed,
       specMarkdown: options.specMarkdown,
+      complexity: options.mddComplexity,
     });
     blockers.push(...domain.blockers);
     warnings.push(...domain.warnings);

@@ -84,6 +84,7 @@ export interface ProviderInstanceSummary {
   chatModel: string;
   chatModelFallbacks: string[];
   auditorChatModel: string | null;
+  highComplexityChatModel: string | null;
   embeddingModel: string | null;
   embeddingDimension: number | null;
   sttModel: string | null;
@@ -109,6 +110,7 @@ export interface UpsertProviderInstanceBody {
   chatModel?: string;
   chatModelFallbacks?: string[];
   auditorChatModel?: string | null;
+  highComplexityChatModel?: string | null;
   embeddingModel?: string | null;
   embeddingDimension?: number | null;
   sttModel?: string | null;

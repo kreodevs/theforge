@@ -30,6 +30,7 @@ export interface UpsertProviderInstanceDto {
   chatModel?: string;
   chatModelFallbacks?: string[];
   auditorChatModel?: string | null;
+  highComplexityChatModel?: string | null;
   embeddingModel?: string | null;
   embeddingDimension?: number | null;
   sttModel?: string | null;
@@ -56,6 +57,7 @@ function mapInstanceRow(
     chatModel: string;
     chatModelFallbacks: string[];
     auditorChatModel: string | null;
+    highComplexityChatModel: string | null;
     embeddingModel: string | null;
     embeddingDimension: number | null;
     sttModel: string | null;
@@ -82,6 +84,7 @@ function mapInstanceRow(
     chatModel: row.chatModel,
     chatModelFallbacks: row.chatModelFallbacks,
     auditorChatModel: row.auditorChatModel,
+    highComplexityChatModel: row.highComplexityChatModel,
     embeddingModel: row.embeddingModel,
     embeddingDimension: row.embeddingDimension,
     sttModel: row.sttModel,
@@ -162,6 +165,7 @@ export class ProviderInstancesService {
         chatModel: true,
         chatModelFallbacks: true,
         auditorChatModel: true,
+        highComplexityChatModel: true,
         embeddingModel: true,
         embeddingDimension: true,
         sttModel: true,
@@ -226,6 +230,7 @@ export class ProviderInstancesService {
         chatModel: dto.chatModel,
         chatModelFallbacks: dto.chatModelFallbacks,
         auditorChatModel: dto.auditorChatModel,
+        highComplexityChatModel: dto.highComplexityChatModel,
         embeddingModel: dto.embeddingModel,
         embeddingDimension: dto.embeddingDimension,
         sttModel: dto.sttModel,
@@ -287,6 +292,7 @@ export class ProviderInstancesService {
       chatModel: string;
       chatModelFallbacks: string[];
       auditorChatModel: string | null;
+      highComplexityChatModel: string | null;
       embeddingModel: string | null;
       embeddingDimension: number | null;
       sttModel: string | null;
@@ -323,6 +329,10 @@ export class ProviderInstancesService {
       chatModelFallbacks: dto.chatModelFallbacks ?? existing?.chatModelFallbacks,
       auditorChatModel:
         dto.auditorChatModel !== undefined ? dto.auditorChatModel : existing?.auditorChatModel,
+      highComplexityChatModel:
+        dto.highComplexityChatModel !== undefined
+          ? dto.highComplexityChatModel
+          : existing?.highComplexityChatModel,
       embeddingModel:
         dto.embeddingModel !== undefined ? dto.embeddingModel : existing?.embeddingModel,
       embeddingDimension:
@@ -338,6 +348,7 @@ export class ProviderInstancesService {
         models.chatModel,
         ...models.chatModelFallbacks,
         ...(models.auditorChatModel ? [models.auditorChatModel] : []),
+        ...(models.highComplexityChatModel ? [models.highComplexityChatModel] : []),
       ]);
     }
     const extras = normalizeProviderExtras(providerType, dto.extras ?? (existing?.extras as Record<string, unknown>));

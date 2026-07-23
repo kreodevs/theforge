@@ -416,6 +416,7 @@ export function resolveInstanceChatModelWhitelist(instance: {
   chatModelFallbacks: string[];
   allowedChatModels: string[];
   auditorChatModel?: string | null;
+  highComplexityChatModel?: string | null;
   extras?: Record<string, unknown> | null;
 }): string[] {
   if (instance.allowedChatModels.length > 0) {
@@ -432,6 +433,9 @@ export function resolveInstanceChatModelWhitelist(instance: {
     instance.chatModel,
     ...fallbacks,
     ...(instance.auditorChatModel?.trim() ? [instance.auditorChatModel.trim()] : []),
+    ...(instance.highComplexityChatModel?.trim()
+      ? [instance.highComplexityChatModel.trim()]
+      : []),
   ].filter((m): m is string => typeof m === "string" && m.trim().length > 0);
   return [...new Set(configured)];
 }

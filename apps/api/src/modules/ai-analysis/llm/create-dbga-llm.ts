@@ -140,3 +140,16 @@ export async function createMddAuditorLLM(
   const runtime = await aiFactory.resolveAuditorRuntime(userId);
   return createDbgaLLMFromRuntime(runtime, { outputTokenPurpose: "auditor" });
 }
+
+/**
+ * LLM para §3 (modelo de datos) en pipeline HIGH: `highComplexityChatModel` opcional en la instancia;
+ * si no hay override, mismo runtime que chat estructural.
+ */
+export async function createMddHighComplexityLLM(
+  aiFactory: AIFactory,
+  userId: string,
+  opts?: CreateDbgaLLMOptions,
+): Promise<BaseChatModel> {
+  const runtime = await aiFactory.resolveHighComplexityRuntime(userId);
+  return createDbgaLLMFromRuntime(runtime, opts);
+}

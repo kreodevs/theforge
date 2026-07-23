@@ -55,4 +55,25 @@ describe("resolveDeliveryGateFixTarget (CHANGELOG [Unreleased] → Added → \"D
     ).toBe("software_architect");
     expect(resolveDeliveryGateFixTarget([])).toBe("software_architect");
   });
+
+  it("pipeline HIGH: §3 → data_model, §4 → api_contracts, §2 → stack_architect", () => {
+    expect(
+      resolveDeliveryGateFixTarget(
+        ["Sección 3. Modelo de Datos tiene contenido insuficiente (5 chars; mínimo 100)."],
+        { splitArchitectPipeline: true },
+      ),
+    ).toBe("data_model");
+    expect(
+      resolveDeliveryGateFixTarget(
+        ["§4 Contratos de API no tiene endpoints reales con request/response JSON"],
+        { splitArchitectPipeline: true },
+      ),
+    ).toBe("api_contracts");
+    expect(
+      resolveDeliveryGateFixTarget(
+        ["Sección 2. Arquitectura y Stack tiene contenido insuficiente (50 chars; mínimo 200)."],
+        { splitArchitectPipeline: true },
+      ),
+    ).toBe("stack_architect");
+  });
 });

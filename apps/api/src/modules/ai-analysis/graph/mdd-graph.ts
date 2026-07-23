@@ -31,7 +31,7 @@ import { draftHasSubstantialSections6And7 } from "../utils/mdd-delivery-gate-loo
 import { mddStateHasDomainAuthSkew } from "../utils/mdd-domain-prompt.util.js";
 import { GraphMemoryService } from "../graph-memory/graph-memory.service.js";
 import { detectSection3CompositionBlockers } from "../utils/schema-owner.util.js";
-import { createDbgaLLM, createMddAuditorLLM } from "../llm/create-dbga-llm.js";
+import { createDbgaLLM, createMddAuditorLLM, createMddHighComplexityLLM } from "../llm/create-dbga-llm.js";
 import type { AIFactory } from "../../ai/ai.factory.js";
 import { getMddAuditorTools, getMddArchitectTools } from "../tools/tool-registry.js";
 import type { TheForgeService } from "../../theforge/theforge.service.js";
@@ -144,6 +144,9 @@ export async function createMddGraph(
   // LLM estructural (temp baja) para architect/security/integration → decisiones de diseño
   // reproducibles (stack, modelo de datos, aprobación dual) entre generaciones.
   const structuralLlm = await createDbgaLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
+  const highComplexityLlm = await createMddHighComplexityLLM(aiFactory, userId, {
+    temperature: STRUCTURAL_TEMPERATURE,
+  });
   const auditorLlm = await createMddAuditorLLM(aiFactory, userId);
   const nodeCache = options?.nodeCache ?? null;
   const onNodeStart = options?.onNodeStart;
@@ -179,7 +182,7 @@ export async function createMddGraph(
   const dataModelNode = createScopedArchitectNode(
     "data_model",
     "data_model",
-    structuralLlm,
+    highComplexityLlm,
     getMddArchitectTools(),
     options,
     nodeCache,
@@ -288,6 +291,9 @@ export async function createMddGraph(
       if (state.deliveryGateFixTarget === "integration") return "integration";
       if (state.deliveryGateFixTarget === "clarifier") return "clarifier";
       if (state.deliveryGateFixTarget === "section5") return "section5";
+      if (state.deliveryGateFixTarget === "stack_architect") return "stack_architect";
+      if (state.deliveryGateFixTarget === "data_model") return "data_model";
+      if (state.deliveryGateFixTarget === "api_contracts") return "api_contracts";
       return "software_architect";
     }
     return "graph_populator";
@@ -408,6 +414,9 @@ export async function createMddGraph(
     })
     .addConditionalEdges("prepare_output", routeAfterPrepareOutput, {
       software_architect: "software_architect",
+      stack_architect: "stack_architect",
+      data_model: "data_model",
+      api_contracts: "api_contracts",
       integration: "integration",
       clarifier: "clarifier",
       section5: "section5",
@@ -437,6 +446,9 @@ export async function createMddGraphWithManager(
   const llm = await createDbgaLLM(aiFactory, userId);
   // LLM estructural (temp baja) para architect/security/integration → reproducibilidad de diseño.
   const structuralLlm = await createDbgaLLM(aiFactory, userId, { temperature: STRUCTURAL_TEMPERATURE });
+  const highComplexityLlm = await createMddHighComplexityLLM(aiFactory, userId, {
+    temperature: STRUCTURAL_TEMPERATURE,
+  });
   const auditorLlm = await createMddAuditorLLM(aiFactory, userId);
   const nodeCache = compileOptions?.nodeCache ?? null;
   const managerNode = createMddManagerNode(llm, graphMemory, precisionCalculator, managerToolDeps ?? null);
@@ -467,7 +479,7 @@ export async function createMddGraphWithManager(
     nodeCache,
     "data_model",
     softwareArchitectInput,
-    createMddSoftwareArchitectNode(structuralLlm, getMddArchitectTools(), {
+    createMddSoftwareArchitectNode(highComplexityLlm, getMddArchitectTools(), {
       theforge: theForgeForArchitect,
       uiMcpFrontendLibraryLabel: compileOptions?.uiMcpFrontendLibraryLabel ?? null,
       scope: "data_model",
@@ -541,6 +553,9 @@ export async function createMddGraphWithManager(
       if (state.deliveryGateFixTarget === "integration") return "integration";
       if (state.deliveryGateFixTarget === "clarifier") return "clarifier";
       if (state.deliveryGateFixTarget === "section5") return "section5";
+      if (state.deliveryGateFixTarget === "stack_architect") return "stack_architect";
+      if (state.deliveryGateFixTarget === "data_model") return "data_model";
+      if (state.deliveryGateFixTarget === "api_contracts") return "api_contracts";
       return "software_architect";
     }
     return "graph_populator";
@@ -859,6 +874,9 @@ export async function createMddGraphWithManager(
     .addConditionalEdges("prepare_output", routeAfterPrepareOutput, {
       executor: "executor",
       software_architect: "software_architect",
+      stack_architect: "stack_architect",
+      data_model: "data_model",
+      api_contracts: "api_contracts",
       integration: "integration",
       clarifier: "clarifier",
       section5: "section5",

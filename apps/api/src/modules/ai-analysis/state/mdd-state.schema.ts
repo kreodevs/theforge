@@ -157,7 +157,17 @@ export const mddStateSchema = z.object({
     })
     .optional(),
   deliveryGateLoopActive: z.boolean().optional(),
-  deliveryGateFixTarget: z.enum(["software_architect", "integration", "clarifier", "section5"]).optional(),
+  deliveryGateFixTarget: z
+    .enum([
+      "software_architect",
+      "stack_architect",
+      "data_model",
+      "api_contracts",
+      "integration",
+      "clarifier",
+      "section5",
+    ])
+    .optional(),
 });
 
 export type MDDState = z.infer<typeof mddStateSchema>;

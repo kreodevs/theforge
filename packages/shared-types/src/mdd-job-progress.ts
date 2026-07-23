@@ -11,6 +11,12 @@ export type MddJobProgressPatch = {
   phase?: string;
   mddLength?: number;
   section?: number;
+  /** Fase agregada del pipeline MDD HIGH (UI: «Fase 2/4: Modelo de datos»). */
+  phaseGroup?: {
+    current: number;
+    total: number;
+    label: string;
+  };
 };
 
 /** Estado acumulado de progreso de un job MDD (polling / generation-status). */
@@ -18,10 +24,11 @@ export type MddJobProgressState = {
   latest?: MddJobProgressPatch;
   steps: MddJobProgressStep[];
   active: MddJobProgressStep | null;
+  phaseGroup?: MddJobProgressPatch["phaseGroup"] | null;
 };
 
 export function createEmptyMddJobProgressState(): MddJobProgressState {
-  return { steps: [], active: null };
+  return { steps: [], active: null, phaseGroup: null };
 }
 
 function isProgressStep(value: unknown): value is MddJobProgressStep {
@@ -39,9 +46,18 @@ export function normalizeMddJobProgressState(raw: unknown): MddJobProgressState 
   if (Array.isArray(o.steps)) {
     const steps = o.steps.filter(isProgressStep);
     const active = isProgressStep(o.active) ? o.active : null;
+    const phaseGroup =
+      o.phaseGroup &&
+      typeof o.phaseGroup === "object" &&
+      typeof (o.phaseGroup as Record<string, unknown>).current === "number" &&
+      typeof (o.phaseGroup as Record<string, unknown>).total === "number" &&
+      typeof (o.phaseGroup as Record<string, unknown>).label === "string"
+        ? (o.phaseGroup as MddJobProgressPatch["phaseGroup"])
+        : null;
     return {
       steps,
       active,
+      phaseGroup,
       latest:
         o.latest && typeof o.latest === "object" && !Array.isArray(o.latest)
           ? (o.latest as MddJobProgressPatch)
@@ -63,7 +79,11 @@ export function applyMddJobProgress(
   state: MddJobProgressState,
   patch: MddJobProgressPatch,
 ): MddJobProgressState {
-  const next: MddJobProgressState = { ...state, latest: patch };
+  const next: MddJobProgressState = {
+    ...state,
+    latest: patch,
+    ...(patch.phaseGroup ? { phaseGroup: patch.phaseGroup } : {}),
+  };
 
   if (patch.phase === "active" && patch.agent && patch.message) {
     return {

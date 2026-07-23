@@ -120,6 +120,7 @@ export function buildModelFields(
     chatModel?: string;
     chatModelFallbacks?: string[];
     auditorChatModel?: string | null;
+    highComplexityChatModel?: string | null;
     embeddingModel?: string | null;
     embeddingDimension?: number | null;
     sttModel?: string | null;
@@ -162,6 +163,12 @@ export function buildModelFields(
       ? null
       : auditorRaw.trim() || null;
 
+  const highComplexityRaw = dto.highComplexityChatModel;
+  const highComplexityChatModel =
+    highComplexityRaw === null || highComplexityRaw === undefined
+      ? null
+      : highComplexityRaw.trim() || null;
+
   let imageModel: string | null | undefined;
   if (dto.imageModel === undefined) {
     imageModel = undefined;
@@ -175,6 +182,7 @@ export function buildModelFields(
     chatModel,
     chatModelFallbacks,
     auditorChatModel,
+    highComplexityChatModel,
     embeddingModel,
     embeddingDimension,
     sttModel,

@@ -9,6 +9,7 @@ import {
   resolveDeliveryGateFixTarget,
   shouldContinueDeliveryGateLoop,
 } from "../utils/mdd-delivery-gate-loop.util.js";
+import { isHighSplitArchitectPipeline } from "../utils/mdd-architect-pipeline.util.js";
 import { resolveBrdFromMddState } from "../utils/mdd-domain-prompt.util.js";
 
 const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:PrepareOutput] ${msg}`, ...args);
@@ -33,7 +34,11 @@ export function createMddPrepareOutputNode(options?: { uiMcpLibraryLabel?: strin
     );
     const gate =
       gateRef.current ??
-      validateMddForDelivery(prepared, { brdMarkdown, dbgaMarkdown });
+      validateMddForDelivery(prepared, {
+        brdMarkdown,
+        dbgaMarkdown,
+        mddComplexity: state.mddComplexity,
+      });
     const attempt = state.deliveryGateAttempt ?? 0;
     const qualityPending = hasUnresolvedAutoRepairableGateWarnings(gate.warnings);
     const loop =
@@ -52,10 +57,13 @@ export function createMddPrepareOutputNode(options?: { uiMcpLibraryLabel?: strin
     );
 
     if (loop) {
-      const fixTarget = resolveDeliveryGateFixTarget([
-        ...gate.blockers,
-        ...gate.warnings.filter((w) => hasUnresolvedAutoRepairableGateWarnings([w])),
-      ]);
+      const fixTarget = resolveDeliveryGateFixTarget(
+        [
+          ...gate.blockers,
+          ...gate.warnings.filter((w) => hasUnresolvedAutoRepairableGateWarnings([w])),
+        ],
+        { splitArchitectPipeline: isHighSplitArchitectPipeline(state) },
+      );
       const agentFeedback = [
         formatDeliveryGateBlockersFeedback(gate.blockers),
         formatDeliveryGateQualityWarningsFeedback(gate.warnings),
