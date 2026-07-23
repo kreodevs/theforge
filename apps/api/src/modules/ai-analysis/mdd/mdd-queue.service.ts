@@ -221,16 +221,23 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
   /** Jobs MDD activos o en cola con progreso (para generation-status / UI). */
   async listJobsForProject(projectId: string): Promise<MddJobSnapshot[]> {
     const active = await this.listActiveJobsForProject(projectId);
-    const snapshots: MddJobSnapshot[] = [];
-    for (const job of active) {
-      const full = await this.getJobStatus(job.jobId);
-      const state = normalizeMddJobProgressState(full.progress);
-      snapshots.push({
-        jobId: job.jobId,
-        mode: job.mode,
-        status: job.status,
-        ...snapshotFromProgressState(state),
-      });
+    return this.buildJobSnapshotsForLabel(active);
+  }
+
+  /** Solo el job primario consulta progreso completo (dashboard / etiquetas). */
+  async buildJobSnapshotsForLabel(refs: MddActiveJobRef[]): Promise<MddJobSnapshot[]> {
+    if (refs.length === 0) return [];
+    const primary = refs.find((r) => r.status === "active") ?? refs[0]!;
+    const snapshots: MddJobSnapshot[] = refs.map((ref) => ({
+      jobId: ref.jobId,
+      mode: ref.mode,
+      status: ref.status,
+    }));
+    const full = await this.getJobStatus(primary.jobId);
+    const progress = snapshotFromProgressState(normalizeMddJobProgressState(full.progress));
+    const idx = snapshots.findIndex((s) => s.jobId === primary.jobId);
+    if (idx >= 0) {
+      snapshots[idx] = { ...snapshots[idx]!, ...progress };
     }
     return snapshots;
   }
