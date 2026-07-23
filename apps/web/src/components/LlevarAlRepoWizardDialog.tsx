@@ -85,12 +85,12 @@ export function LlevarAlRepoWizardDialog({
     }
     setBusy(true);
     try {
-      const ok = await downloadRepoHandoffFromApi(projectId, projectName);
-      if (ok) {
+      const result = await downloadRepoHandoffFromApi(projectId, projectName);
+      if (result.ok) {
         setStep("done");
         onSuccess?.("✅ ZIP repo-handoff descargado (spec-kit + gobernanza reconciliada)");
       } else {
-        onError?.("No se pudo generar el bundle de handoff.");
+        onError?.(result.error ?? "No se pudo generar el bundle de handoff.");
       }
     } finally {
       setBusy(false);
@@ -101,9 +101,9 @@ export function LlevarAlRepoWizardDialog({
     if (!projectId) return;
     setBusy(true);
     try {
-      const ok = await downloadSpecKitBundleFromApi(projectId, projectName);
-      if (ok) onSuccess?.("✅ Bundle spec-kit descargado");
-      else onError?.("No hay contenido MDD para exportar.");
+      const result = await downloadSpecKitBundleFromApi(projectId, projectName);
+      if (result.ok) onSuccess?.("✅ Bundle spec-kit descargado");
+      else onError?.(result.error ?? "No hay contenido MDD para exportar.");
     } finally {
       setBusy(false);
     }

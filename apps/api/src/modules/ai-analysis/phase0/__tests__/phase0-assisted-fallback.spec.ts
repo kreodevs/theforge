@@ -90,4 +90,23 @@ describe("heuristicBorradorFromFreeformDbga", () => {
     assert.equal(analyzeGaps(doc).some((g) => g.descripcion.includes("usuarios objetivo")), false);
     assert.equal(analyzeGaps(doc).some((g) => g.descripcion.includes("reglas de negocio")), false);
   });
+
+  it("extrae **Problema:** largo aunque el LLM devolviera borrador vacío", () => {
+    const md = `# Domain Benchmark & Gap Analysis (DBGA)
+
+## 1. Propósito y Alcance
+
+**Problema:** Automatizar la ejecución de operaciones bursátiles semanales replicando tesis de inversores líderes para obtener retornos superiores al mercado sin ajustes diarios.
+
+## 5. Reglas de Negocio
+
+- **R5.1** - Ventana semanal.
+`;
+    const doc = heuristicBorradorFromFreeformDbga(md);
+    assert.ok(doc.proposito.problema.length >= 10);
+    assert.equal(
+      analyzeGaps(doc).some((g) => g.descripcion.includes("problema principal")),
+      false,
+    );
+  });
 });

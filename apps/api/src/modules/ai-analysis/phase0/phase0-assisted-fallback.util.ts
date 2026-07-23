@@ -4,6 +4,7 @@
 
 import { analyzeGaps, filterResolvedGaps } from "./phase0-gap-analyzer.js";
 import { mergePhase0StringList } from "./phase0-normalize.util.js";
+import { refreshBorradorFromWorkingMarkdown } from "./phase0-load-borrador.util.js";
 import type { Phase0Gap, Phase0InterviewState } from "./phase0.types.js";
 import type { Phase0TemplateKind } from "./phase0-template-detect.util.js";
 
@@ -28,6 +29,40 @@ export function patchMarkdownUsuarios(markdown: string, answer: string): string 
     );
   }
   return `${markdown.trim()}\n\n**Usuarios objetivo:**\n${bullet}\n`;
+}
+
+export function patchMarkdownRoles(markdown: string, answer: string): string {
+  const ans = answer.trim();
+  if (!ans) return markdown;
+  const bullet = `- **Rol:** ${ans}`;
+  const patched = patchMarkdownBulletSection(
+    markdown,
+    /##\s+\d+\.\s*Roles/i,
+    bullet,
+  );
+  if (patched !== markdown) return patched;
+  const idx = markdown.search(/##\s+\d+\.\s*Roles/i);
+  if (idx < 0) {
+    return `${markdown.trim()}\n\n## 7. Roles y Permisos\n\n${bullet}\n`;
+  }
+  return patched;
+}
+
+export function patchMarkdownProblema(markdown: string, answer: string): string {
+  const ans = answer.trim();
+  if (!ans) return markdown;
+  if (/\*\*Problema:\*\*/i.test(markdown)) {
+    const existing = markdown.match(/\*\*Problema:\*\*\s*([\s\S]*?)(?=\n\s*\*\*|\n##\s|$)/i)?.[1]?.trim() ?? "";
+    if (existing.length >= 10) return markdown;
+  }
+  const propositoMatch = markdown.match(/(##\s*1\.\s*Prop[oó]sito[^\n]*\n)/i);
+  if (propositoMatch) {
+    return markdown.replace(
+      propositoMatch[0],
+      `${propositoMatch[0]}\n**Problema:** ${ans}\n`,
+    );
+  }
+  return `${markdown.trim()}\n\n**Problema:** ${ans}\n`;
 }
 
 export function patchMarkdownBulletSection(
@@ -98,7 +133,12 @@ export function applyAssistedAnswerLocalFallback(opts: {
         );
         cambios.push("proposito.outOfScope");
       } else if (gap?.descripcion.includes("problema principal")) {
-        state.borrador.proposito.problema = ans;
+        if ((state.borrador.proposito.problema?.trim().length ?? 0) < 10) {
+          state.borrador.proposito.problema = ans;
+        }
+        if (templateKind !== "structured" && state.workingMarkdown) {
+          state.workingMarkdown = patchMarkdownProblema(state.workingMarkdown, ans);
+        }
         cambios.push("proposito.problema");
       }
       break;
@@ -116,6 +156,9 @@ export function applyAssistedAnswerLocalFallback(opts: {
     case "roles":
       if (!state.borrador.roles.some((r) => r.rol.toLowerCase() === ans.toLowerCase())) {
         state.borrador.roles.push({ rol: ans, permisos: [] });
+      }
+      if (templateKind !== "structured" && state.workingMarkdown) {
+        state.workingMarkdown = patchMarkdownRoles(state.workingMarkdown, ans);
       }
       cambios.push("roles");
       break;
@@ -143,6 +186,10 @@ export function applyAssistedAnswerLocalFallback(opts: {
         cambios.push("proposito.usuarios");
       }
       break;
+  }
+
+  if (templateKind !== "structured" && state.workingMarkdown) {
+    state.borrador = refreshBorradorFromWorkingMarkdown(state.borrador, state.workingMarkdown);
   }
 
   state.gaps = filterResolvedGaps(

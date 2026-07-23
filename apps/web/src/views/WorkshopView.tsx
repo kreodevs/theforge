@@ -64,6 +64,7 @@ import {
   downloadWorkshopProjectZip,
 } from "../utils/downloadRepoHandoff";
 import {
+  downloadSpecKitBundle,
   downloadSpecKitBundleFromApi,
 } from "../utils/downloadSpecKitBundle";
 import {
@@ -1855,44 +1856,82 @@ export default function WorkshopView({
     ],
   );
 
+  const workshopSpecKitInput = useMemo(
+    () => {
+      const name = projectName ?? project?.name ?? "Workshop";
+      if (!effectiveMddTrimmed && !mddContent?.trim()) return null;
+      return {
+        projectName: name,
+        featureOrdinal: activeWorkshopStage?.ordinal ?? 1,
+        mddContent: effectiveMddTrimmed || mddContent || "",
+        specContent: specContent ?? project?.specContent,
+        blueprintContent: blueprintContent ?? project?.blueprintContent,
+        tasksContent: tasksContent ?? project?.tasksContent,
+        apiContractsContent: apiContractsContent ?? project?.apiContractsContent,
+        logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent,
+        infraContent: infraContent ?? project?.infraContent,
+        phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent,
+        dbgaContent: dbgaContent ?? project?.dbgaContent,
+        uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent,
+        uiScreensContent: uiScreensContent ?? project?.uiScreensContent,
+      };
+    },
+    [
+      projectName,
+      project?.name,
+      effectiveMddTrimmed,
+      mddContent,
+      activeWorkshopStage?.ordinal,
+      specContent,
+      project?.specContent,
+      blueprintContent,
+      project?.blueprintContent,
+      tasksContent,
+      project?.tasksContent,
+      apiContractsContent,
+      project?.apiContractsContent,
+      logicFlowsContent,
+      project?.logicFlowsContent,
+      infraContent,
+      project?.infraContent,
+      phase0SummaryContent,
+      project?.phase0SummaryContent,
+      dbgaContent,
+      project?.dbgaContent,
+      uxUiGuideContent,
+      project?.uxUiGuideContent,
+      uiScreensContent,
+      project?.uiScreensContent,
+    ],
+  );
+
   const handleDownloadProjectZip = useCallback(async () => {
     const name = projectName ?? project?.name ?? "Workshop";
-    const result = await downloadWorkshopProjectZip({
-      projectId,
-      projectName: name,
-      hasAgentGovernance,
-      documents: workshopDocumentsForZip,
-      governanceScaffold: agentGovernanceScaffold,
-      fetchGovernanceExport: fetchAgentGovernanceExport,
-      specKitInput: hasAgentGovernance
-        ? {
-            projectName: name,
-            featureOrdinal: activeWorkshopStage?.ordinal ?? 1,
-            mddContent: effectiveMddTrimmed || mddContent || "",
-            specContent: specContent ?? project?.specContent,
-            blueprintContent: blueprintContent ?? project?.blueprintContent,
-            tasksContent: tasksContent ?? project?.tasksContent,
-            apiContractsContent: apiContractsContent ?? project?.apiContractsContent,
-            logicFlowsContent: logicFlowsContent ?? project?.logicFlowsContent,
-            infraContent: infraContent ?? project?.infraContent,
-            phase0SummaryContent: phase0SummaryContent ?? project?.phase0SummaryContent,
-            dbgaContent: dbgaContent ?? project?.dbgaContent,
-            uxUiGuideContent: uxUiGuideContent ?? project?.uxUiGuideContent,
-            uiScreensContent: uiScreensContent ?? project?.uiScreensContent,
-          }
-        : null,
-    });
+    try {
+      const result = await downloadWorkshopProjectZip({
+        projectId,
+        projectName: name,
+        hasAgentGovernance,
+        documents: workshopDocumentsForZip,
+        governanceScaffold: agentGovernanceScaffold,
+        fetchGovernanceExport: fetchAgentGovernanceExport,
+        specKitInput: hasAgentGovernance ? workshopSpecKitInput : null,
+      });
 
-    if (result.ok) {
-      setError(null);
-      return;
+      if (result.ok) {
+        setError(null);
+        return;
+      }
+
+      setError(
+        result.error ??
+          (hasAgentGovernance
+            ? "No se pudo exportar el ZIP handoff (spec-kit + gobernanza)."
+            : "No hay documentos con contenido para descargar."),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al generar el ZIP de descarga.");
     }
-
-    setError(
-      hasAgentGovernance
-        ? "No se pudo exportar el ZIP handoff (spec-kit + gobernanza)."
-        : "No hay documentos con contenido para descargar.",
-    );
   }, [
     projectId,
     projectName,
@@ -1901,41 +1940,31 @@ export default function WorkshopView({
     workshopDocumentsForZip,
     agentGovernanceScaffold,
     fetchAgentGovernanceExport,
-    activeWorkshopStage?.ordinal,
-    effectiveMddTrimmed,
-    mddContent,
-    specContent,
-    project?.specContent,
-    blueprintContent,
-    project?.blueprintContent,
-    tasksContent,
-    project?.tasksContent,
-    apiContractsContent,
-    project?.apiContractsContent,
-    logicFlowsContent,
-    project?.logicFlowsContent,
-    infraContent,
-    project?.infraContent,
-    phase0SummaryContent,
-    project?.phase0SummaryContent,
-    dbgaContent,
-    project?.dbgaContent,
-    uxUiGuideContent,
-    project?.uxUiGuideContent,
-    uiScreensContent,
-    project?.uiScreensContent,
+    workshopSpecKitInput,
     setError,
   ]);
 
   const handleExportSdd = useCallback(async () => {
-    if (!projectId) return;
-    const ok = await downloadSpecKitBundleFromApi(
-      projectId,
-      projectName ?? project?.name ?? "Workshop",
-    );
-    if (ok) setError(null);
-    else setError("No hay contenido MDD para exportar bundle SDD.");
-  }, [projectId, projectName, project?.name, setError]);
+    if (!projectId || !workshopSpecKitInput) return;
+    const name = projectName ?? project?.name ?? "Workshop";
+    try {
+      const apiResult = await downloadSpecKitBundleFromApi(projectId, name);
+      if (apiResult.ok) {
+        setError(null);
+        return;
+      }
+
+      const localOk = await downloadSpecKitBundle(workshopSpecKitInput, name);
+      if (localOk) {
+        setError(null);
+        return;
+      }
+
+      setError(apiResult.error ?? "No hay contenido MDD para exportar bundle SDD.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al exportar bundle SDD.");
+    }
+  }, [projectId, projectName, project?.name, workshopSpecKitInput, setError]);
 
   const workshopModalsProps = useWorkshopModalsProps({
     projectId,

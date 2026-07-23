@@ -6,6 +6,8 @@ import {
 } from "@theforge/shared-types";
 import { apiFetch, API_BASE } from "./apiClient.js";
 import { loadJsZip } from "./loadJsZip.js";
+import { readApiErrorMessage } from "./readApiErrorMessage.js";
+import { triggerBrowserBlobDownload } from "./triggerBrowserBlobDownload.js";
 import { downloadAgentGovernanceZip } from "./downloadAgentGovernanceZip.js";
 import { downloadDocumentsZip, type DocumentsForZip } from "./downloadDocumentsZip.js";
 import { addSpecKitBundleToZip } from "./downloadSpecKitBundle.js";
@@ -18,6 +20,12 @@ import {
 } from "./downloadAgentGovernanceZip.js";
 
 export type WorkshopProjectZipKind = "repo-handoff" | "governance-fallback" | "documents" | "none";
+
+export interface DownloadWorkshopProjectZipResult {
+  ok: boolean;
+  kind: WorkshopProjectZipKind;
+  error?: string;
+}
 
 export interface DownloadWorkshopProjectZipOptions {
   projectId: string | null | undefined;
@@ -44,11 +52,23 @@ export interface RepoHandoffApiResponse {
 export async function downloadRepoHandoffFromApi(
   projectId: string,
   projectName: string,
-): Promise<boolean> {
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const r = await apiFetch(`${API_BASE}/projects/${projectId.trim()}/export/repo-handoff`);
-  if (!r.ok) return false;
-  const data = (await r.json()) as RepoHandoffApiResponse;
-  if (!data.specKitFiles?.length) return false;
+  if (!r.ok) {
+    return {
+      ok: false,
+      error: await readApiErrorMessage(r, "No se pudo exportar el ZIP handoff desde el servidor."),
+    };
+  }
+  let data: RepoHandoffApiResponse;
+  try {
+    data = (await r.json()) as RepoHandoffApiResponse;
+  } catch {
+    return { ok: false, error: "Respuesta inválida del servidor al exportar handoff." };
+  }
+  if (!data.specKitFiles?.length) {
+    return { ok: false, error: "El servidor no devolvió archivos spec-kit para el handoff." };
+  }
 
   const JSZip = await loadJsZip();
   const zip = new JSZip();
@@ -85,17 +105,8 @@ export async function downloadRepoHandoffFromApi(
   const blob = await zip.generateAsync({ type: "blob" });
   const safeName = (projectName || "workshop").replace(/[^\w\u00C0-\u024F\-]/gi, "-").slice(0, 80);
   const zipName = `${safeName}-repo-handoff.zip`;
-
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = zipName;
-  anchor.style.display = "none";
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
-  return true;
+  triggerBrowserBlobDownload(blob, zipName);
+  return { ok: true };
 }
 
 /**
@@ -104,12 +115,13 @@ export async function downloadRepoHandoffFromApi(
  */
 export async function downloadWorkshopProjectZip(
   options: DownloadWorkshopProjectZipOptions,
-): Promise<{ ok: boolean; kind: WorkshopProjectZipKind }> {
+): Promise<DownloadWorkshopProjectZipResult> {
   const pid = options.projectId?.trim();
   const name = options.projectName || "Workshop";
 
   if (pid && options.hasAgentGovernance) {
-    if (await downloadRepoHandoffFromApi(pid, name)) {
+    const apiResult = await downloadRepoHandoffFromApi(pid, name);
+    if (apiResult.ok) {
       return { ok: true, kind: "repo-handoff" };
     }
 
@@ -135,11 +147,15 @@ export async function downloadWorkshopProjectZip(
       }
     }
 
-    return { ok: false, kind: "none" };
+    return { ok: false, kind: "none", error: apiResult.error };
   }
 
   const docsOk = await downloadDocumentsZip(options.documents, name);
-  return { ok: docsOk, kind: docsOk ? "documents" : "none" };
+  return {
+    ok: docsOk,
+    kind: docsOk ? "documents" : "none",
+    error: docsOk ? undefined : "No hay documentos con contenido para descargar.",
+  };
 }
 
 export { AGENT_GOVERNANCE_ZIP_ROOT };

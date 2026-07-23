@@ -11,6 +11,7 @@ import {
   migrateGovernancePath,
 } from "@theforge/shared-types";
 import { loadJsZip } from "./loadJsZip.js";
+import { triggerBrowserBlobDownload } from "./triggerBrowserBlobDownload.js";
 
 export const AGENT_GOVERNANCE_ZIP_ROOT = "agent-governance";
 
@@ -199,15 +200,6 @@ export async function downloadAgentGovernanceZip(
   const safeName = (projectName || "workshop").replace(/[^\w\u00C0-\u024F\-]/gi, "-").slice(0, 80);
   const suffix = specKitBundle?.length ? "-implement-handoff" : "-agent-governance";
   const zipName = `${safeName}${suffix}.zip`;
-
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = zipName;
-  anchor.style.display = "none";
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
+  triggerBrowserBlobDownload(blob, zipName);
   return true;
 }

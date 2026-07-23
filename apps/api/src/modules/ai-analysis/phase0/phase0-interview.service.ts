@@ -39,6 +39,7 @@ import {
   heuristicBorradorFromFreeformDbga,
   isFreeformDbgaContent,
   loadProjectBorrador,
+  refreshBorradorFromWorkingMarkdown,
 } from "./phase0-load-borrador.util.js";
 import type {
   Phase0Document,
@@ -533,10 +534,11 @@ export class Phase0InterviewService {
     projectId: string,
     markdown: string,
   ): Promise<Phase0Document> {
+    const heuristic = heuristicBorradorFromFreeformDbga(markdown);
     const llm = await this.getUserLLM(projectId);
     if (!llm) {
       this.logger.warn(`[Phase0] extract DBGA: no LLM, using heuristic for ${projectId}`);
-      return heuristicBorradorFromFreeformDbga(markdown);
+      return heuristic;
     }
 
     try {
@@ -548,12 +550,14 @@ export class Phase0InterviewService {
         typeof response.content === "string" ? response.content : JSON.stringify(response.content);
       const parsed = parsePhase0LlmJson(content);
       const borrador = normalizePhase0Document(parsed.borrador ?? emptyPhase0Document());
-      if (hasBorradorContent(borrador)) return borrador;
+      if (hasBorradorContent(borrador)) {
+        return mergePhase0Borrador(heuristic, borrador);
+      }
     } catch (err) {
       this.logger.warn(`[Phase0] extract DBGA LLM failed for ${projectId}: ${err}`);
     }
 
-    return heuristicBorradorFromFreeformDbga(markdown);
+    return heuristic;
   }
 
   private async persistInterviewState(
@@ -742,6 +746,10 @@ export class Phase0InterviewService {
       cambios = updated.cambios;
     }
 
+    if (templateKind !== "structured") {
+      state.borrador = refreshBorradorFromWorkingMarkdown(state.borrador, state.workingMarkdown);
+    }
+
     state.gaps = filterResolvedGaps(
       mergeGaps(analyzeGaps(state.borrador), state.gaps),
       state.borrador,
@@ -924,9 +932,6 @@ export class Phase0InterviewService {
     } else if (detected.kind === "freeform_dbga") {
       markdownSource = dbgaContent?.trim() ?? "";
       borrador = await this.extractBorradorFromDbgaMarkdown(projectId, markdownSource);
-      if (!hasBorradorContent(borrador)) {
-        borrador = heuristicBorradorFromFreeformDbga(markdownSource);
-      }
     } else {
       markdownSource = dbgaContent?.trim() ?? "";
       borrador = parseBorradorFromProject(dbgaContent, phase0SummaryContent);

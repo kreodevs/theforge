@@ -9,5 +9,8 @@ Utilidades del Workshop y plugins.
 | `tasksGenerationPrerequisites.ts` | Prerrequisitos UI para **Generar Tasks** (MDD, Spec, Blueprint, API si §4, Pantallas si `hasUxTeam`; legacy relaja Spec). Alineado con `runTasksPreflightStrict`. |
 | `pluginApi.ts` | HTTP: artifacts, plugin-data, generación encolada, polling |
 | `pluginArtifactContent.ts` | Serialización editor ↔ payload según `contentType` |
+| `triggerBrowserBlobDownload.ts` | Descarga de blobs/ZIP: mantiene el object URL ~60s antes de revocarlo (ZIPs grandes del Workshop). |
+| `readApiErrorMessage.ts` | Mensajes legibles desde respuestas API fallidas (export SDD/handoff). |
+| `downloadSpecKitBundle.ts` / `downloadRepoHandoff.ts` | Export spec-kit y handoff (API + fallback cliente). |
 
 Ver `apps/web/src/components/PluginDocPanel.tsx`, `MddViewer.tsx` y `apps/web/src/store/workshopStore.ts`.

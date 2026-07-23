@@ -1,4 +1,5 @@
 import { API_BASE, apiFetch } from "./apiClient.js";
+import { triggerBrowserBlobDownload } from "./triggerBrowserBlobDownload.js";
 
 export async function downloadProjectNotionExport(projectId: string, projectName: string): Promise<boolean> {
   const id = projectId.trim();
@@ -12,15 +13,7 @@ export async function downloadProjectNotionExport(projectId: string, projectName
     match?.[1] ??
     `${(projectName || "proyecto").replace(/[^\w\u00C0-\u024F\-]/gi, "-").slice(0, 60)}-notion.zip`;
 
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.style.display = "none";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  triggerBrowserBlobDownload(blob, filename);
   return true;
 }
 

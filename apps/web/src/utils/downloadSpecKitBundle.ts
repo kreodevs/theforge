@@ -6,6 +6,8 @@ import {
 } from "@theforge/shared-types";
 import { apiFetch, API_BASE } from "./apiClient.js";
 import { loadJsZip } from "./loadJsZip.js";
+import { readApiErrorMessage } from "./readApiErrorMessage.js";
+import { triggerBrowserBlobDownload } from "./triggerBrowserBlobDownload.js";
 
 export type { SpecKitBundleInput };
 
@@ -34,16 +36,7 @@ export async function downloadSpecKitBundle(
   const blob = await zip.generateAsync({ type: "blob" });
   const safeName = (projectName || "workshop").replace(/[^\w\u00C0-\u024F\-]/gi, "-").slice(0, 80);
   const zipName = `${safeName}-sdd-spec-kit.zip`;
-
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = zipName;
-  anchor.style.display = "none";
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
+  triggerBrowserBlobDownload(blob, zipName);
   return true;
 }
 
@@ -51,11 +44,23 @@ export async function downloadSpecKitBundle(
 export async function downloadSpecKitBundleFromApi(
   projectId: string,
   projectName: string,
-): Promise<boolean> {
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const r = await apiFetch(`${API_BASE}/projects/${projectId.trim()}/export/sdd-bundle`);
-  if (!r.ok) return false;
-  const data = (await r.json()) as { files: SpecKitBundleFile[] };
-  if (!data.files?.length) return false;
+  if (!r.ok) {
+    return {
+      ok: false,
+      error: await readApiErrorMessage(r, "No se pudo exportar el bundle SDD desde el servidor."),
+    };
+  }
+  let data: { files?: SpecKitBundleFile[] };
+  try {
+    data = (await r.json()) as { files: SpecKitBundleFile[] };
+  } catch {
+    return { ok: false, error: "Respuesta inválida del servidor al exportar SDD." };
+  }
+  if (!data.files?.length) {
+    return { ok: false, error: "No hay contenido MDD para exportar bundle SDD." };
+  }
 
   const JSZip = await loadJsZip();
   const zip = new JSZip();
@@ -63,15 +68,6 @@ export async function downloadSpecKitBundleFromApi(
   const blob = await zip.generateAsync({ type: "blob" });
   const safeName = (projectName || "workshop").replace(/[^\w\u00C0-\u024F\-]/gi, "-").slice(0, 80);
   const zipName = `${safeName}-sdd-spec-kit.zip`;
-
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = zipName;
-  anchor.style.display = "none";
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
-  return true;
+  triggerBrowserBlobDownload(blob, zipName);
+  return { ok: true };
 }

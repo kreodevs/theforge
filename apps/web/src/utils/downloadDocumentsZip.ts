@@ -1,5 +1,6 @@
 import { exportPantallasMarkdownOnly, splitPantallasAndUiProject } from "@theforge/shared-types";
 import { loadJsZip } from "./loadJsZip.js";
+import { triggerBrowserBlobDownload } from "./triggerBrowserBlobDownload.js";
 
 export interface DocumentsForZip {
   dbgaContent: string | null;
@@ -66,15 +67,6 @@ export async function downloadDocumentsZip(
   const blob = await zip.generateAsync({ type: "blob" });
   const safeName = (projectName || "workshop").replace(/[^\w\u00C0-\u024F\-]/gi, "-").slice(0, 80);
   const zipName = `${safeName}-documentos.zip`;
-
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = zipName;
-  a.style.display = "none";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  triggerBrowserBlobDownload(blob, zipName);
   return true;
 }

@@ -112,6 +112,25 @@ export function heuristicBorradorFromFreeformDbga(markdown: string): Phase0Docum
       (h1 ?? "").replace(/^#+\s*/, "").trim() || markdown.slice(0, 400).trim();
   }
 
+  const problemaField = extractLabeledParagraph(markdown, "Problema");
+  if (problemaField.length >= 10) {
+    doc.proposito.problema = problemaField;
+  }
+
+  doc.proposito.usuarios = mergePhase0StringList(
+    doc.proposito.usuarios,
+    extractLabeledBulletList(markdown, "Usuarios objetivo"),
+  );
+
+  doc.proposito.outOfScope = mergePhase0StringList(
+    doc.proposito.outOfScope,
+    extractLabeledBulletList(markdown, "Fuera de alcance"),
+  );
+  doc.proposito.outOfScope = mergePhase0StringList(
+    doc.proposito.outOfScope,
+    extractBulletsUnderHeading(rawLines, /##\s+\d+\.\s*(?:Fuera de alcance|Alcance excluido|Out of scope)/i),
+  );
+
   doc.reglasNegocio = mergePhase0StringList(
     doc.reglasNegocio,
     extractBulletsUnderHeading(rawLines, /##\s+\d+\.\s*Reglas de Negocio/i),
@@ -124,6 +143,10 @@ export function heuristicBorradorFromFreeformDbga(markdown: string): Phase0Docum
     doc.edgeCases,
     extractBulletsUnderHeading(rawLines, /##\s+\d+\.\s*Edge Cases/i),
   );
+  doc.edgeCases = mergePhase0StringList(
+    doc.edgeCases,
+    extractBulletsUnderHeading(rawLines, /##\s+\d+\.\s*Supuestos/i),
+  );
 
   const flujos = extractFlowsUnderHeading(rawLines, /##\s+\d+\.\s*Flujos/i);
   if (flujos.length > 0) {
@@ -133,6 +156,16 @@ export function heuristicBorradorFromFreeformDbga(markdown: string): Phase0Docum
   const roles = extractRolesUnderHeading(rawLines, /##\s+\d+\.\s*Roles/i);
   if (roles.length > 0) {
     doc.roles = roles;
+  }
+
+  const riesgos = extractRiesgosTableUnderHeading(rawLines);
+  if (riesgos.length > 0) {
+    doc.riesgos = riesgos;
+  }
+
+  const uat = extractUatBulletsUnderHeading(rawLines);
+  if (uat.length > 0) {
+    doc.criteriosUAT = uat;
   }
 
   if (doc.entidades.length === 0) {
@@ -152,6 +185,88 @@ export function heuristicBorradorFromFreeformDbga(markdown: string): Phase0Docum
   }
 
   return normalizePhase0Document(doc);
+}
+
+/** Fusiona borrador persistido con el markdown vivo (modo asistido freeform / Deep Research). */
+export function refreshBorradorFromWorkingMarkdown(
+  current: Phase0Document,
+  workingMarkdown: string | null | undefined,
+): Phase0Document {
+  const md = workingMarkdown?.trim() ?? "";
+  if (!md) return current;
+  return mergePhase0Borrador(current, heuristicBorradorFromFreeformDbga(md));
+}
+
+function extractLabeledParagraph(markdown: string, label: string): string {
+  const re = new RegExp(
+    `\\*\\*${label}:\\*\\*\\s*([\\s\\S]*?)(?=\\n\\s*\\*\\*[A-Za-zÁÉÍÓÚáéíóúñÑ ]+:\\*\\*|\\n##\\s|\\n#\\s[^#]|$)`,
+    "i",
+  );
+  const m = markdown.match(re);
+  return m?.[1]?.replace(/\s+/g, " ").trim() ?? "";
+}
+
+function extractLabeledBulletList(markdown: string, label: string): string[] {
+  const re = new RegExp(`\\*\\*${label}:\\*\\*`, "i");
+  const idx = markdown.search(re);
+  if (idx < 0) return [];
+  const lines = markdown.slice(idx).split("\n").slice(1);
+  const out: string[] = [];
+  for (const line of lines) {
+    const t = line.trim();
+    if (/^\*\*[A-Za-zÁÉÍÓÚáéíóúñÑ ]+:\*\*/.test(t) || /^##\s/.test(t)) break;
+    if (t.startsWith("- ")) out.push(t.slice(2).trim());
+  }
+  return out;
+}
+
+function extractRiesgosTableUnderHeading(lines: string[]): NonNullable<Phase0Document["riesgos"]> {
+  const idx = lines.findIndex((l) => /##\s+\d+\.\s*Riesgos/i.test(l.trim()));
+  if (idx < 0) return [];
+  const riesgos: NonNullable<Phase0Document["riesgos"]> = [];
+  for (let i = idx + 1; i < lines.length; i++) {
+    const raw = lines[i]!.trim();
+    if (/^##\s+\d+\./.test(raw)) break;
+    if (!raw.startsWith("|") || raw.startsWith("| ---") || /ID\s*\|\s*Riesgo/i.test(raw)) continue;
+    const cells = raw
+      .slice(1, -1)
+      .split("|")
+      .map((c) => c.trim());
+    if (cells.length >= 2 && cells[0] && cells[1]) {
+      const impacto = (["Alto", "Medio", "Bajo"].includes(cells[2] ?? "")
+        ? cells[2]
+        : "Medio") as "Alto" | "Medio" | "Bajo";
+      const probabilidad = (["Alta", "Media", "Baja"].includes(cells[3] ?? "")
+        ? cells[3]
+        : "Media") as "Alta" | "Media" | "Baja";
+      riesgos.push({
+        id: cells[0],
+        nombre: cells[1],
+        impacto,
+        probabilidad,
+        mitigacion: cells[4] ?? "",
+      });
+    }
+  }
+  return riesgos;
+}
+
+function extractUatBulletsUnderHeading(lines: string[]): NonNullable<Phase0Document["criteriosUAT"]> {
+  const idx = lines.findIndex((l) =>
+    /##\s+\d+\.\s*Criterios de Aceptaci[oó]n/i.test(l.trim()),
+  );
+  if (idx < 0) return [];
+  const uat: NonNullable<Phase0Document["criteriosUAT"]> = [];
+  for (let i = idx + 1; i < lines.length; i++) {
+    const raw = lines[i]!.trim();
+    if (/^##\s+\d+\./.test(raw)) break;
+    const m = raw.match(/^-\s+\*\*(.+?):\*\*\s*(.+)$/);
+    if (m) uat.push({ id: m[1]!.trim(), descripcion: m[2]!.trim() });
+    else if (raw.startsWith("- ") && raw.length > 4) {
+      uat.push({ id: `UAT-${uat.length + 1}`, descripcion: raw.slice(2).trim() });
+    }
+  }
+  return uat;
 }
 
 function extractBulletsUnderHeading(lines: string[], headingRe: RegExp): string[] {
