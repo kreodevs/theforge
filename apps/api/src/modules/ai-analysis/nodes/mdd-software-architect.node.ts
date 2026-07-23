@@ -18,6 +18,7 @@ import {
   isContratosPlaceholder,
   isContratosSubstantial,
   isMddSectionPlaceholderBody,
+  isMddSectionPipelinePlaceholderBody,
   logMddNodeOutput,
   logSection3Debug,
   normalizeMddFormat,
@@ -29,6 +30,8 @@ import {
   sanitizeContextSection,
 } from "../utils/mdd-sanitize.js";
 import { getUserBrief, getUserExplicitRequirements } from "../utils/mdd-user-brief.js";
+import { isMddTailParallelEnabled } from "../utils/mdd-tail-parallel.config.js";
+import { ensureSection5TailParallelPlaceholder } from "../utils/mdd-tail-parallel.util.js";
 import {
   buildUserDeclaredStackPromptBlock,
   STACK_TECHNOLOGY_REGEX,
@@ -649,6 +652,12 @@ export function createMddSoftwareArchitectNode(
       if (stackBlock) {
         contextParts.unshift(stackBlock, "");
       }
+      if (isMddTailParallelEnabled() && !state.sectionsToRun?.length) {
+        contextParts.unshift(
+          "**Pasada paralela (sistema):** Genera **solo §2, §3 y §4** en esta pasada. Deja ## 5. Lógica y Edge Cases con el placeholder exacto `(Pendiente: paso dedicado Lógica y Edge Cases)`. Un agente dedicado redactará §5 en paralelo con Seguridad e Infraestructura. **No** elabores §5 aquí.",
+          "",
+        );
+      }
       contextParts.unshift(
         "**Prioridad (léelo primero):** Si en este mensaje aparece ACCIÓN REQUERIDA, Requisitos del usuario o STACK DECLARADO que piden cambios en §2 (Arquitectura y Stack), §3 o §4, esa instrucción tiene prioridad máxima sobre el borrador y el benchmark. Actualiza ## 2, ## 3 y/o ## 4 según corresponda e ignora cualquier instrucción de «no modifiques §3» cuando la directiva lo exija.",
         "",
@@ -904,6 +913,9 @@ export function createMddSoftwareArchitectNode(
       mddDraft = replaceContextWhenOnlyMetadata(mddDraft);
       mddDraft = ensureContratosSection(mddDraft);
       mddDraft = normalizeMddFormat(mddDraft);
+      if (isMddTailParallelEnabled() && !state.sectionsToRun?.length) {
+        mddDraft = ensureSection5TailParallelPlaceholder(mddDraft);
+      }
       // Preservar §6 y §7 del borrador de merge si el LLM los reemplazó con placeholders
       const incomingSection6 = extractSection6SeguridadBody(mergeBaseline);
       const currentSection6 = extractSection6SeguridadBody(mddDraft);
@@ -952,7 +964,16 @@ export function createMddSoftwareArchitectNode(
       const slice: Partial<MDDStateType["mddStructured"]> = {};
       if (modeloDatosParsed?.sql) slice.modeloDatos = modeloDatosParsed;
       if (section4Body) slice.contratosApi = { summary: section4Body };
-      if (section5Body) slice.logicaEdgeCases = section5Body;
+      if (
+        section5Body &&
+        !(
+          isMddTailParallelEnabled() &&
+          !state.sectionsToRun?.length &&
+          isMddSectionPipelinePlaceholderBody(section5Body)
+        )
+      ) {
+        slice.logicaEdgeCases = section5Body;
+      }
       const internalDirectives = extractInternalDirectives(text, "software_architect");
       const meshUpdate = internalDirectives.length > 0 ? { internalDirectives } : {};
 

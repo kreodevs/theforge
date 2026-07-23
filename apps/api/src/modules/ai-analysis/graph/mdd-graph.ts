@@ -10,6 +10,8 @@ import { createMddDiagramInjectorNode } from "../nodes/mdd-diagram-injector.node
 import { createMddSecurityNode } from "../nodes/mdd-security.node.js";
 import { createMddIntegrationNode } from "../nodes/mdd-integration.node.js";
 import { createMddSection5Node } from "../nodes/mdd-section5.node.js";
+import { createMddTailParallelNode } from "../nodes/mdd-tail-parallel.node.js";
+import { isMddTailParallelEnabled } from "../utils/mdd-tail-parallel.config.js";
 import { createMddSecurityIntegrationNode } from "../nodes/mdd-security-integration.node.js";
 // `createMddLlmFormatterNode` import ELIMINADO: el nodo llm_formatter fue
 // removido del grafo por ser destructivo. El factory se conserva en
@@ -216,6 +218,16 @@ export async function createMddGraph(
     wrapCache(nodeCache, "section5", section5Input, createMddSection5Node(llm)),
     onNodeStart,
   );
+  const tailParallelNode = wrapNodeStart(
+    "tail_parallel",
+    wrapCache(
+      nodeCache,
+      "tail_parallel",
+      (s) => ({ mddDraft: s.mddDraft ?? "", dbgaContent: s.dbgaContent ?? "" }),
+      createMddTailParallelNode(llm, structuralLlm),
+    ),
+    onNodeStart,
+  );
 
   function routeAfterPrepareOutput(state: MDDStateType): string {
     if (state.deliveryGateLoopActive === true) {
@@ -234,6 +246,7 @@ export async function createMddGraph(
     ) {
       return "format_after_redactor";
     }
+    if (isMddTailParallelEnabled()) return "tail_parallel";
     return "security_integration";
   }
 
@@ -285,6 +298,7 @@ export async function createMddGraph(
     // Dedicated §5 pass: regenera SOLO §5 cuando el substance check falla
     // únicamente en §5. CHANGELOG [Unreleased] → Added → "Dedicated §5 pass".
     .addNode("section5", section5Node)
+    .addNode("tail_parallel", tailParallelNode)
     .addEdge(START, "clarifier")
     .addEdge("clarifier", "software_architect")
     .addConditionalEdges("software_architect", routeAfterSoftwareArchitectOneShot, {
@@ -298,8 +312,10 @@ export async function createMddGraph(
     .addConditionalEdges("format_after_architect", routeAfterFormatArchitectGateLoop, {
       format_after_redactor: "format_after_redactor",
       security_integration: "security_integration",
+      tail_parallel: "tail_parallel",
     })
     .addEdge("security_integration", "format_after_redactor")
+    .addEdge("tail_parallel", "format_after_redactor")
     .addEdge("integration", "format_sec_int")
     .addEdge("format_sec_int", "format_after_redactor")
     // format_after_redactor → cross_consistency_checker + diagram_injector en paralelo.
@@ -406,6 +422,12 @@ export async function createMddGraphWithManager(
     }),
     createMddSection5Node(llm),
   );
+  const tailParallelNode = wrapCache(
+    nodeCache,
+    "tail_parallel",
+    (s) => ({ mddDraft: s.mddDraft ?? "", dbgaContent: s.dbgaContent ?? "" }),
+    createMddTailParallelNode(llm, structuralLlm),
+  );
 
   function routeAfterPrepareOutput(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
@@ -469,8 +491,15 @@ export async function createMddGraphWithManager(
     ) {
       return "format_after_redactor";
     }
+    if (isMddTailParallelEnabled() && state.delegateTarget !== "sections") {
+      return "tail_parallel";
+    }
     // Pasada completa (no sectionsToRun): Security+Integration en paralelo.
     return "security_integration";
+  }
+  function routeAfterTailParallel(state: MDDStateType): string {
+    if (state.executorControlled === true) return "executor";
+    return "format_after_redactor";
   }
   function routeAfterSecurityIntegration(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
@@ -532,6 +561,7 @@ export async function createMddGraphWithManager(
     "security",
     "integration",
     "section5",
+    "tail_parallel",
     "cross_consistency_checker",
     "graph_populator",
     "blackboard",
@@ -549,6 +579,7 @@ export async function createMddGraphWithManager(
     "security",
     "integration",
     "section5",
+    "tail_parallel",
     "format_after_redactor",
     "cross_consistency_checker",
     "diagram_injector",
@@ -572,6 +603,7 @@ export async function createMddGraphWithManager(
     .addNode("security", securityNode)
     .addNode("integration", integrationNode)
     .addNode("security_integration", securityIntegrationNode)
+    .addNode("tail_parallel", tailParallelNode)
     // Dedicated §5 pass: regenera SOLO §5 cuando el substance check falla
     // únicamente en §5. CHANGELOG [Unreleased] → Added → "Dedicated §5 pass".
     .addNode("section5", section5Node, { ends: ["prepare_output"] })
@@ -613,6 +645,7 @@ export async function createMddGraphWithManager(
       security: "security",
       integration: "integration",
       security_integration: "security_integration",
+      tail_parallel: "tail_parallel",
       format_after_redactor: "format_after_redactor",
       cross_consistency_checker: "cross_consistency_checker",
       diagram_injector: "diagram_injector",
@@ -621,6 +654,10 @@ export async function createMddGraphWithManager(
       executor: "executor",
     })
     .addConditionalEdges("security_integration", routeAfterSecurityIntegration, {
+      format_after_redactor: "format_after_redactor",
+      executor: "executor",
+    })
+    .addConditionalEdges("tail_parallel", routeAfterTailParallel, {
       format_after_redactor: "format_after_redactor",
       executor: "executor",
     })
