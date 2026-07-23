@@ -1,6 +1,6 @@
 # Propuesta: §5 ∥ §6 ∥ §7 en el grafo MDD
 
-**Estado:** propuesta (no implementada).  
+**Estado:** implementado (flag `MDD_TAIL_PARALLEL`, default activo).  
 **Objetivo:** reducir latencia de la pasada completa del MDD sin romper la matriz de trazabilidad §1–§7.  
 **Contexto:** hoy `security_integration` ya paraleliza §6+§7; el cuello principal es el bloque §2→§3→§4→§5 del **Software Architect** (una sola llamada LLM).
 
@@ -37,6 +37,18 @@ flowchart TD
 ### Propuesto (Fase A — mínimo viable)
 
 Separar §5 del SA; ejecutar **§5 ∥ §6 ∥ §7** tras cerrar §2–§4.
+
+```mermaid
+flowchart LR
+  SA[SA §2–§4] --> TP[tail_parallel]
+  TP --> S5[§5]
+  TP --> S6[§6]
+  TP --> S7[§7]
+  S5 & S6 & S7 --> M[merge]
+  M --> CC[cross-consistency]
+```
+
+Grafo completo (incl. Clarifier, Critic, diagram injector y Auditor):
 
 ```mermaid
 flowchart TD

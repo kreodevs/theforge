@@ -17,6 +17,7 @@ const AGENT_LABELS: Record<string, string> = {
   security: "Arquitecto de Seguridad",
   integration: "Ingeniero de Integración",
   security_integration: "Seguridad + Integración (paralelo)",
+  tail_parallel: "Lógica + Seguridad + Infra (paralelo)",
   format_sec_int: "Formateador (seguridad e integración)",
   format_after_redactor: "Formateador (post-redacción)",
   llm_formatter: "Formateador LLM (deprecated)",
