@@ -20,7 +20,7 @@ export const ASSISTED_AWAITING_SEED_MESSAGE =
   "Modo asistido activado. Describe tu idea o pega el documento de Paso 0 en el chat para detectar la plantilla, reformatear y empezar con una pregunta a la vez.";
 
 export const ASSISTED_COMPLETE_MESSAGE =
-  "Modo asistido: no quedan gaps críticos ni importantes. El documento de Paso 0 está listo; puedes apagar el modo o seguir refinando en chat libre.";
+  "No necesitas Modo Asistido: tu documento de Paso 0 ya está completo (no quedan gaps críticos ni importantes). Puedes apagar el modo o seguir refinando en chat libre.";
 
 export const ASSISTED_STOPPED_MESSAGE =
   "Modo asistido desactivado. El documento conserva los cambios de las iteraciones anteriores.";
@@ -126,12 +126,14 @@ export function formatAssistedChatMessage(opts: {
   total?: number;
   done?: boolean;
   intro?: string;
+  gapSummary?: string;
 }): string {
   const parts: string[] = [];
   if (opts.intro?.trim()) parts.push(opts.intro.trim());
   if (opts.templateLabel?.trim()) {
     parts.push(`Plantilla detectada: **${opts.templateLabel.trim()}**.`);
   }
+  if (opts.gapSummary?.trim()) parts.push(opts.gapSummary.trim());
   if (opts.impacto?.trim()) {
     parts.push(`**Impacto:** ${opts.impacto.trim()}`);
   }
@@ -165,4 +167,28 @@ export function parseAssistedImpact(parsed: Record<string, unknown>): {
         .map((c) => c.trim())
     : [];
   return { impacto, cambios };
+}
+
+/** Pregunta meta en chat (no es respuesta a la entrevista). */
+export function isAssistedMetaQuestion(text: string): boolean {
+  const t = text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return /\b(que falta|que me falta|gaps?|faltante|incompleto|auditar|revisar|analiza|analizar)\b/.test(
+    t,
+  );
+}
+
+export function formatAssistedGapSummary(gaps: Phase0Gap[]): string {
+  const askable = gaps.filter(isAskableGap);
+  if (askable.length === 0) {
+    return "No detecté gaps críticos ni importantes pendientes.";
+  }
+  const lines = askable.slice(0, 12).map((g, i) => {
+    const tag = g.criticidad === "critico" ? "crítico" : g.criticidad;
+    return `${i + 1}. **[${tag}]** ${g.descripcion.trim()}`;
+  });
+  const extra = askable.length > 12 ? `\n… y ${askable.length - 12} más.` : "";
+  return `**Gaps pendientes (${askable.length}):**\n${lines.join("\n")}${extra}`;
 }

@@ -673,9 +673,11 @@ export default function ChatContainer({
     };
   }, [inputValue, activeTab, benchmarkMode?.hasBenchmark]);
 
-  /** En Paso 0: "sin contenido" = sin mensajes del usuario; si solo hay burbujas del asistente, mostramos el texto instructivo. */
+  /** En Paso 0 vacío: ocultar solo bienvenida del asistente hasta que el usuario escriba. Con DBGA o modo asistido, mostrar siempre el historial. */
   const benchmarkEmpty =
     activeTab === "benchmark" &&
+    !phase0AssistedActive &&
+    !benchmarkMode?.hasBenchmark &&
     (messages.length === 0 || messages.every((m) => m.role === "assistant"));
   const messagesToShow = useMemo(() => {
     let list = benchmarkEmpty && messages.length > 0 ? [] : messages;

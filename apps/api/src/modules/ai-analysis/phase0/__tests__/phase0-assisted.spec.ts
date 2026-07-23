@@ -7,6 +7,7 @@ import {
 } from "../phase0-template-detect.util.js";
 import {
   formatAssistedChatMessage,
+  isAssistedMetaQuestion,
   reformatForTemplate,
 } from "../phase0-assisted.helpers.js";
 
@@ -91,5 +92,10 @@ describe("phase0 assisted helpers", () => {
     assert.match(msg, /Impacto/);
     assert.match(msg, /Pregunta \(2\/5\)/);
     assert.match(msg, /Admin/);
+  });
+
+  it("isAssistedMetaQuestion detecta preguntas de auditoría", () => {
+    assert.equal(isAssistedMetaQuestion("¿Qué falta en mi DBGA?"), true);
+    assert.equal(isAssistedMetaQuestion("Implementar login OAuth"), false);
   });
 });

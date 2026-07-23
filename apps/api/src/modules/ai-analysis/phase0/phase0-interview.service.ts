@@ -60,12 +60,15 @@ import {
 } from "@theforge/shared-types";
 import {
   ASSISTED_AWAITING_SEED_MESSAGE,
+  ASSISTED_COMPLETE_MESSAGE,
   ASSISTED_MAX_PREGUNTAS,
   ASSISTED_STOPPED_MESSAGE,
   assistedGapsFromBorrador,
   buildAssistedQuestionPlan,
   detectTemplateForProject,
   formatAssistedChatMessage,
+  formatAssistedGapSummary,
+  isAssistedMetaQuestion,
   nextAssistedQuestion,
   parseAssistedImpact,
   refreshAssistedPlanAfterAnswer,
@@ -682,10 +685,47 @@ export class Phase0InterviewService {
       return { type: "error", message: "Modo asistido no activo. Actívalo de nuevo desde Paso 0." };
     }
 
+    const templateKind = templateKindFromState(state);
+    const targetField =
+      templateKind === "deep_research" ? "phase0SummaryContent" : "dbgaContent";
+
+    if (isAssistedMetaQuestion(ans)) {
+      const next = nextAssistedQuestion(state);
+      const gapSummary = formatAssistedGapSummary(state.gaps);
+      const markdown = state.workingMarkdown?.trim()
+        ? state.workingMarkdown
+        : await this.persistAssistedDocument(state);
+      return {
+        type: "assisted_turn",
+        threadId: state.threadId,
+        templateKind,
+        targetField,
+        markdown,
+        impacto: "Consulta de gaps (sin cambios en el documento).",
+        cambios: [],
+        question: next?.question ?? state.ultimaPregunta,
+        n: next?.n ?? state.preguntasRealizadas,
+        total: next?.total ?? state.maxPreguntas,
+        gaps: state.gaps,
+        done: false,
+        message: formatAssistedChatMessage({
+          templateLabel: PHASE0_TEMPLATE_LABELS[templateKind],
+          gapSummary,
+          question: next?.question,
+          n: next?.n,
+          total: next?.total,
+          intro:
+            state.gaps.filter(isAskableGap).length > 0
+              ? "Resumen de lo pendiente en tu documento:"
+              : ASSISTED_COMPLETE_MESSAGE,
+          done: state.gaps.filter(isAskableGap).length === 0,
+        }),
+      };
+    }
+
     state.historial.push({ pregunta: state.ultimaPregunta ?? "—", respuesta: ans });
     state.preguntasRealizadas += 1;
 
-    const templateKind = templateKindFromState(state);
     let impacto = "Se actualizó el documento con la respuesta.";
     let cambios: string[] = [];
 
@@ -703,8 +743,6 @@ export class Phase0InterviewService {
 
     refreshAssistedPlanAfterAnswer(state);
     const markdown = await this.persistAssistedDocument(state);
-    const targetField =
-      templateKind === "deep_research" ? "phase0SummaryContent" : "dbgaContent";
 
     const next = nextAssistedQuestion(state);
     if (!next || state.gaps.filter(isAskableGap).length === 0) {
@@ -971,8 +1009,8 @@ export class Phase0InterviewService {
         message: formatAssistedChatMessage({
           templateLabel,
           intro: args.reformatted
-            ? "Documento reformateado según la plantilla detectada."
-            : "Documento alineado a la plantilla detectada.",
+            ? "Analicé tu documento y lo reformateé según la plantilla detectada."
+            : "Analicé tu documento según la plantilla detectada.",
           done: true,
         }),
       };
@@ -1000,8 +1038,9 @@ export class Phase0InterviewService {
       message: formatAssistedChatMessage({
         templateLabel,
         intro: args.reformatted
-          ? "Documento reformateado. Revisaré gaps una pregunta a la vez; los cambios se reflejan en el panel."
-          : "Modo asistido listo. Una pregunta a la vez; el panel muestra cada cambio.",
+          ? `Analicé tu documento y lo reformateé. Detecté **${askable.length}** gap(s) pendiente(s).`
+          : `Analicé tu documento. Detecté **${askable.length}** gap(s) pendiente(s).`,
+        gapSummary: formatAssistedGapSummary(args.gaps),
         question: first.question,
         n: first.n,
         total: first.total,

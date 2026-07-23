@@ -1020,7 +1020,7 @@ export const createDeliverablesSlice: StateCreator<
         session: get().session,
         stageId: get().activeStageId,
         tab: "benchmark",
-        userContent: idea?.trim() || undefined,
+        userContent: idea?.trim() || "Activar modo asistido",
         assistantContent,
       });
       const done =

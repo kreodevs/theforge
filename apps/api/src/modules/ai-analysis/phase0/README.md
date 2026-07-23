@@ -18,7 +18,7 @@ API:
 - `POST /ai-analysis/phase0/assisted/answer` `{ projectId, answer, threadId? }`
 - `POST /ai-analysis/phase0/assisted/stop` `{ projectId }`
 
-Flujo: detectar plantilla → reformatear → una pregunta por turno en el chat del Workshop → inferir impacto y persistir markdown en cada iteración → apagar o completar gaps.
+Flujo: detectar plantilla (A/B/C) → analizar gaps → reformatear → responder en chat con resumen de gaps + primera pregunta (o mensaje «No necesitas Modo Asistido» si está completo). Preguntas meta («¿qué falta?») devuelven listado sin consumir turno. Una pregunta por turno → impacto + persistir markdown → apagar o completar gaps.
 
 `AiAnalysisModule` importa y re-exporta `Phase0Module`.
 
