@@ -1630,6 +1630,7 @@ export default function App() {
                 (p) => p.id === selectedProjectIds[0] && canOpenProjectSettings(p),
               )
             }
+            showExport={selectedProjectIds.length === 1}
             cloneLoading={cloneLoading}
             settingsLoading={settingsLoading}
             onClearSelection={handleClearProjectSelection}
@@ -1646,6 +1647,17 @@ export default function App() {
                 ? () => {
                     const single = projectList.find((p) => p.id === selectedProjectIds[0]);
                     if (single && canOpenProjectSettings(single)) openSettingsDialog(single);
+                  }
+                : undefined
+            }
+            onExport={
+              selectedProjectIds.length === 1
+                ? () => {
+                    const single = projectList.find((p) => p.id === selectedProjectIds[0]);
+                    if (!single) return;
+                    setSettingsTarget(single);
+                    setPortabilityMode("export");
+                    setPortabilityOpen(true);
                   }
                 : undefined
             }

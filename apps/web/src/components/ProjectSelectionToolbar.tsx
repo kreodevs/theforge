@@ -1,4 +1,4 @@
-import { Copy, GitMerge, Pencil, Trash2, X } from "lucide-react";
+import { Copy, Download, GitMerge, Pencil, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
@@ -9,11 +9,14 @@ export interface ProjectSelectionToolbarProps {
   showMerge: boolean;
   showClone: boolean;
   showSettings: boolean;
+  /** Solo con exactamente 1 proyecto seleccionado (ZIP portabilidad Notion). */
+  showExport: boolean;
   cloneLoading?: boolean;
   settingsLoading?: boolean;
   onClearSelection: () => void;
   onClone?: () => void;
   onSettings?: () => void;
+  onExport?: () => void;
   onMerge?: () => void;
   onDelete?: () => void;
 }
@@ -28,11 +31,13 @@ export function ProjectSelectionToolbar({
   showMerge,
   showClone,
   showSettings,
+  showExport,
   cloneLoading = false,
   settingsLoading = false,
   onClearSelection,
   onClone,
   onSettings,
+  onExport,
   onMerge,
   onDelete,
 }: ProjectSelectionToolbarProps) {
@@ -128,6 +133,21 @@ export function ProjectSelectionToolbar({
             >
               <Pencil className="h-4 w-4 shrink-0" aria-hidden />
               <span className="hidden sm:inline">Configuración</span>
+            </Button>
+          ) : null}
+
+          {showExport && onExport && selectedCount === 1 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onExport}
+              disabled={loading}
+              className="shrink-0 touch-manipulation"
+              aria-label="Exportar proyecto seleccionado"
+            >
+              <Download className="h-4 w-4 shrink-0" aria-hidden />
+              <span className="hidden sm:inline">Exportar</span>
             </Button>
           ) : null}
 
