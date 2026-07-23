@@ -185,7 +185,6 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
             const tableRefs = structured.modeloDatos?.sql
                 ? extractTableRefsFromSql(structured.modeloDatos.sql)
                 : [];
-            const tableNames = tableRefs.map((t) => t.storageName);
             const fkByTable = structured.modeloDatos?.sql
                 ? extractForeignKeyTargetsByTable(structured.modeloDatos.sql)
                 : new Map<string, Set<string>>();
@@ -683,13 +682,6 @@ export class GraphMemoryService implements OnModuleInit, OnModuleDestroy {
             this.logger.error(`Error obteniendo decisiones del proyecto ${projectId}: ${err instanceof Error ? err.message : String(err)}`);
             return [];
         }
-    }
-
-    /**
-     * Helper simple para extraer nombres de tablas de un bloque SQL.
-     */
-    private extractTablesFromSql(sql: string): string[] {
-        return extractTableRefsFromSql(sql).map((t) => t.storageName);
     }
 
     /**
