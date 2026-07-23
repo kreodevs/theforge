@@ -1749,6 +1749,14 @@ export class AiAnalysisService {
           this.logger.warn(
             `[MDD regenerate-section] §${section} sin cambios quirúrgicos (cuerpo ausente/corto/placeholder) projectId=${pid}`,
           );
+          tracer.summary(false, { reason: `section${section}-unchanged` });
+          yield {
+            type: "error",
+            message:
+              `La regeneración de §${section} no produjo contenido (respuesta vacía, placeholder o demasiado corta). ` +
+              "Verifica que el MDD tenga contexto suficiente en §1 y secciones relacionadas; reintenta o usa «Regenerar MDD» completo.",
+          };
+          return;
         }
         const markdown = await tracer.step("prepare-output", async () => this.runPrepareMddForOutput(
           { mddStructured: result.mddStructured, mddDraft: finalDraft },

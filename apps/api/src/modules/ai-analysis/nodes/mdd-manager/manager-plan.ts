@@ -9,6 +9,7 @@ import type { MDDStateType } from "../../state/index.js";
 import type { MddPlanStep } from "../../state/mdd-state.schema.js";
 import { getPlanDirective, getUserBrief } from "../../utils/mdd-user-brief.js";
 import { extractFirstJsonObject } from "../../utils/parse-json.js";
+import { isMddTailParallelEnabled } from "../../utils/mdd-tail-parallel.config.js";
 import { z } from "zod";
 
 /** Orden de agentes en el pipeline (sin Clarifier). Tras software_architect viene format_after_architect (y crítico si aplica). */
@@ -23,6 +24,7 @@ const NODE_TASK_DESCRIPTIONS: Record<string, string> = {
   software_architect: "Definir schema SQL y contratos de API",
   section5: "Definir lógica y edge cases (§5)",
   format_after_architect: "Formatear documento tras arquitecto",
+  tail_parallel: "Generar §5 Lógica, §6 Seguridad y §7 Infraestructura en paralelo",
   security: "Definir arquitectura de seguridad",
   integration: "Definir integraciones (API/Docker)",
   format_after_redactor: "Formatear documento final",
@@ -101,9 +103,29 @@ function goalForStep(node: string, directiveOrBrief: string | undefined): string
     }
     return `Incorporar en §2, §3, §4 y §5 lo indicado: ${architectGoal}`;
   }
+  if (node === "tail_parallel") {
+    return `Completar §5 Lógica y Edge Cases, §6 Seguridad y §7 Infraestructura según: ${shortGoal}`;
+  }
+  if (node === "section5") return `Definir §5 Lógica y Edge Cases según: ${shortGoal}`;
   if (node === "security") return `Aplicar en §6 Seguridad lo que corresponda de: ${shortGoal}`;
   if (node === "integration") return `Aplicar en §7 Infraestructura lo que corresponda de: ${shortGoal}`;
   return undefined;
+}
+
+/** Secuencia completa del pipeline Manager (clarifier → auditor), respetando MDD_TAIL_PARALLEL. */
+export function getFullPipelineNodeSequence(): readonly string[] {
+  const afterArchitect = isMddTailParallelEnabled()
+    ? (["tail_parallel"] as const)
+    : (["security", "integration"] as const);
+  return [
+    "clarifier",
+    "software_architect",
+    "format_after_architect",
+    ...afterArchitect,
+    "format_after_redactor",
+    "diagram_injector",
+    "auditor",
+  ];
 }
 
 /** Si la directiva pide no guardar algo en BD (ej. jwt_token) o eliminar un campo, el Arquitecto debe actualizar §3 y diagrama. */
@@ -142,8 +164,7 @@ export function buildMddPlan(
     );
   }
   if (delegateTarget === "full_pipeline" || !delegateTarget) {
-    const fullSequence = ["clarifier", "software_architect", "format_after_architect", "security", "integration", "format_after_redactor", "diagram_injector", "auditor"];
-    return fullSequence.map((node, i) =>
+    return getFullPipelineNodeSequence().map((node, i) =>
       step(node, String(i + 1), NODE_TASK_DESCRIPTIONS[node] ?? node, i === 0),
     );
   }
@@ -165,19 +186,28 @@ export function expandSectionsToRun(
 ): string[] {
   const tailMode = options?.tail ?? "full";
   const valid = new Set(agentNames.filter((a) => PIPELINE_AGENTS.includes(a as (typeof PIPELINE_AGENTS)[number])));
+  const useTailParallel =
+    isMddTailParallelEnabled() && valid.has("security") && valid.has("integration");
+  const skipWhenTailParallel = useTailParallel
+    ? new Set(["section5", "security", "integration"])
+    : new Set<string>();
   const out: string[] = [];
   for (const node of PIPELINE_AGENTS) {
-    if (valid.has(node)) {
-      out.push(node);
-      if (tailMode === "full" && node === "software_architect") out.push("format_after_architect");
-    }
+    if (!valid.has(node) || skipWhenTailParallel.has(node)) continue;
+    out.push(node);
+    if (tailMode === "full" && node === "software_architect") out.push("format_after_architect");
+  }
+  if (useTailParallel) {
+    const fmtIdx = out.indexOf("format_after_architect");
+    if (fmtIdx >= 0) out.splice(fmtIdx + 1, 0, "tail_parallel");
+    else out.push("tail_parallel");
   }
   if (!out.length) return [];
   if (tailMode === "minimal") return out;
   return [...out, ...PIPELINE_TAIL];
 }
 
-const FULL_PIPELINE_NODES = ["clarifier", "software_architect", "format_after_architect", "security", "integration", "format_after_redactor", "diagram_injector", "auditor"] as const;
+const FULL_PIPELINE_NODES = getFullPipelineNodeSequence();
 const CLARIFIER_ONLY_NODES = ["clarifier", "merge_section1_only"] as const;
 
 const planGeneratorOutputSchema = z.object({
