@@ -4,6 +4,7 @@ import {
   repairInlineHorizontalRuleSectionBreaks,
 } from "@theforge/shared-types";
 import { collectMddQualityIssues } from "../../../engine/mdd-quality-audit.util.js";
+import { isMddTailParallelEnabled } from "../mdd-tail-parallel.config.js";
 
 const RE_SECTION6_H2_LINE = /^##\s+(?:6\.\s+)?Seguridad/i;
 
@@ -587,7 +588,7 @@ export function getSectionsToPreserveFromExecutorPlan(sectionsToRun: string[] | 
       touched.add(2);
       touched.add(3);
       touched.add(4);
-      touched.add(5);
+      if (!isMddTailParallelEnabled()) touched.add(5);
     }
     // Nodo dedicado "section5": regenera SOLO §5. Ver CHANGELOG [Unreleased]
     // → Added → "Dedicated §5 pass".

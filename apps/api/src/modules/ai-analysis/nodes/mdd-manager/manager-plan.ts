@@ -12,7 +12,7 @@ import { extractFirstJsonObject } from "../../utils/parse-json.js";
 import { z } from "zod";
 
 /** Orden de agentes en el pipeline (sin Clarifier). Tras software_architect viene format_after_architect (y crítico si aplica). */
-const PIPELINE_AGENTS = ["software_architect", "security", "integration"] as const;
+const PIPELINE_AGENTS = ["software_architect", "section5", "security", "integration"] as const;
 const PIPELINE_TAIL = ["format_after_redactor", "diagram_injector", "auditor"] as const;
 
 /** Descripción por nodo para el plan explícito (patrón Planner–Executor). */
@@ -21,6 +21,7 @@ const NODE_TASK_DESCRIPTIONS: Record<string, string> = {
   clarifier: "Clarificar contexto y alcance",
   merge_section1_only: "Fusionar solo sección 1 (contexto y alcance)",
   software_architect: "Definir schema SQL y contratos de API",
+  section5: "Definir lógica y edge cases (§5)",
   format_after_architect: "Formatear documento tras arquitecto",
   security: "Definir arquitectura de seguridad",
   integration: "Definir integraciones (API/Docker)",

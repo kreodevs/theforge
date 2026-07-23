@@ -13,6 +13,10 @@
  */
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { HumanMessage } from "@langchain/core/messages";
+import {
+  draftThroughSection4ForTailParallelFirstPass,
+  isTailParallelFirstPassDraft,
+} from "../utils/mdd-tail-parallel.util.js";
 import { SECTION5_MDD_PROMPT } from "../prompts/load-prompts.js";
 import type { MDDStateType } from "../state/index.js";
 import { getUserBrief } from "../utils/mdd-user-brief.js";
@@ -56,12 +60,18 @@ export function createMddSection5Node(llm: BaseChatModel) {
       const dbgaCore = (state.dbgaContent ?? "").trim();
       const dbgaBlock = dbgaCore ? `**Capacidades de negocio (DBGA):**\n${dbgaCore.slice(0, 3000)}\n\n` : "";
 
-      // Draft truncado: el LLM necesita ver §1-§4 y §6-§7 para no contradecirlos.
-      // §5 (la que va a regenerar) la enmascaramos para que el LLM no caiga en "ya hay contenido".
-      const draftForLlm = currentDraft.length > 8000
-        ? currentDraft.slice(0, 4000) + "\n\n...(truncado)...\n\n" + currentDraft.slice(currentDraft.length - 4000)
+      const firstPass = isTailParallelFirstPassDraft(currentDraft);
+      const draftSource = firstPass
+        ? draftThroughSection4ForTailParallelFirstPass(currentDraft)
         : currentDraft;
-      const draftBlock = `**Borrador actual del MDD (referencia; regenera SOLO ## 5):**\n${draftForLlm}\n\n`;
+      const draftForLlm =
+        draftSource.length > 8000
+          ? draftSource.slice(0, 4000) + "\n\n...(truncado)...\n\n" + draftSource.slice(draftSource.length - 4000)
+          : draftSource;
+      const firstPassBlock = firstPass
+        ? "**Nota (pasada paralela):** §6 Seguridad y §7 Infraestructura se generan en otro agente en paralelo. Redacta §5 **solo** desde §1–§4, DBGA y alcance; no cites §6/§7 como hechos.\n\n"
+        : "";
+      const draftBlock = `${firstPassBlock}**Borrador actual del MDD (referencia; regenera SOLO ## 5):**\n${draftForLlm}\n\n`;
 
       const directivesBlock = getInternalDirectivesContext(state, "section5");
 

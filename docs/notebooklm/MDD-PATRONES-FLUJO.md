@@ -70,7 +70,17 @@ Hoy la pasada completa ya paraleliza **§6 ∥ §7** (`security_integration`). E
 
 **No es viable** generar las siete secciones en paralelo (dependencias de la Constitución: §4←§3←§2←§1, §5←§4, §7←§2+§3).
 
-**Siguiente optimización propuesta:** tras cerrar §2–§4, ejecutar **§5 ∥ §6 ∥ §7** en un nodo `tail_parallel`, merge determinista y luego cross-consistency + auditor (igual que hoy).
+**Siguiente optimización (implementada):** tras cerrar §2–§4, ejecutar **§5 ∥ §6 ∥ §7** en el nodo `tail_parallel` (`MDD_TAIL_PARALLEL=1` por defecto).
+
+```mermaid
+flowchart LR
+  SA[SA §2–§4] --> TP[tail_parallel]
+  TP --> S5[§5]
+  TP --> S6[§6]
+  TP --> S7[§7]
+  S5 & S6 & S7 --> M[merge]
+  M --> CC[cross-consistency]
+```
 
 Detalle de grafo, touch points y matriz de regresiones: **[MDD-PARALLEL-SECCION-5-6-PROPOSAL.md](MDD-PARALLEL-SECCION-5-6-PROPOSAL.md)**.
 

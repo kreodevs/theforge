@@ -112,7 +112,8 @@ export function parseRegenerateSectionNumber(msg: string): number | null {
 /** Mapea número de sección MDD → agente del pipeline (§6 → security). */
 export function agentsForMddSection(section: number): string[] {
   if (section === 1) return ["clarifier"];
-  if (section >= 2 && section <= 5) return ["software_architect"];
+  if (section >= 2 && section <= 4) return ["software_architect"];
+  if (section === 5) return ["section5"];
   if (section === 6) return ["security"];
   if (section === 7) return ["integration"];
   return [];
