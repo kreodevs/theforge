@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   exportPantallasMarkdownOnly,
   formatPantallasMarkdownForPreview,
+  joinPantallasAndUiProject,
   splitPantallasAndUiProject,
   UI_PROJECT_JSON_MARKER,
 } from "./ui-screens-export.js";
@@ -42,5 +43,13 @@ describe("ui-screens-export", () => {
   it("exportPantallasMarkdownOnly omite el anexo JSON", () => {
     const raw = "# Pantallas\n\n" + `${UI_PROJECT_JSON_MARKER}\n{}\n`;
     assert.equal(exportPantallasMarkdownOnly(raw), "# Pantallas");
+  });
+
+  it("joinPantallasAndUiProject reconstruye marcador + fence", () => {
+    const joined = joinPantallasAndUiProject("# Pantallas", '{"version":"1.0.0"}');
+    assert.match(joined, /^# Pantallas/);
+    assert.ok(joined.includes(UI_PROJECT_JSON_MARKER));
+    assert.ok(joined.includes("```json"));
+    assert.ok(joined.includes('"version": "1.0.0"'));
   });
 });

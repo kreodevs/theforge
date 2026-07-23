@@ -128,4 +128,20 @@ describe("buildNotionExportEntries", () => {
     assert.equal(parsed.format, "theforge-notion-portability");
     assert.equal(parsed.projectName, "Demo Forge");
   });
+
+  it("includes Pantallas from Project.uiScreensContent on active stage", () => {
+    const entries = buildNotionExportEntries({
+      ...minimalProject({
+        uiScreensContent:
+          "# Pantallas\n\n| Ruta |\n|------|\n| / |\n\n---UI_PROJECT_JSON---\n\n```json\n{\"version\":\"1.0.0\"}\n```\n",
+      }),
+      stages: [{ ...minimalStage(), estimation: null }],
+      integrationTracesAsNew: [],
+      integrationTracesAsLegacy: [],
+    });
+
+    const paths = entries.map((entry) => entry.path);
+    assert.ok(paths.some((p) => p.includes("Pantallas") && p.endsWith(".md")));
+    assert.ok(paths.some((p) => p.endsWith("_assets/ui-project.json")));
+  });
 });

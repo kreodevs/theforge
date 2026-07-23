@@ -68,3 +68,25 @@ export function exportPantallasMarkdownOnly(combined: string | null | undefined)
   const { pantallas } = splitPantallasAndUiProject(trimmed);
   return pantallas.trim() || trimmed;
 }
+
+/**
+ * Reconstruye el formato persistido en `Project.uiScreensContent`
+ * (markdown + marcador + fence JSON) a partir de pantallas.md y ui-project.json del export.
+ */
+export function joinPantallasAndUiProject(
+  pantallas: string | null | undefined,
+  uiProjectJson: string | null | undefined,
+): string {
+  const base = (pantallas ?? "").trim();
+  let json = (uiProjectJson ?? "").trim();
+  if (json) {
+    try {
+      json = JSON.stringify(JSON.parse(json), null, 2);
+    } catch {
+      // keep raw
+    }
+  }
+  if (!json) return base;
+  if (!base) return `${UI_PROJECT_JSON_MARKER}\n\n\`\`\`json\n${json}\n\`\`\`\n`;
+  return `${base}\n\n${UI_PROJECT_JSON_MARKER}\n\n\`\`\`json\n${json}\n\`\`\`\n`;
+}
