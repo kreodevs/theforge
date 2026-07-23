@@ -20,6 +20,8 @@ API:
 
 Flujo: detectar plantilla (A/B/C) → analizar gaps → reformatear → responder en chat con resumen de gaps + primera pregunta (o mensaje «No necesitas Modo Asistido» si está completo). Preguntas meta («¿qué falta?») devuelven listado sin consumir turno. Una pregunta por turno → impacto + persistir markdown → apagar o completar gaps.
 
+**Detección DBGA vs Fase 0:** un documento titulado «Domain Benchmark & Gap Analysis (DBGA)» o con §3 distinto a «Reglas de Negocio» se trata como **freeform_dbga** (se conserva el markdown íntegro). Solo se serializa a la plantilla de 8 secciones cuando el título es `# Fase 0 — …` o el esquema canónico §1–§4 coincide. Si un reformato estructurado reduciría el cuerpo más de ~35%, se conserva el documento original.
+
 `AiAnalysisModule` importa y re-exporta `Phase0Module`.
 
 **Chat Fase 0 / Benchmark:** en el Workshop, pestañas `benchmark` o `phase0`, puedes escribir «Según Context7, …» para forzar una consulta documentada (ver `technology-docs-mcp/README.md`).

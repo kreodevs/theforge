@@ -2,7 +2,7 @@
  * Helpers del Modo asistido Fase 0 (detección, mensajes, plan de preguntas).
  */
 
-import { formatDocumentMarkdown } from "@theforge/shared-types";
+import { formatDocumentMarkdown, peelDocumentBodyForPersist } from "@theforge/shared-types";
 import { analyzeGaps, buildQuestionPlan, isAskableGap } from "./phase0-gap-analyzer.js";
 import { phase0ToMarkdown } from "./phase0-to-markdown.js";
 import type { Phase0Document, Phase0Gap, Phase0InterviewState } from "./phase0.types.js";
@@ -33,15 +33,35 @@ export function templateKindFromState(
   return "structured";
 }
 
+/** Evita sustituir DBGA extenso por un Fase 0 vacío tras extracción parcial. */
+const REFORMAT_MIN_SOURCE_CHARS = 2000;
+const REFORMAT_MAX_SHRINK_RATIO = 0.65;
+
+function markdownBodyLength(md: string): number {
+  return peelDocumentBodyForPersist(md).trim().length;
+}
+
 export function reformatForTemplate(
   kind: Phase0TemplateKind,
   markdown: string,
   borrador?: Phase0Document,
-): { markdown: string; reformatted: boolean } {
+): { markdown: string; reformatted: boolean; preservedSourceDueToShrink?: boolean } {
   const source = markdown.trim();
   if (kind === "structured" && borrador) {
     const canonical = phase0ToMarkdown(borrador);
     const formatted = formatDocumentMarkdown(canonical);
+    const sourceLen = markdownBodyLength(source);
+    const outLen = markdownBodyLength(formatted);
+    if (
+      sourceLen >= REFORMAT_MIN_SOURCE_CHARS &&
+      outLen < sourceLen * REFORMAT_MAX_SHRINK_RATIO
+    ) {
+      return {
+        markdown: formatDocumentMarkdown(source),
+        reformatted: false,
+        preservedSourceDueToShrink: true,
+      };
+    }
     return {
       markdown: formatted,
       reformatted: formatted.trim() !== source,

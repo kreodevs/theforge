@@ -38,13 +38,32 @@ function bulletItems(lines: string[], start: number): { items: string[]; next: n
   return { items, next: i };
 }
 
+export function isDbgaFreeformMarkdown(markdown: string): boolean {
+  const head = markdown.trim().slice(0, 1200);
+  return (
+    /#\s*domain\s+benchmark\s*(?:&|y)\s*gap\s+analysis/i.test(head) ||
+    /\(\s*dbga\s*\)/i.test(head) ||
+    /\bdbga\b/i.test(head.slice(0, 200))
+  );
+}
+
 export function isPhase0StructuredMarkdown(markdown: string): boolean {
   const t = markdown.trim();
-  return (
-    t.includes("# Fase 0") ||
-    t.includes("## 1. Propósito y Alcance") ||
-    t.includes("## 1. Proposito y Alcance")
-  );
+  if (!t) return false;
+  if (isDbgaFreeformMarkdown(t)) return false;
+
+  if (/^#\s*Fase\s+0\s*[—–-]/im.test(t)) return true;
+
+  const hasS1 =
+    t.includes("## 1. Propósito y Alcance") || t.includes("## 1. Proposito y Alcance");
+  const hasCanonicalS3 = t.includes("## 3. Reglas de Negocio");
+  const hasCanonicalS4 = t.includes("## 4. Flujos Principales");
+  const hasNonCanonicalNumbering =
+    /##\s*3\.\s*(Especificaciones|Especificación|Indicadores)/i.test(t) ||
+    /##\s*5\.\s*Reglas de Negocio/i.test(t) ||
+    /##\s*6\.\s*Flujos Principales/i.test(t);
+
+  return hasS1 && hasCanonicalS3 && hasCanonicalS4 && !hasNonCanonicalNumbering;
 }
 
 function isPlaceholder(line: string): boolean {

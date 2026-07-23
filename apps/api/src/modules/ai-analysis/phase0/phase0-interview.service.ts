@@ -932,11 +932,16 @@ export class Phase0InterviewService {
     }
 
     const gaps = mergeGaps([], assistedGapsFromBorrador(borrador));
-    const { markdown, reformatted } = reformatForTemplate(
+    const reformattedResult = reformatForTemplate(
       detected.kind,
       markdownSource,
       detected.kind === "structured" ? borrador : undefined,
     );
+    let templateKind = detected.kind;
+    if (reformattedResult.preservedSourceDueToShrink) {
+      templateKind = "freeform_dbga";
+    }
+    const { markdown, reformatted } = reformattedResult;
 
     return this.bootstrapAssistedState({
       projectId,
@@ -944,7 +949,7 @@ export class Phase0InterviewService {
       gaps,
       markdown,
       reformatted,
-      templateKind: detected.kind,
+      templateKind,
       inputRaw: (extraIdea || markdownSource).slice(0, 4000),
       inputType: "external_doc",
     });

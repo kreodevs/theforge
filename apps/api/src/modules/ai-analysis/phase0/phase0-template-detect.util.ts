@@ -7,8 +7,8 @@
  */
 
 import { isPhase0BorradorJson } from "@theforge/shared-types";
-import { isPhase0StructuredMarkdown } from "./phase0-from-markdown.js";
-import { isFreeformDbgaContent, MIN_DBGA_AUDIT_CHARS } from "./phase0-load-borrador.util.js";
+import { isPhase0StructuredMarkdown, isDbgaFreeformMarkdown } from "./phase0-from-markdown.js";
+import { MIN_DBGA_AUDIT_CHARS } from "./phase0-load-borrador.util.js";
 
 export type Phase0TemplateKind = "structured" | "freeform_dbga" | "deep_research";
 
@@ -47,8 +47,9 @@ export function detectPhase0Template(input: DetectPhase0TemplateInput): Phase0Te
   const idea = input.idea?.trim() ?? "";
 
   if (dbga.length >= MIN_DBGA_AUDIT_CHARS) {
+    if (isDbgaFreeformMarkdown(dbga)) return "freeform_dbga";
     if (isPhase0StructuredMarkdown(dbga)) return "structured";
-    if (isFreeformDbgaContent(dbga)) return "freeform_dbga";
+    return "freeform_dbga";
   }
 
   if (isDeepResearchMarkdown(summary)) return "deep_research";

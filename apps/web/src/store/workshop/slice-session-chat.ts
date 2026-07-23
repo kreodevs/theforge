@@ -509,7 +509,7 @@ export const createSessionChatSlice: StateCreator<WorkshopState, [], [], Session
           });
           return;
         }
-        applyAssistedMarkdownToState(set as (p: Record<string, unknown>) => void, event);
+        applyAssistedMarkdownToState(set as (p: Record<string, unknown>) => void, get, event);
         const assistantContent =
           typeof event.message === "string" && event.message.trim()
             ? event.message.trim()
@@ -547,7 +547,6 @@ export const createSessionChatSlice: StateCreator<WorkshopState, [], [], Session
           loading: false,
           error: null,
         });
-        await get().fetchProject(requestProjectId).catch(() => {});
       } catch (e) {
         set({
           loading: false,

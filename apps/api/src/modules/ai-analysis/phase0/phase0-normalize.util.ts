@@ -172,6 +172,44 @@ export function normalizePhase0Document(raw: unknown): Phase0Document {
   return result;
 }
 
+/** Une listas de strings sin duplicados (case-insensitive). */
+export function mergePhase0StringList(base: string[], patch: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of [...base, ...patch]) {
+    const trimmed = item.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+  }
+  return out;
+}
+
+/** Fusiona entidades por nombre; el patch puede traer solo las filas editadas. */
+export function mergePhase0Entidades(base: Phase0Entity[], patch: Phase0Entity[]): Phase0Entity[] {
+  if (patch.length === 0) return base;
+  const byName = new Map(base.map((entity) => [entity.nombre.trim().toLowerCase(), entity]));
+  for (const entity of patch) {
+    const name = entity.nombre.trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    const existing = byName.get(key);
+    if (existing) {
+      byName.set(key, {
+        nombre: existing.nombre,
+        descripcion: entity.descripcion.trim() || existing.descripcion,
+        atributosClave:
+          entity.atributosClave.length > 0 ? entity.atributosClave : existing.atributosClave,
+      });
+    } else {
+      byName.set(key, entity);
+    }
+  }
+  return Array.from(byName.values());
+}
+
 /**
  * Aplica un borrador LLM sobre el estado previo sin perder secciones
  * que el modelo omitió en la respuesta.
@@ -191,9 +229,8 @@ export function mergePhase0Borrador(base: Phase0Document, patch: Phase0Document)
           ? normalizedPatch.proposito.outOfScope
           : base.proposito.outOfScope,
     },
-    entidades: normalizedPatch.entidades.length > 0 ? normalizedPatch.entidades : base.entidades,
-    reglasNegocio:
-      normalizedPatch.reglasNegocio.length > 0 ? normalizedPatch.reglasNegocio : base.reglasNegocio,
+    entidades: mergePhase0Entidades(base.entidades, normalizedPatch.entidades),
+    reglasNegocio: mergePhase0StringList(base.reglasNegocio, normalizedPatch.reglasNegocio),
     flujos: normalizedPatch.flujos.length > 0 ? normalizedPatch.flujos : base.flujos,
     roles: normalizedPatch.roles.length > 0 ? normalizedPatch.roles : base.roles,
     integraciones:

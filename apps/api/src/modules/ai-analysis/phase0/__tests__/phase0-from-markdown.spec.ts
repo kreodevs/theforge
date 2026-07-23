@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { phase0ToMarkdown } from "../phase0-to-markdown.js";
 import { markdownToPhase0Document } from "../phase0-from-markdown.js";
 import { loadProjectBorrador, hasAuditDocument, isFreeformDbgaContent } from "../phase0-load-borrador.util.js";
+import { detectPhase0Template } from "../phase0-template-detect.util.js";
 import type { Phase0Document } from "../phase0.types.js";
 
 const sampleDoc = (): Phase0Document => ({
@@ -106,6 +107,32 @@ describe("hasAuditDocument", () => {
     assert.equal(isFreeformDbgaContent(freeformDbga), true);
     assert.equal(hasAuditDocument(freeformDbga, null), true);
     assert.equal(hasAuditDocument(freeformDbga, ""), true);
+  });
+
+  it("DBGA con §1 Propósito no se clasifica como Fase 0 estructurada", () => {
+    const md = `# Domain Benchmark & Gap Analysis (DBGA)
+
+## 1. Propósito y Alcance
+
+**Problema:** Automatizar operaciones bursátiles semanales con reglas algorítmicas.
+
+## 2. Entidades del Dominio
+
+### Cartera
+
+**Descripción:** Posiciones del inversor.
+
+## 3. Especificaciones Técnicas e Indicadores del Core
+
+Indicadores VWAP, EMA y ATR calculados en memoria.
+
+## 5. Reglas de Negocio
+
+- **R5.1** - Ventana de ejecución semanal.
+`.repeat(2);
+
+    assert.equal(isFreeformDbgaContent(md), true);
+    assert.equal(detectPhase0Template({ dbgaContent: md }), "freeform_dbga");
   });
 
   it("rechaza documento vacío", () => {

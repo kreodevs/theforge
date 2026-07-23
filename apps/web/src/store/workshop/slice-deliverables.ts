@@ -1013,7 +1013,7 @@ export const createDeliverablesSlice: StateCreator<
         });
         return;
       }
-      applyAssistedMarkdownToState(set as (p: Record<string, unknown>) => void, event);
+      applyAssistedMarkdownToState(set as (p: Record<string, unknown>) => void, get, event);
       const assistantContent =
         typeof event.message === "string" && event.message.trim()
           ? event.message.trim()
@@ -1047,9 +1047,6 @@ export const createDeliverablesSlice: StateCreator<
         error: null,
         workshopActiveDocPanel: "benchmark",
       });
-      if (event.markdown?.trim()) {
-        await get().fetchProject(projectId).catch(() => {});
-      }
     } catch (e) {
       set({
         loading: false,
@@ -1075,7 +1072,7 @@ export const createDeliverablesSlice: StateCreator<
       const { postPhase0AssistedStop, appendWorkshopChatPair, applyAssistedMarkdownToState } =
         await import("./helpers/phase0-assisted");
       const event = await postPhase0AssistedStop(projectId);
-      applyAssistedMarkdownToState(set as (p: Record<string, unknown>) => void, event);
+      applyAssistedMarkdownToState(set as (p: Record<string, unknown>) => void, get, event);
       const nextSession = await appendWorkshopChatPair({
         session: get().session,
         stageId: get().activeStageId,

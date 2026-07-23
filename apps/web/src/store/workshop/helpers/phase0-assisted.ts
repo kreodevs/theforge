@@ -3,6 +3,7 @@
  */
 
 import { apiFetch, API_BASE } from "../../../utils/apiClient";
+import { extractWorkshopDocumentTimestamps } from "../../../utils/workshop-document-content.util";
 import { sessionMessageBody } from "../helpers/session-message";
 import type { Session } from "../types";
 
@@ -148,13 +149,28 @@ export async function appendWorkshopChatPair(opts: {
 
 export function applyAssistedMarkdownToState(
   set: (partial: Record<string, unknown>) => void,
+  get: () => { project?: unknown; documentTimestamps?: unknown },
   event: Phase0AssistedApiEvent,
 ): void {
-  const md = typeof event.markdown === "string" ? event.markdown : "";
-  if (!md.trim()) return;
-  if (event.targetField === "phase0SummaryContent") {
-    set({ phase0SummaryContent: md });
-  } else {
-    set({ dbgaContent: md });
-  }
+  const md = typeof event.markdown === "string" ? event.markdown.trim() : "";
+  if (!md) return;
+  const field =
+    event.targetField === "phase0SummaryContent" ? "phase0SummaryContent" : "dbgaContent";
+  const ts = extractWorkshopDocumentTimestamps(md);
+  const state = get();
+  const project =
+    state.project && typeof state.project === "object"
+      ? { ...(state.project as Record<string, unknown>), [field]: md }
+      : state.project;
+  const documentTimestamps =
+    ts && state.documentTimestamps && typeof state.documentTimestamps === "object"
+      ? { ...(state.documentTimestamps as Record<string, unknown>), [field]: ts }
+      : ts
+        ? { [field]: ts }
+        : state.documentTimestamps;
+  set({
+    [field]: md,
+    project,
+    documentTimestamps,
+  });
 }
