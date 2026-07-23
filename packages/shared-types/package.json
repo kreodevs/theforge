@@ -98,6 +98,16 @@
         "default": "./dist-cjs/mdd-governance-patterns.js"
       }
     },
+    "./mdd-governance-pattern-compat": {
+      "import": {
+        "types": "./dist/mdd-governance-pattern-compat.d.ts",
+        "default": "./dist/mdd-governance-pattern-compat.js"
+      },
+      "require": {
+        "types": "./dist-cjs/mdd-governance-pattern-compat.d.ts",
+        "default": "./dist-cjs/mdd-governance-pattern-compat.js"
+      }
+    },
     "./mdd-upstream-sync-node": {
       "import": {
         "types": "./dist/mdd-upstream-sync-node.d.ts",

@@ -11,6 +11,7 @@ import {
 import { AemGenerateDialog } from "@/components/AemGenerateDialog";
 import MddRegenerateDialog from "@/components/MddRegenerateDialog";
 import { MddPatternsWizardDialog } from "@/components/MddPatternsWizardDialog";
+import { MddGovernancePatternCompatDialog } from "@/components/MddGovernancePatternCompatDialog";
 import { ModelsUnavailableDialog } from "@/components/ModelsUnavailableDialog";
 import WorkshopHelpModal from "@/components/WorkshopHelpModal";
 import { WorkshopDbgaRestoreDialog } from "@/components/WorkshopDbgaRestoreDialog";
@@ -61,6 +62,12 @@ export function WorkshopModals({
   mddRegenerateLoading,
   onMddRegenerateFull,
   onMddRegenerateSync,
+  mddPatternCompatOpen,
+  setMddPatternCompatOpen,
+  mddPatternCompatCorrections,
+  mddPatternCompatConfirmLabel,
+  mddPatternCompatLoading,
+  onMddPatternCompatConfirm,
   aemGenerateDialogOpen,
   setAemGenerateDialogOpen,
   aemGenerateLoading,
@@ -162,6 +169,14 @@ export function WorkshopModals({
         loading={mddRegenerateLoading}
         onConfirmFull={onMddRegenerateFull}
         onConfirmSync={onMddRegenerateSync}
+      />
+      <MddGovernancePatternCompatDialog
+        open={mddPatternCompatOpen}
+        onOpenChange={setMddPatternCompatOpen}
+        corrections={mddPatternCompatCorrections}
+        confirmLabel={mddPatternCompatConfirmLabel}
+        loading={mddPatternCompatLoading}
+        onConfirm={onMddPatternCompatConfirm}
       />
       <AemGenerateDialog
         open={aemGenerateDialogOpen}

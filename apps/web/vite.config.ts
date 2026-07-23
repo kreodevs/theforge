@@ -57,6 +57,13 @@ export default defineConfig({
         ),
       },
       {
+        find: "@theforge/shared-types/mdd-governance-pattern-compat",
+        replacement: path.resolve(
+          __dirname,
+          "../../packages/shared-types/src/mdd-governance-pattern-compat.ts",
+        ),
+      },
+      {
         find: "@theforge/shared-types/repair-directory-tree",
         replacement: path.resolve(
           __dirname,

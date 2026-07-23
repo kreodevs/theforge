@@ -2,6 +2,7 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { HumanMessage } from "@langchain/core/messages";
 import { z } from "zod";
 import { listGovernancePatternOptions } from "@theforge/shared-types/mdd-governance-patterns";
+import { resolveGovernancePatternIncompatibilities } from "@theforge/shared-types/mdd-governance-pattern-compat";
 import { extractFirstJsonObject, parseJsonOrThrow } from "./parse-json.js";
 
 const responseSchema = z.object({
@@ -19,6 +20,22 @@ export type SuggestGovernancePatternsResult = {
   patternIds: string[];
   rationale?: string;
 };
+
+function finalizeSuggestedIds(
+  patternIds: string[],
+  rationale?: string,
+): SuggestGovernancePatternsResult {
+  const resolved = resolveGovernancePatternIncompatibilities(new Set(patternIds));
+  const suffix =
+    resolved.corrections.length > 0
+      ? ` Se ajustaron ${resolved.corrections.length} incompatibilidad(es) en la preselección.`
+      : "";
+  const base = rationale?.trim() ?? "";
+  return {
+    patternIds: [...resolved.correctedIds],
+    rationale: base ? `${base}${suffix}` : suffix.trim() || undefined,
+  };
+}
 
 const SLICE = 12_000;
 
@@ -97,15 +114,24 @@ Responde únicamente JSON: { "patternIds": string[], "rationale": string }`;
     const text = typeof response.content === "string" ? response.content : "";
     const jsonStr = extractFirstJsonObject(text);
     if (!jsonStr) {
-      return { patternIds: heuristicPatternIds(input), rationale: "Preselección heurística (sin JSON del modelo)." };
+      return finalizeSuggestedIds(
+        heuristicPatternIds(input),
+        "Preselección heurística (sin JSON del modelo).",
+      );
     }
     const parsed = parseJsonOrThrow(jsonStr, responseSchema);
     const patternIds = parsed.patternIds.filter((id) => validIds.has(id));
     if (patternIds.length === 0) {
-      return { patternIds: heuristicPatternIds(input), rationale: "Preselección heurística (ids inválidos del modelo)." };
+      return finalizeSuggestedIds(
+        heuristicPatternIds(input),
+        "Preselección heurística (ids inválidos del modelo).",
+      );
     }
-    return { patternIds, rationale: parsed.rationale };
+    return finalizeSuggestedIds(patternIds, parsed.rationale);
   } catch {
-    return { patternIds: heuristicPatternIds(input), rationale: "Preselección heurística (error del modelo)." };
+    return finalizeSuggestedIds(
+      heuristicPatternIds(input),
+      "Preselección heurística (error del modelo).",
+    );
   }
 }

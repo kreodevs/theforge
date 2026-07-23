@@ -1,5 +1,9 @@
 import type { Dispatch, SetStateAction } from "react";
-import type { AemMarketScope, MddUpstreamSyncStatus } from "@theforge/shared-types";
+import type {
+  AemMarketScope,
+  GovernancePatternCorrection,
+  MddUpstreamSyncStatus,
+} from "@theforge/shared-types";
 import type { MddPatternsWizardMode } from "@/components/MddPatternsWizardDialog";
 import type { MddRegenerateMode } from "@/components/MddRegenerateDialog";
 import type {
@@ -78,6 +82,12 @@ export type WorkshopModalsProps = {
   mddRegenerateLoading: boolean;
   onMddRegenerateFull: () => void | Promise<void>;
   onMddRegenerateSync: (sections: number[]) => void | Promise<void>;
+  mddPatternCompatOpen: boolean;
+  setMddPatternCompatOpen: (open: boolean) => void;
+  mddPatternCompatCorrections: readonly GovernancePatternCorrection[];
+  mddPatternCompatConfirmLabel: string;
+  mddPatternCompatLoading: boolean;
+  onMddPatternCompatConfirm: () => void | Promise<void>;
   aemGenerateDialogOpen: boolean;
   setAemGenerateDialogOpen: (open: boolean) => void;
   aemGenerateLoading: boolean;
