@@ -33,6 +33,11 @@ export function resolveRegenerateSectionFromChatMessage(msg: string): number | n
   return getRegenerateSectionFromSlashCommand(msg) ?? detectNaturalRegenerateSection(msg);
 }
 
+/** Heading canónico §5 presente (validación tras /logica o /5). */
+export function mddHasSection5Heading(content: string): boolean {
+  return /(?:^|\n)##\s*5\.\s*L[oó]gica\s+y\s*Edge\s+Cases\b/im.test((content ?? "").trim());
+}
+
 /** Heading canónico §6 presente (semáforo + validación tras /seguridad). */
 export function mddHasSection6Heading(content: string): boolean {
   return /(?:^|\n)##\s+(?:6\.\s+)?Seguridad\b/im.test((content ?? "").trim());

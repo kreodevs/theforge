@@ -1697,6 +1697,14 @@ export class AiAnalysisService {
           this.logger.warn(
             `[MDD regenerate-section] §5 sin cambios (LLM vacío/placeholder o merge no aplicado) projectId=${pid}`,
           );
+          tracer.summary(false, { reason: "section5-unchanged" });
+          yield {
+            type: "error",
+            message:
+              "La regeneración de §5 no produjo contenido (respuesta vacía, placeholder o demasiado corta). " +
+              "Verifica que el MDD tenga §1 y §4 con contenido; reintenta o usa «Regenerar MDD» completo.",
+          };
+          return;
         }
         const markdown = await tracer.step("prepare-output", async () => this.runPrepareMddForOutput(
           { mddStructured: result.mddStructured ?? state.mddStructured, mddDraft: finalDraft },

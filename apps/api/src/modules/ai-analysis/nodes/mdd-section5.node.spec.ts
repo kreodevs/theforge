@@ -80,6 +80,35 @@ describe("createMddSection5Node (CHANGELOG [Unreleased] → Added → \"Dedicate
     expect(result.mddDraft).toBeUndefined();
   });
 
+  it("inserta §5 cuando el heading canónico no existía (salto §4→§6)", async () => {
+    const draftWithout5 = `# MDD
+## 1. Contexto
+${"ForgeOps es una plataforma SaaS. ".repeat(40)}
+## 2. Arquitectura y Stack
+${"NestJS + PostgreSQL. ".repeat(40)}
+## 3. Modelo de Datos
+${"CREATE TABLE tenants (id UUID PRIMARY KEY); ".repeat(15)}
+## 4. Contratos de API
+${"| GET | /api/v1/health |\n".repeat(20)}
+## 6. Seguridad
+${"Argon2id. ".repeat(50)}
+## 7. Infraestructura
+${"Docker. ".repeat(40)}`;
+    const llm = new FakeLlm(`## 5. Lógica y Edge Cases
+
+- **Login**: dado credenciales válidas, cuando el usuario entra, entonces se emite JWT.
+- **Refresh**: dado un refresh token, cuando se rota, entonces el viejo queda revocado.
+- **Rate limit**: dado >5 intentos fallidos en 15 min, cuando el usuario intenta login, entonces la cuenta se bloquea.
+- **Edge case**: la concurrencia en /licenses/:id/report-usage requiere idempotencia por (license_id, operation, period).`);
+    const node = createMddSection5Node(llm as never);
+    const result = await node({ mddDraft: draftWithout5 } as never);
+    const out = result.mddDraft!;
+    expect(out).toMatch(/##\s*5\.\s*Lógica\s+y\s*Edge\s+Cases/i);
+    expect(out).toContain("JWT");
+    expect(out.indexOf("## 4. Contratos de API")).toBeLessThan(out.indexOf("## 5. Lógica y Edge Cases"));
+    expect(out.indexOf("## 5. Lógica y Edge Cases")).toBeLessThan(out.indexOf("## 6. Seguridad"));
+  });
+
   it("recorta el bloque ## 5 si el LLM devuelve múltiples secciones (defensivo)", async () => {
     const llm = new FakeLlm(`## 5. Lógica y Edge Cases
 

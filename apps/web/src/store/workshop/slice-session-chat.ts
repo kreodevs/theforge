@@ -24,7 +24,11 @@ import {
 } from "../../utils/workshop-document-content.util";
 import { parseApiErrorPayloadFromResponse } from "../../utils/httpError";
 import { parseNdjsonLine } from "../../utils/ndjson";
-import { mddHasSection6Heading, buildMddSectionRegenNotice } from "../../utils/mddSectionRegen";
+import {
+  mddHasSection5Heading,
+  mddHasSection6Heading,
+  buildMddSectionRegenNotice,
+} from "../../utils/mddSectionRegen";
 import { mergeAgentProgressFromMddEvent } from "../../utils/agentProgress";
 import {
   buildPlanApprovalChatContents,
@@ -645,6 +649,18 @@ export const createSessionChatSlice: StateCreator<WorkshopState, [], [], Session
               merged.trim().length > 0
                 ? "La regeneración devolvió un documento demasiado corto; la sección no se aplicó al MDD."
                 : "La regeneración terminó sin markdown actualizado.",
+            loading: false,
+            loadingReason: null,
+            notice: null,
+            agentProgress: [],
+            evaluatorCritique: null,
+          });
+          return;
+        }
+        if (regenerateSection === 5 && !mddHasSection5Heading(merged)) {
+          set({
+            error:
+              "El servidor respondió OK pero el MDD no incluye ## 5. Lógica y Edge Cases. Reintenta /logica o /5; si persiste, usa «Regenerar MDD» completo.",
             loading: false,
             loadingReason: null,
             notice: null,
