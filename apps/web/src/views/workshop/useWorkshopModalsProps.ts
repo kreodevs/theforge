@@ -193,7 +193,7 @@ export function useWorkshopModalsProps(args: UseWorkshopModalsPropsArgs): Worksh
       handleMddRegenerateFull,
       handleMddRegenerateSync,
       patternCompatOpen,
-      handlePatternCompatOpenChange,
+      setPatternCompatOpen,
       patternCompatCorrections,
       patternCompatConfirmLabel,
       patternCompatLoading,

@@ -78,7 +78,7 @@ export interface UseWorkshopModalsPropsArgs {
   handleMddRegenerateFull: () => void | Promise<void>;
   handleMddRegenerateSync: (sections: number[]) => void | Promise<void>;
   patternCompatOpen: boolean;
-  setPatternCompatOpen: Dispatch<SetStateAction<boolean>>;
+  setPatternCompatOpen: (open: boolean) => void;
   patternCompatCorrections: GovernancePatternCorrection[];
   patternCompatConfirmLabel: string;
   patternCompatLoading: boolean;

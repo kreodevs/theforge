@@ -83,7 +83,7 @@ export type WorkshopModalsProps = {
   onMddRegenerateFull: () => void | Promise<void>;
   onMddRegenerateSync: (sections: number[]) => void | Promise<void>;
   mddPatternCompatOpen: boolean;
-  setMddPatternCompatOpen: Dispatch<SetStateAction<boolean>>;
+  setMddPatternCompatOpen: (open: boolean) => void;
   mddPatternCompatCorrections: readonly GovernancePatternCorrection[];
   mddPatternCompatConfirmLabel: string;
   mddPatternCompatLoading: boolean;

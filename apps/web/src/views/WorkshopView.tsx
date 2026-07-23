@@ -30,7 +30,6 @@ import {
 } from "../components/MddPatternsWizardDialog";
 import {
   mddNeedsPatternWizard,
-  mddHasSubstantialBody,
   selectedPatternIdsFromMdd,
   updateMddGovernancePatterns,
 } from "@theforge/shared-types/mdd-governance-patterns";
@@ -798,7 +797,7 @@ export default function WorkshopView({
       ids,
       { kind: "generate-benchmark" },
       "Continuar y regenerar MDD",
-      () => generateMddFromBenchmark(projectId),
+      () => void generateMddFromBenchmark(projectId),
     );
   }, [
     projectId,
@@ -817,7 +816,7 @@ export default function WorkshopView({
         { kind: "upstream-sync", sections },
         "Continuar y sincronizar MDD",
         () =>
-          generateMddUpstreamSync(projectId, {
+          void generateMddUpstreamSync(projectId, {
             sections,
             stageId: activeStageId,
           }),
