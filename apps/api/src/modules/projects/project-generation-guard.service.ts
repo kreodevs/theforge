@@ -124,7 +124,7 @@ export class ProjectGenerationGuardService {
 
   /** Estado de jobs sin gates ni upstream sync (panel de proyectos). */
   async getLightStatus(projectId: string): Promise<ProjectGenerationStatus> {
-    const light = await this.buildLightStatus(projectId);
+    const light = await this.buildLightStatus(projectId, { skipCancelProbe: true });
     return {
       busy: light.busy,
       mddStreamActive: light.mddStreamActive,
@@ -171,14 +171,57 @@ export class ProjectGenerationGuardService {
 
     await Promise.all(
       [...candidateIds].map(async (projectId) => {
-        const status = await this.getLightStatus(projectId);
-        result[projectId] = { busy: status.busy, label: activeGenerationLabel(status) };
+        result[projectId] = await this.summarizeDashboardProject(
+          projectId,
+          mddByProject.get(projectId) ?? [],
+          deliverablesByProject.get(projectId) ?? [],
+        );
       }),
     );
     return result;
   }
 
-  private async buildLightStatus(projectId: string): Promise<{
+  private async summarizeDashboardProject(
+    projectId: string,
+    mddRefs: Awaited<ReturnType<MddQueueService["listActiveJobsForProject"]>>,
+    deliverableRefs: Awaited<ReturnType<DeliverablesQueueService["listActiveJobsForProject"]>>,
+  ): Promise<ProjectGenerationDashboardSummary> {
+    const bgSnapshots: GenerationJobSnapshot[] = [];
+    for (const [jobId, job] of this.bgJobs) {
+      if (job.projectId !== projectId) continue;
+      if (job.status === "queued" || job.status === "active" || job.status === "retrying") {
+        bgSnapshots.push({ jobId, type: job.type, status: job.status });
+      }
+    }
+
+    const mddJobs = await this.mddQueue.buildJobSnapshotsForLabel(mddRefs);
+    const mddJobsBusy = mddJobs.some((job) => job.status === "active" || job.status === "queued");
+    const mddStreamActive =
+      this.isMddStreamActive(projectId) || this.mddQueue.isProjectBusy(projectId) || mddJobsBusy;
+
+    const merged = [...deliverableRefs, ...bgSnapshots];
+    const activeJob =
+      merged.find((j) => j.status === "active") ??
+      merged.find((j) => j.status === "retrying") ??
+      null;
+    const queuedJobs = merged.filter((j) => j.status === "queued");
+    const busy = mddStreamActive || merged.length > 0;
+
+    const status: ProjectGenerationStatus = {
+      busy,
+      mddStreamActive,
+      mddJobs,
+      activeJob,
+      queuedJobs,
+      gates: {},
+    };
+    return { busy, label: activeGenerationLabel(status) };
+  }
+
+  private async buildLightStatus(
+    projectId: string,
+    options?: { skipCancelProbe?: boolean },
+  ): Promise<{
     busy: boolean;
     mddStreamActive: boolean;
     mddJobs: ProjectGenerationStatus["mddJobs"];
@@ -203,13 +246,15 @@ export class ProjectGenerationGuardService {
 
     const merged = [...queueJobs, ...bgSnapshots];
     const cancellingIds = new Set<string>();
-    await Promise.all(
-      merged.map(async (j) => {
-        if (await this.deliverablesQueue.isCancelRequested(j.jobId)) {
-          cancellingIds.add(j.jobId);
-        }
-      }),
-    );
+    if (!options?.skipCancelProbe) {
+      await Promise.all(
+        merged.map(async (j) => {
+          if (await this.deliverablesQueue.isCancelRequested(j.jobId)) {
+            cancellingIds.add(j.jobId);
+          }
+        }),
+      );
+    }
     const visibleJobs = merged.filter((j) => !cancellingIds.has(j.jobId));
     const activeJob =
       visibleJobs.find((j) => j.status === "active") ??

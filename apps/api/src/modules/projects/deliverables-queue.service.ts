@@ -636,12 +636,10 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
       for (const job of jobs) {
         const data = job.data as GenerateJobData | undefined;
         if (!data?.projectId) continue;
-        const actualState = await job.getState();
-        if (actualState === "completed" || actualState === "failed") continue;
         const status =
-          actualState === "active"
+          state === "active"
             ? "active"
-            : actualState === "delayed"
+            : state === "delayed"
               ? "retrying"
               : ("queued" as const);
         push(data.projectId, { jobId: String(job.id), type: data.type, status });
@@ -669,12 +667,10 @@ export class DeliverablesQueueService implements OnModuleInit, OnModuleDestroy {
       for (const job of jobs) {
         const data = job.data as GenerateJobData | undefined;
         if (data?.projectId !== projectId) continue;
-        const actualState = await job.getState();
-        if (actualState === "completed" || actualState === "failed") continue;
         const status =
-          actualState === "active"
+          state === "active"
             ? "active"
-            : actualState === "delayed"
+            : state === "delayed"
               ? "retrying"
               : ("queued" as const);
         out.push({ jobId: String(job.id), type: data.type, status });

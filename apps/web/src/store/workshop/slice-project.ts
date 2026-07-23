@@ -256,7 +256,7 @@ export const createProjectSlice: StateCreator<WorkshopState, [], [], ProjectSlic
   fetchProject: async (projectId, options) => {
     const requestedId = projectId.trim();
     if (!requestedId) return null;
-    void get().fetchGenerationStatus(requestedId).catch(() => {});
+    void get().fetchGenerationStatus(requestedId, undefined, { light: true }).catch(() => {});
     try {
       const switchingProject =
         !!get().projectId?.trim() && get().projectId!.trim() !== requestedId;
@@ -348,31 +348,34 @@ export const createProjectSlice: StateCreator<WorkshopState, [], [], ProjectSlic
         synced: true,
         pluginData: (data.pluginData as Record<string, unknown> | null | undefined) ?? {},
       });
-      const sessionsRes = await apiFetch(`${API_BASE}/sessions/project/${requestedId}`);
-      if (sessionsRes.ok) {
-        const sessions: Session[] = await sessionsRes.json();
-        if (!shouldApplyWorkshopUpdate(get, requestedId)) return null;
-        const scoped = sessions.filter((s) => s.projectId === requestedId);
-        set({ session: scoped.length > 0 ? scoped[0] : null });
-      }
-      if (!shouldApplyWorkshopUpdate(get, requestedId)) return null;
-      const sid = get().activeStageId;
-      const threadQs = new URLSearchParams({ projectId: requestedId });
-      if (sid) threadQs.set("stageId", sid);
-      const threadRes = await apiFetch(`${API_BASE}/ai-analysis/mdd/thread?${threadQs.toString()}`).catch(
-        () => null,
-      );
-      if (threadRes?.ok) {
-        const threadData = (await threadRes.json()) as { threadId?: string | null };
-        if (shouldApplyWorkshopUpdate(get, requestedId) && threadData.threadId) {
-          set({ managerThreadId: threadData.threadId });
+      void (async () => {
+        const sessionsRes = await apiFetch(`${API_BASE}/sessions/project/${requestedId}`);
+        if (sessionsRes.ok) {
+          const sessions: Session[] = await sessionsRes.json();
+          if (!shouldApplyWorkshopUpdate(get, requestedId)) return;
+          const scoped = sessions.filter((s) => s.projectId === requestedId);
+          set({ session: scoped.length > 0 ? scoped[0] : null });
         }
-      }
+        if (!shouldApplyWorkshopUpdate(get, requestedId)) return;
+        const sid = get().activeStageId;
+        const threadQs = new URLSearchParams({ projectId: requestedId });
+        if (sid) threadQs.set("stageId", sid);
+        const threadRes = await apiFetch(`${API_BASE}/ai-analysis/mdd/thread?${threadQs.toString()}`).catch(
+          () => null,
+        );
+        if (threadRes?.ok) {
+          const threadData = (await threadRes.json()) as { threadId?: string | null };
+          if (shouldApplyWorkshopUpdate(get, requestedId) && threadData.threadId) {
+            set({ managerThreadId: threadData.threadId });
+          }
+        }
+      })();
       setTimeout(() => {
         if (!shouldApplyWorkshopUpdate(get, requestedId)) return;
+        const sid = get().activeStageId;
         get().fetchEstimation(requestedId).catch(() => {});
         get().fetchAdrs(requestedId).catch(() => {});
-        get().fetchGenerationStatus(requestedId).catch(() => {});
+        get().fetchGenerationStatus(requestedId, sid ?? undefined).catch(() => {});
         get().fetchPlanValidation(requestedId).catch(() => {});
       }, 0);
       return data;
