@@ -13,6 +13,29 @@ import type { ProviderId } from "../../ai/providers/provider-catalog.js";
 import { ChainedFallbackChatModel } from "./chained-fallback-chat-model.js";
 import { OpenRouterFallbackChatModel } from "./openrouter-fallback-chat-model.js";
 
+/**
+ * Factory de LLMs para el grafo MDD (DBGA, MDD high-complexity, Auditor, etc.).
+ *
+ * Cada `BaseChatModel` retornado se pasa al wrapper `invokeLlmWithRetry`
+ * (mdd-llm-retry.util.ts). A su vez, ese wrapper extrae `usage_metadata`
+ * del `AIMessage` retornado por LangChain y lo registra como `TokenUsage`
+ * usando `deriveLlmIdentity(llm)` para reconstruir el `providerId`/`modelId`.
+ *
+ * IMPORTANTE — atribución de provider:
+ *   Los adapters del módulo `ai/` (OpenAI-compat, Anthropic, Gemini) ya
+ *   tienen `runtime.providerId` directo. El grafo MDD, en cambio, sólo
+ *   recibe el `BaseChatModel`, así que la atribución depende de:
+ *     1. Nombre de clase (`ChatAnthropic`, `ChatGoogleGenerativeAI`, `ChatBedrock`).
+ *     2. `baseURL` en `configuration.baseURL` / `client.baseURL` / `lc_kwargs.baseURL`
+ *        o `anthropicApiUrl` (OpenRouter, Groq, Cloudflare, OpenAI nativo).
+ *     3. Heurística del slug del modelo (`anthropic/…` → OpenRouter, etc.).
+ *   Si añades un nuevo proveedor o cambias la estructura de la config aquí,
+ *   actualiza `deriveLlmIdentity` y `detectProviderFromBaseURL` en
+ *   `mdd-llm-retry.util.ts`. El bug original: OpenRouter entraba vía
+ *   `ChatOpenAI` con `baseURL = openrouter.ai/api/v1`; la heurística por
+ *   clase devolvía `providerId: "openai"` y el coste caía a 0 USD.
+ */
+
 /** @internal */ const LLM_TIMEOUT_MS = parseInt(
   process.env.LANGGRAPH_LLM_TIMEOUT_MS?.trim() || "300000",
   10,
@@ -41,6 +64,11 @@ function buildChatOpenAI(
   temperatureOverride?: number,
   maxTokens?: number,
 ): ChatOpenAI {
+  // ⚠️ `configuration.baseURL` es la señal canónica que `deriveLlmIdentity`
+  // (utils/mdd-llm-retry.util.ts) usa para distinguir OpenRouter / Groq /
+  // Cloudflare / OpenAI nativo en la cascada de detección. Si cambias la
+  // estructura de configuración aquí, actualiza `readBaseURL()` en ese util
+  // y la lista de heurísticas en `detectProviderFromBaseURL`.
   return new ChatOpenAI({
     model,
     temperature: resolveLangChainChatTemperature(temperatureOverride),
