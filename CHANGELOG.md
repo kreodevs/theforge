@@ -29,6 +29,10 @@ Todas las notas relevantes de este repositorio se documentan aquí. El formato s
 
 ### Fixed
 
+- **`mdd-llm-retry.util.ts` — atribución OpenRouter en pipeline MDD:** `deriveLlmIdentity` ahora inspecciona `baseURL` (donde `createDbgaLLM` guarda el endpoint del runtime) antes de caer al heurístico por nombre de clase. OpenRouter entraba al MDD pipeline vía `ChatOpenAI` con `configuration.baseURL = "https://openrouter.ai/api/v1"`, pero la heurística anterior devolvía `providerId: "openai"` y `costUsd` quedaba en 0. Cascada ahora: 1) nombre de clase (`ChatAnthropic`, `ChatGoogleGenerativeAI`, `ChatBedrock`), 2) `baseURL` (OpenRouter, Groq, Cloudflare, OpenAI nativo, Gemini vía OpenAI-compat), 3) heurística sobre el slug del modelo (`anthropic/…`, `openai/…`, `google/…`, `meta-llama/…`, `minimax/…` → OpenRouter; `@cf/…` → Cloudflare), 4) default `openai`. 21 tests en `node:test` (`mdd-llm-retry.util.derive.spec.ts`) — todos los proveedores del catálogo OpenAI / Anthropic / Gemini / Groq / Cloudflare / OpenRouter + custom endpoint cubiertos.
+
+### Fixed
+
 - **MDD full-regen: §4 vacía, Mermaid partido y §1 mal formateado pasaban el gate.** Tras limpiar y regenerar el MDD (caso Jarvis IMJ), el documento cerraba en AMARILLO ~92% con `(Falta: definir endpoints…)`, diagrama de componentes con fence cerrado prematuro (`### USR["…"]` fuera de Mermaid), headings `### 1.1 Propósito Jarvis…` pegados y tablas pipe en una sola línea. Causas: el delivery gate solo medía longitud (≥200 chars); `sanitizeMermaidInDraft` aceptaba `flowchart` sin aristas; `splitHeadingTitleFromInlineProse` no cortaba títulos numerados MDD. Fix:
   - **Gate §4:** `isContratosSubstantial` / `isContratosPlaceholder` compartidos (`contratos-format.ts`); `validateMddForDelivery` bloquea placeholder o stubs sin endpoints/` ```json ` (el auto-loop re-enruta a `software_architect` vía `§4`).
   - **Mermaid:** `repairPrematureMermaidFenceClose` reensambla nodos huérfanos; fences sin aristas se eliminan; `injectProposedComponentDiagramIntoSection2` solo omite si el diagrama existente es usable.
