@@ -220,7 +220,25 @@ export function mergeMddBySection(
   const incomingCoversAll = Array.from(existingByKey.keys()).every((k) =>
     incomingByKey.has(k),
   );
-  const looksLikeFullRegen = !truncated && incomingCoversAll && incomingParsed.sections.length >= existingParsed.sections.length - 1;
+  // Regla de "energía": si incoming trae todas las secciones pero es
+  // significativamente más corto que existing (ej. clarifier iter 2 devolviendo
+  // 14k chars vs existing 24k), NO hacer full-replace aunque cubra las
+  // secciones. Caer a section-merge, que ya tiene la heurística per-sección
+  // de 20% (incomingBodyLen * 5 < existingBodyLen → keep existing).
+  // Esto evita que iteraciones regenerativas destruyan contenido bueno cuando
+  // el LLM produce un MDD "completo pero corto".
+  const incomingChars =
+    incomingParsed.frontMatter.length +
+    incomingParsed.sections.reduce((a, s) => a + s.heading.length + s.body.length, 0);
+  const existingChars =
+    existingParsed.frontMatter.length +
+    existingParsed.sections.reduce((a, s) => a + s.heading.length + s.body.length, 0);
+  const incomingIsShrunk = existingChars > 0 && incomingChars * 100 < existingChars * 70;
+  const looksLikeFullRegen =
+    !truncated &&
+    incomingCoversAll &&
+    incomingParsed.sections.length >= existingParsed.sections.length - 1 &&
+    !incomingIsShrunk;
 
   if (looksLikeFullRegen) {
     // Full replace — incoming trae (casi) todas las secciones que ya existían.
@@ -253,15 +271,18 @@ export function mergeMddBySection(
     const key = sectionKey(existingSec.heading);
     const incomingSec = incomingByKey.get(key);
     if (incomingSec) {
-      // Skip si el incoming está vacío / sólo whitespace / claramente más
-      // corto que el existing → preferimos conservar el existing bueno
-      // antes que pisarlo con un placeholder vacío. Heurística: si incoming
-      // tiene < 20% de los chars de existing, mantener existing.
+      // Skip si el incoming está vacío / sólo whitespace / es claramente más
+      // corto que el existing → preferimos conservar el existing bueno antes que
+      // pisarlo con un placeholder vacío. Heurística: si incoming tiene < 20%
+      // de los chars de existing, mantener existing. Sin lower-bound en existing
+      // (el threshold 20% ya filtra secciones cortas sin disparar falsos
+      // positivos — antes había un guard `existingBodyLen > 200` que dejaba
+      // sin protección secciones como §4 "Contratos de API" con 30 chars).
       const existingBodyLen = existingSec.body.trim().length;
       const incomingBodyLen = incomingSec.body.trim().length;
       if (
         incomingBodyLen === 0 ||
-        (existingBodyLen > 200 && incomingBodyLen * 5 < existingBodyLen)
+        (existingBodyLen > 0 && incomingBodyLen * 100 < existingBodyLen * 20)
       ) {
         kept.push(existingSec.heading);
         mergedSections.push(existingSec);
