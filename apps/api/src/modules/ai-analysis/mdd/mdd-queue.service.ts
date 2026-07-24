@@ -206,7 +206,7 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
     this.cancelRequestedJobIds.add(jobId);
     if (!this.queue) return;
     const client = await this.queue.client;
-    await client.set(`${MDD_CANCEL_KEY_PREFIX}${jobId}`, "1", "EX", 86_400);
+    await client.set(`${MDD_CANCEL_KEY_PREFIX}${jobId}`, "1");
   }
 
   private async clearCancelRequested(jobId: string): Promise<void> {
