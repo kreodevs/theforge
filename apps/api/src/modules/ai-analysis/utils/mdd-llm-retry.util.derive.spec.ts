@@ -357,4 +357,43 @@ describe("deriveLlmIdentity", () => {
       assert.equal(providerId, "openrouter");
     });
   });
+
+  describe("modelId explícito en el wrapper (test del catálogo de pricing)", () => {
+    it("modelId='openai/gpt-4o' se usa directo → catálogo lookup no falla", () => {
+      // Antes de pasar modelId al wrapper, deriveLlmIdentity devolvía
+      // modelId='unknown' y el catálogo openrouter:unknown no existía → 0 USD.
+      const llm = {
+        constructor: { name: "OpenRouterFallbackChatModel" },
+        providerId: "openrouter",
+        modelId: "openai/gpt-4o",
+      };
+      const { providerId, modelId } = deriveLlmIdentity(llm as never);
+      assert.equal(providerId, "openrouter");
+      assert.equal(modelId, "openai/gpt-4o");
+    });
+
+    it("modelId del wrapper tiene precedencia sobre el duck-typing de baseURL", () => {
+      // Caso OpenRouter anterior: modelId OpenRouter upstream + baseURL = openrouter.ai.
+      // El wrapper pre-PR #500 no exponía modelId, caía a extractModelId = null.
+      const llm = {
+        constructor: { name: "OpenRouterFallbackChatModel" },
+        providerId: "openrouter",
+        modelId: "anthropic/claude-sonnet-4",
+      };
+      const { providerId, modelId } = deriveLlmIdentity(llm as never);
+      assert.equal(providerId, "openrouter");
+      assert.equal(modelId, "anthropic/claude-sonnet-4");
+    });
+
+    it("ChainedFallbackChatModel con providerId+modelId funciona", () => {
+      const llm = {
+        constructor: { name: "ChainedFallbackChatModel" },
+        providerId: "anthropic",
+        modelId: "claude-sonnet-4-20250514",
+      };
+      const { providerId, modelId } = deriveLlmIdentity(llm as never);
+      assert.equal(providerId, "anthropic");
+      assert.equal(modelId, "claude-sonnet-4-20250514");
+    });
+  });
 });

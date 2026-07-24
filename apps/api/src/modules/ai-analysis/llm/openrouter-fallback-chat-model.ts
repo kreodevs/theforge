@@ -21,11 +21,16 @@ export class OpenRouterFallbackChatModel extends BaseChatModel {
     private readonly toolsConfig?: BoundToolsConfig,
     /**
      * Proveedor real para telemetría (TokenUsage). Enviado por `create-dbga-llm`.
-     * El wrapper no expone `modelName` / `configuration.baseURL` de los
-     * `ChatOpenAI` internos, así que `deriveLlmIdentity` lee este campo
-     * directamente cuando está presente. Sin él, devuelve `modelId="unknown"`.
+     * El wrapper no expone `configuration.baseURL` de los `ChatOpenAI` internos,
+     * así que `deriveLlmIdentity` lee este campo directamente cuando está presente.
      */
     private readonly providerId?: string,
+    /**
+     * Modelo primario de la cadena de fallback (`models[0]`). Sin esto,
+     * `deriveLlmIdentity` cae a `extractModelId` que devuelve `null` para el
+     * wrapper → `modelId="unknown"` → coste 0 USD en el catálogo.
+     */
+    private readonly modelId?: string,
   ) {
     super({});
   }
@@ -97,6 +102,12 @@ export class OpenRouterFallbackChatModel extends BaseChatModel {
     tools: Parameters<ChatOpenAI["bindTools"]>[0],
     kwargs?: Parameters<ChatOpenAI["bindTools"]>[1],
   ): BaseChatModel {
-    return new OpenRouterFallbackChatModel(this.buildLlm, this.models, { tools, kwargs }, this.providerId);
+    return new OpenRouterFallbackChatModel(
+      this.buildLlm,
+      this.models,
+      { tools, kwargs },
+      this.providerId,
+      this.modelId,
+    );
   }
 }
