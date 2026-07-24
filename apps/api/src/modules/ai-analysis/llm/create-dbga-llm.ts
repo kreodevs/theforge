@@ -130,9 +130,14 @@ function buildWithFallbacks(
     return new OpenRouterFallbackChatModel(
       (model) => buildChatOpenAI(runtime, model, temperatureOverride, maxTokens),
       models,
+      undefined,
+      // Telemetría: el wrapper no expone configuration.baseURL, así que
+      // pasamos el providerId explícitamente para que deriveLlmIdentity
+      // (mdd-llm-retry.util.ts) lo lea y no devuelva "modelId=unknown".
+      runtime.providerId,
     );
   }
-  return new ChainedFallbackChatModel(build, models);
+  return new ChainedFallbackChatModel(build, models, undefined, undefined, runtime.providerId);
 }
 
 export function createDbgaLLMFromRuntime(runtime: UserLLMRuntime, opts?: CreateDbgaLLMOptions): BaseChatModel {

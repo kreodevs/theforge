@@ -311,4 +311,50 @@ describe("deriveLlmIdentity", () => {
       assert.equal(providerId, "anthropic");
     });
   });
+
+  describe("wrappers con providerId/modelId explícitos (create-dbga-llm)", () => {
+    it("OpenRouterFallbackChatModel con providerId='openrouter' → providerId=openrouter (no duck-typing)", () => {
+      // El wrapper no expone configuration.baseURL/modelName del ChatOpenAI
+      // interno. Sin el providerId explícito, la cascada devolvería
+      // unknown/null. Con él, la telemetría queda correcta.
+      const llm = {
+        constructor: { name: "OpenRouterFallbackChatModel" },
+        providerId: "openrouter",
+        modelId: "openai/gpt-4o",
+      };
+      const { providerId, modelId } = deriveLlmIdentity(llm as never);
+      assert.equal(providerId, "openrouter");
+      assert.equal(modelId, "openai/gpt-4o");
+    });
+
+    it("ChainedFallbackChatModel con providerId='anthropic' → providerId=anthropic", () => {
+      const llm = {
+        constructor: { name: "ChainedFallbackChatModel" },
+        providerId: "anthropic",
+      };
+      const { providerId } = deriveLlmIdentity(llm as never);
+      assert.equal(providerId, "anthropic");
+    });
+
+    it("wrapper con providerId='openrouter' pero sin modelId explícito → usa duck-typing de fallback", () => {
+      // Caso intermedio: el factory solo pasó providerId, modelId cae a
+      // extractModelId (también null) y termina como "unknown".
+      const llm = {
+        constructor: { name: "OpenRouterFallbackChatModel" },
+        providerId: "openrouter",
+      };
+      const { providerId, modelId } = deriveLlmIdentity(llm as never);
+      assert.equal(providerId, "openrouter");
+      assert.equal(modelId, "unknown");
+    });
+
+    it("providerId explícito tiene precedencia sobre clase BaseChatModel", () => {
+      const llm = {
+        constructor: { name: "ChatAnthropic" },
+        providerId: "openrouter",
+      };
+      const { providerId } = deriveLlmIdentity(llm as never);
+      assert.equal(providerId, "openrouter");
+    });
+  });
 });

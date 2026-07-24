@@ -20,6 +20,13 @@ export class ChainedFallbackChatModel extends BaseChatModel {
     private readonly models: string[],
     private readonly toolsConfig?: BoundToolsConfig,
     params?: BaseChatModelParams,
+    /**
+     * Proveedor real para telemetría (TokenUsage). Enviado por `create-dbga-llm`.
+     * El wrapper no expone `modelName` / `configuration.baseURL` de los
+     * LLMs internos, así que `deriveLlmIdentity` lee este campo
+     * directamente cuando está presente. Sin él, devuelve `modelId="unknown"`.
+     */
+    private readonly providerId?: string,
   ) {
     super(params ?? {});
   }
@@ -89,6 +96,6 @@ export class ChainedFallbackChatModel extends BaseChatModel {
     tools: StructuredToolInterface[],
     kwargs?: Record<string, unknown>,
   ): BaseChatModel {
-    return new ChainedFallbackChatModel(this.buildLlm, this.models, { tools, kwargs });
+    return new ChainedFallbackChatModel(this.buildLlm, this.models, { tools, kwargs }, undefined, this.providerId);
   }
 }
