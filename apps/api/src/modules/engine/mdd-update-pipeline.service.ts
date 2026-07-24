@@ -35,7 +35,10 @@ export class MddUpdatePipelineService {
     graphScope?: { projectId: string; stageId: string },
   ): Promise<MddUpdatePipelineResult> {
     const gateRef: { current?: ReturnType<typeof validateMddForDelivery> } = {};
-    const prepared = await prepareMddForOutput(rawMddContent, { deliveryGateRef: gateRef });
+    const prepared = await prepareMddForOutput(rawMddContent, {
+      deliveryGateRef: gateRef,
+      formatForPersist: true,
+    });
     const gate = gateRef.current ?? validateMddForDelivery(prepared);
     if (!gate.ok) {
       return {

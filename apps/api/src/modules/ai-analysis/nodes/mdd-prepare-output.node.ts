@@ -33,6 +33,7 @@ export function createMddPrepareOutputNode(options?: { uiMcpLibraryLabel?: strin
         dbgaMarkdown,
         baselineDraft,
         mddComplexity: state.mddComplexity,
+        formatForPersist: false,
       },
     );
     const gate =

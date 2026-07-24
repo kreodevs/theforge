@@ -154,6 +154,11 @@ export type PrepareMddForOutputOptions = {
   /** Borrador pre-regen / Clarificador para restaurar §1–§2 si el pipeline los omitió. */
   baselineDraft?: string | null;
   mddComplexity?: "LOW" | "MEDIUM" | "HIGH";
+  /**
+   * true = pipeline de persistencia (`prepareMddMarkdownForPersist`, `formatDocumentMarkdown`).
+   * false = evaluación del gate / streaming (conserva formato del borrador del grafo).
+   */
+  formatForPersist?: boolean;
 };
 
 export async function prepareMddForOutput(
@@ -209,6 +214,7 @@ export async function prepareMddForOutput(
   );
   const markdown = applyPreDeliveryGateFixes(reconciled);
   let finalMarkdown = markdown;
+  const formatForPersist = options?.formatForPersist === true;
   try {
     const { rebuildDomainInventoryPreferringBrd } = await import(
       "../../engine/domain-inventory-persist.util.js"
@@ -221,7 +227,9 @@ export async function prepareMddForOutput(
             mddMarkdown: markdown,
           })
         : undefined;
-    finalMarkdown = prepareMddMarkdownForPersist(finalMarkdown);
+    if (formatForPersist) {
+      finalMarkdown = prepareMddMarkdownForPersist(finalMarkdown);
+    }
     const contratosBeforeSsot = extractContratosSectionBody(finalMarkdown);
     const { reconcileMddSsotBeforeDeliveryGate } = await import(
       "../../engine/mdd-ssot-repair.util.js"
@@ -238,7 +246,9 @@ export async function prepareMddForOutput(
       repaired.section4Injected.length > 0 ||
       repaired.platformAnnotated.length > 0
     ) {
-      finalMarkdown = prepareMddMarkdownForPersist(repaired.markdown);
+      finalMarkdown = formatForPersist
+        ? prepareMddMarkdownForPersist(repaired.markdown)
+        : applyPreDeliveryGateFixes(repaired.markdown);
       console.log(
         `[MDD:DeliveryGate] SSOT repair — §3:${repaired.section3Injected.length} UAT:${repaired.uatInjected.length} §4:${repaired.section4Injected.length} platform:${repaired.platformAnnotated.length}`,
       );

@@ -17,6 +17,7 @@ export async function evaluateMddDeliveryGatePrepared(
     deliveryGateRef: gateRef,
     brdMarkdown: domainContext?.brdMarkdown,
     dbgaMarkdown: domainContext?.dbgaMarkdown,
+    formatForPersist: false,
   });
   return gateRef.current ?? validateMddForDelivery(prepared, domainContext);
 }

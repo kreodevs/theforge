@@ -96,6 +96,15 @@ Cola duplicada.
     assert.ok(!out.includes("Cola duplicada"));
     assert.ok(out.includes("Argon2id"));
   });
+
+  it("formatForPersist=false omite pipeline pesado de persistencia (streaming/gate)", async () => {
+    const draft = FULL_MDD_PREFIX + EXISTING_SECTION6;
+    const gateOut = await prepareMddForOutput({ mddDraft: draft }, { formatForPersist: false });
+    const persistOut = await prepareMddForOutput({ mddDraft: draft }, { formatForPersist: true });
+    assert.ok(gateOut.includes("CREATE TABLE users"));
+    assert.ok(persistOut.includes("CREATE TABLE users"));
+    assert.ok(gateOut.length <= persistOut.length + 500, "gate no debe inflar más que persist");
+  });
 });
 
 describe("getSection6Or7Range", () => {

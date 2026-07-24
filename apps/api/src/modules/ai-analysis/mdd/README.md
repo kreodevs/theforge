@@ -25,8 +25,9 @@ Un solo job MDD activo o en cola por proyecto (`assertCanEnqueue` → 409 si bus
 
 `AiAnalysisService.runMddGenerationJob` persiste borradores (`draft`) y resultado final (`done`) en BD vía `projects.persistMddFromBackgroundJob`:
 
-- **Borradores:** `prepareMddForOutput` + guardado en stage **sin** delivery gate (el MDD puede faltar §1–§7 a mitad de pipeline).
-- **Final (`done`):** pipeline completo (`MddUpdatePipelineService`) con gate de entrega, semáforo y estimación.
+- **Borradores:** `prepareMddForOutput` con `formatForPersist: false` (sin `formatDocumentMarkdown`); guardado directo en stage **sin** delivery gate.
+- **Nodo `prepare_output` (streaming):** mismo modo gate — valida SSOT/gate sin reformatear el borrador del grafo.
+- **Final (`done`):** `formatForPersist: true` + pipeline completo (`MddUpdatePipelineService`) con gate de entrega, semáforo y estimación.
 
 El Workshop ya no depende de `persistMddContent` tras encolar.
 

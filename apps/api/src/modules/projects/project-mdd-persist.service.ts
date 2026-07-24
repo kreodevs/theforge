@@ -152,8 +152,8 @@ export class ProjectMddPersistService {
     const mddForPipeline = applyLockedPatterns(enforced.markdown);
 
     if (!options?.finalize) {
-      const prepared = await prepareMddForOutput(mddForPipeline);
-      const stored = storeMddMarkdownForPersist(applyLockedPatterns(prepared));
+      const prepared = await prepareMddForOutput(mddForPipeline, { formatForPersist: false });
+      const stored = applyLockedPatterns(prepared);
       await this.prisma.stage.update({
         where: { id: targetStage.id },
         data: { mddContent: stored },
