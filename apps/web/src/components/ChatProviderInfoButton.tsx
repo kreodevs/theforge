@@ -10,6 +10,7 @@ import {
 import { createPortal } from "react-dom";
 import {
   ChevronRight,
+  Eye,
   KeyRound,
   Layers,
   Loader2,
@@ -19,6 +20,7 @@ import {
   Settings2,
   Shield,
   Sparkles,
+  Brain,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { ProviderLogo, getProviderLabel } from "./ProviderLogo";
@@ -28,6 +30,7 @@ import {
   visionModelHint,
   type EffectiveProviderSource,
 } from "@/utils/resolve-effective-provider";
+import { visionFallbackFromExtras } from "@/utils/user-provider-form";
 import { cn } from "@/lib/utils";
 
 interface ChatProviderInfoButtonProps {
@@ -106,25 +109,37 @@ function ModelField({
   );
 }
 
-function FallbackModelsField({ models }: { models: string[] }) {
-  if (models.length === 0) return null;
+function FallbackModelsField({
+  models,
+  alwaysShow = false,
+}: {
+  models: string[];
+  alwaysShow?: boolean;
+}) {
+  if (models.length === 0 && !alwaysShow) return null;
   return (
     <div className="rounded-lg border border-[color-mix(in_oklch,var(--border)_75%,transparent)] bg-[color-mix(in_oklch,var(--card)_55%,var(--background))] p-2.5">
       <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-[var(--muted-foreground)]">
         <Layers className="h-3.5 w-3.5 shrink-0 opacity-80" strokeWidth={2} aria-hidden />
         Modelos de respaldo
       </div>
-      <div className="flex flex-wrap gap-1.5">
-        {models.map((model) => (
-          <ModelChip key={model} model={model} />
-        ))}
-      </div>
+      {models.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {models.map((model) => (
+            <ModelChip key={model} model={model} />
+          ))}
+        </div>
+      ) : (
+        <p className="text-[11px] leading-snug text-[var(--muted-foreground)]">No configurado</p>
+      )}
     </div>
   );
 }
 
+const INHERITED_FROM_CHAT_HINT = "Mismo que chat";
+
 export function ChatProviderInfoButton({ onOpenSettings }: ChatProviderInfoButtonProps) {
-  const { info, vision, loading, error } = useActiveProviderInfo();
+  const { info, vision, catalog, loading, error } = useActiveProviderInfo();
   const [open, setOpen] = useState(false);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -137,7 +152,15 @@ export function ChatProviderInfoButton({ onOpenSettings }: ChatProviderInfoButto
   const displayName =
     instance?.displayName ?? (personal ? getProviderLabel(personal.provider) : null);
   const chatModel = instance?.chatModel ?? personal?.chatModel ?? null;
-  const auditorModel = instance?.auditorChatModel?.trim() || chatModel;
+  const explicitAuditor = instance?.auditorChatModel?.trim() || null;
+  const auditorModel = explicitAuditor ?? chatModel;
+  const auditorHint = explicitAuditor ? null : INHERITED_FROM_CHAT_HINT;
+  const explicitHighModel = instance?.highComplexityChatModel?.trim() || null;
+  const highComplexityModel = explicitHighModel ?? chatModel;
+  const highComplexityHint = explicitHighModel ? null : INHERITED_FROM_CHAT_HINT;
+  const extras = instance?.extras ?? personal?.extras ?? null;
+  const visionFallback = visionFallbackFromExtras(extras);
+  const catalogEntry = providerType ? catalog.find((entry) => entry.id === providerType) : undefined;
   const apiKeyHint = instance?.apiKeyHint ?? personal?.apiKeyHint ?? null;
   const fallbackModels =
     instance?.chatModelFallbacks?.length
@@ -155,7 +178,7 @@ export function ChatProviderInfoButton({ onOpenSettings }: ChatProviderInfoButto
     const chatColumn = trigger.closest(".workshop-chat-column");
     const chatRect = chatColumn?.getBoundingClientRect();
 
-    const panelHeight = panelRef.current?.offsetHeight ?? 320;
+    const panelHeight = panelRef.current?.offsetHeight ?? 420;
     const maxPanelWidth = chatRect
       ? Math.max(200, chatRect.width - VIEWPORT_PADDING_PX * 2)
       : Math.max(200, viewport.width - VIEWPORT_PADDING_PX * 2);
@@ -323,9 +346,38 @@ export function ChatProviderInfoButton({ onOpenSettings }: ChatProviderInfoButto
                   </p>
                 ) : (
                   <>
-                    <ModelField icon={MessageSquare} label="Modelo de chat" value={chatModel} />
-                    <ModelField icon={Shield} label="Modelo auditor" value={auditorModel} />
-                    <FallbackModelsField models={fallbackModels} />
+                    <ModelField icon={MessageSquare} label="Modelo de chat" value={chatModel} alwaysShow />
+                    <FallbackModelsField models={fallbackModels} alwaysShow />
+                    <ModelField
+                      icon={Shield}
+                      label="Modelo auditor / planner"
+                      value={auditorModel}
+                      hint={auditorHint}
+                      alwaysShow
+                    />
+                    <ModelField
+                      icon={Brain}
+                      label="Modelo top MDD HIGH"
+                      value={highComplexityModel}
+                      hint={highComplexityHint}
+                      alwaysShow
+                    />
+                    {catalogEntry?.supportsEmbeddings ? (
+                      <ModelField
+                        icon={Sparkles}
+                        label="Embeddings"
+                        value={instance?.embeddingModel ?? personal?.embeddingModel ?? null}
+                        alwaysShow
+                      />
+                    ) : null}
+                    {catalogEntry?.supportsStt ? (
+                      <ModelField
+                        icon={Mic}
+                        label="Transcripción (STT)"
+                        value={instance?.sttModel ?? personal?.sttModel ?? null}
+                        alwaysShow
+                      />
+                    ) : null}
                     {vision.supportsVision ? (
                       <ModelField
                         icon={ScanEye}
@@ -335,16 +387,14 @@ export function ChatProviderInfoButton({ onOpenSettings }: ChatProviderInfoButto
                         alwaysShow
                       />
                     ) : null}
-                    <ModelField
-                      icon={Sparkles}
-                      label="Embeddings"
-                      value={instance?.embeddingModel ?? personal?.embeddingModel ?? null}
-                    />
-                    <ModelField
-                      icon={Mic}
-                      label="Transcripción (STT)"
-                      value={instance?.sttModel ?? personal?.sttModel ?? null}
-                    />
+                    {vision.supportsVision ? (
+                      <ModelField
+                        icon={Eye}
+                        label="Respaldo de visión"
+                        value={visionFallback}
+                        alwaysShow
+                      />
+                    ) : null}
                     {apiKeyHint ? (
                       <ModelField icon={KeyRound} label="Clave API" value={apiKeyHint} />
                     ) : null}

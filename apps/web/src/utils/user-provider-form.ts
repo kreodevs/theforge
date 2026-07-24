@@ -18,7 +18,7 @@ export interface UserProviderFormState {
   extras: Record<string, string>;
 }
 
-function visionFallbackFromExtras(raw?: Record<string, unknown> | null): string {
+export function visionFallbackFromExtras(raw?: Record<string, unknown> | null): string {
   const v = raw?.visionModelFallback;
   return typeof v === "string" ? v : "";
 }

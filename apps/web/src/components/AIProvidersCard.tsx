@@ -34,6 +34,7 @@ import {
 import {
   configFormFromUserConfig,
   createEmptyUserProviderForm,
+  visionFallbackFromExtras,
   type UserProviderFormState,
 } from "@/utils/user-provider-form";
 import { UserProviderConfigModal } from "./UserProviderConfigModal";
@@ -448,31 +449,43 @@ export function AIProvidersCard({ personalMode = false }: AIProvidersCardProps) 
                         <dt className="text-[var(--foreground-muted)]">Modelo de chat</dt>
                         <dd className="font-mono text-xs">{activeConfig?.chatModel}</dd>
                       </div>
-                      {activeConfig?.chatModelFallbacks?.length ? (
+                      <div>
+                        <dt className="text-[var(--foreground-muted)]">Respaldo</dt>
+                        <dd className="font-mono text-xs">
+                          {activeConfig?.chatModelFallbacks?.length
+                            ? activeConfig.chatModelFallbacks.join(", ")
+                            : "—"}
+                        </dd>
+                      </div>
+                      {activeCatalog.supportsEmbeddings ? (
                         <div>
-                          <dt className="text-[var(--foreground-muted)]">Respaldo</dt>
+                          <dt className="text-[var(--foreground-muted)]">Embeddings</dt>
                           <dd className="font-mono text-xs">
-                            {activeConfig.chatModelFallbacks.join(", ")}
+                            {activeConfig?.embeddingModel ?? "—"}
                           </dd>
                         </div>
                       ) : null}
-                      {activeConfig?.embeddingModel ? (
-                        <div>
-                          <dt className="text-[var(--foreground-muted)]">Embeddings</dt>
-                          <dd className="font-mono text-xs">{activeConfig.embeddingModel}</dd>
-                        </div>
-                      ) : null}
-                      {activeConfig?.sttModel ? (
+                      {activeCatalog.supportsStt ? (
                         <div>
                           <dt className="text-[var(--foreground-muted)]">STT</dt>
-                          <dd className="font-mono text-xs">{activeConfig.sttModel}</dd>
+                          <dd className="font-mono text-xs">{activeConfig?.sttModel ?? "—"}</dd>
                         </div>
                       ) : null}
-                      {activeConfig?.visionModel ? (
-                        <div>
-                          <dt className="text-[var(--foreground-muted)]">Visión</dt>
-                          <dd className="font-mono text-xs">{activeConfig.visionModel}</dd>
-                        </div>
+                      {activeCatalog.supportsVision ? (
+                        <>
+                          <div>
+                            <dt className="text-[var(--foreground-muted)]">Visión</dt>
+                            <dd className="font-mono text-xs">
+                              {activeConfig?.visionModel ?? "—"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-[var(--foreground-muted)]">Respaldo visión</dt>
+                            <dd className="font-mono text-xs">
+                              {visionFallbackFromExtras(activeConfig?.extras) || "—"}
+                            </dd>
+                          </div>
+                        </>
                       ) : null}
                     </dl>
                   ) : (
