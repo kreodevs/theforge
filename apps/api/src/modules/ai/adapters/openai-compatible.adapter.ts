@@ -9,6 +9,7 @@ import type { UserLLMRuntime } from "../providers/llm-runtime.types.js";
 import { resolveLlmMaxTokensForWorkshopTab } from "../config/llm-config.js";
 import { llmDebug } from "../config/llm-debug.util.js";
 import { runWithModelFallback } from "../config/llm-model-fallback.js";
+import { recordTokenUsageFromContext } from "../utils/token-usage-recorder.js";
 
 function buildOpenAiUserMessage(
   text: string,
@@ -120,8 +121,10 @@ export class OpenAICompatibleAdapter implements LLMProvider {
   private readonly embeddingModel: string | null;
   private readonly embeddingsEnabled: boolean;
   private readonly label: string;
+  private readonly runtime: UserLLMRuntime;
 
   constructor(runtime: UserLLMRuntime) {
+    this.runtime = runtime;
     this.label = `OpenAICompatibleAdapter(${runtime.providerId})`;
     this.chatModels = chatModelChain(runtime);
     this.visionModels = visionModelChain(runtime);
@@ -154,7 +157,7 @@ export class OpenAICompatibleAdapter implements LLMProvider {
     const hasImages = options?.userMessageImages != null && options.userMessageImages.length > 0;
     const models = hasImages ? this.visionModels : this.chatModels;
 
-    return runWithModelFallback({
+    const result = await runWithModelFallback({
       models,
       label: `${this.label}.generateResponse`,
       run: async (activeModel) => {
@@ -178,9 +181,25 @@ export class OpenAICompatibleAdapter implements LLMProvider {
           ...(options?.jsonObjectMode ? { response_format: { type: "json_object" as const } } : {}),
         });
 
-        return completion.choices[0]?.message?.content ?? "";
+        return completion;
       },
     });
+
+    const usage = result.usage;
+    if (usage) {
+      const promptTokens = usage.prompt_tokens ?? 0;
+      const completionTokens = usage.completion_tokens ?? 0;
+      const totalTokens = usage.total_tokens ?? promptTokens + completionTokens;
+      recordTokenUsageFromContext(
+        this.runtime.providerId,
+        result.model,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+      );
+    }
+
+    return result.choices[0]?.message?.content ?? "";
   }
 
   async generateResponseStream(
@@ -221,16 +240,33 @@ export class OpenAICompatibleAdapter implements LLMProvider {
               welcomeBrief: options?.welcomeBrief,
             }),
           stream: true,
+          stream_options: { include_usage: true },
         });
       },
     });
 
+    const providerId = this.runtime.providerId;
+    let resolvedModel = models[0] ?? this.runtime.chatModel;
     return {
       async *[Symbol.asyncIterator]() {
         for await (const chunk of stream) {
           const delta = chunk.choices[0]?.delta?.content;
           if (typeof delta === "string" && delta.length > 0) {
             yield delta;
+          }
+          if (chunk.model) resolvedModel = chunk.model;
+          const usage = (chunk as { usage?: OpenAI.CompletionUsage | null }).usage;
+          if (usage) {
+            const promptTokens = usage.prompt_tokens ?? 0;
+            const completionTokens = usage.completion_tokens ?? 0;
+            const totalTokens = usage.total_tokens ?? promptTokens + completionTokens;
+            recordTokenUsageFromContext(
+              providerId,
+              resolvedModel,
+              promptTokens,
+              completionTokens,
+              totalTokens,
+            );
           }
         }
       },

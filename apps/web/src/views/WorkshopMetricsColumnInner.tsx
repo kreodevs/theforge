@@ -27,6 +27,7 @@ import {
 import { LlevarAlRepoWizardDialog } from "@/components/LlevarAlRepoWizardDialog";
 import { TraceabilityGapList } from "@/components/TraceabilityGapList";
 import { AnalyzeDashboard } from "@/components/AnalyzeDashboard";
+import { TokenUsageCard } from "@/components/TokenUsageCard";
 import type { SddAnalyzeReport, MddDeliveryGateResult } from "@theforge/shared-types";
 import { agentGovernanceScaffoldHasContent, SDD_GRAPH_SYNC_STATE_LABELS } from "@theforge/shared-types";
 import { useWorkshopStore, type Status } from "../store/workshopStore";
@@ -1290,6 +1291,10 @@ export function WorkshopMetricsColumnInner({
               </button>
             ) : null}
           </div>
+
+          {projectId ? (
+            <TokenUsageCard projectId={projectId} stageId={activeStageId ?? undefined} />
+          ) : null}
 
           {showAnalyze && projectId ? (
             <AnalyzeDashboard

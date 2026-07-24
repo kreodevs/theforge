@@ -9,7 +9,8 @@ export type SystemConfigCategory =
   | "queues"
   | "mcp"
   | "legacy"
-  | "debug";
+  | "debug"
+  | "cost";
 
 export type SystemConfigFieldType = "string" | "number" | "boolean" | "secret";
 
@@ -70,6 +71,12 @@ export const SYSTEM_CONFIG_CATEGORIES: ReadonlyArray<{
     label: "Depuración",
     description:
       "Logs y atajos solo para diagnóstico. En producción aumentan ruido en consola y pueden exponer payloads sensibles; OTP dev nunca debe quedar activo en entornos reales.",
+  },
+  {
+    id: "cost",
+    label: "Coste & facturación",
+    description:
+      "Conversión de moneda y límites de facturación IA. El tipo de cambio MXN/USD es un valor estimado (no live) que el usuario introduce en Ajustes → Sistema y se conserva en BD; úselo solo como referencia para la conversión de USD a MXN mostrada en la columna de métricas y el panel de Coste IA.",
   },
 ] as const;
 
@@ -408,6 +415,16 @@ export const SYSTEM_CONFIG_DEFINITIONS: readonly SystemConfigDefinition[] = [
     "OTP dev — exponer código",
     "Devuelve devCode en POST /auth/otp/request sin enviar correo. Solo desarrollo local; en producción expone códigos OTP en la API.",
     "debug",
+  ),
+  def(
+    "mxn_per_usd",
+    "MXN_PER_USD",
+    "number",
+    "20",
+    "Tipo de cambio MXN/USD (estimado)",
+    "Multiplicador estimado para convertir USD a MXN en la columna de métricas y el panel de Coste IA. Valor estático (no live); el usuario lo mantiene en Ajustes → Sistema. Cambia aquí cuando necesites reflejar un tipo de cambio actualizado sin tocar la base de datos.",
+    "cost",
+    { min: 1, max: 100 },
   ),
 ] as const;
 

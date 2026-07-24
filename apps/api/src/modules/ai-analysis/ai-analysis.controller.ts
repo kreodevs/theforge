@@ -13,6 +13,7 @@ import { formatDbgaStreamError } from "./utils/dbga-stream-error.util.js";
 import { ProjectGenerationGuardService } from "../projects/project-generation-guard.service.js";
 import { MddQueueService, type MddJobData, type MddJobMode } from "./mdd/mdd-queue.service.js";
 import { MddUpstreamSyncService } from "./mdd/mdd-upstream-sync.service.js";
+import { TokenUsageService } from "./token-usage/token-usage.service.js";
 
 @Controller("ai-analysis")
 export class AiAnalysisController {
@@ -26,6 +27,7 @@ export class AiAnalysisController {
     private readonly generationGuard: ProjectGenerationGuardService,
     private readonly mddQueue: MddQueueService,
     private readonly mddUpstreamSync: MddUpstreamSyncService,
+    private readonly tokenUsage: TokenUsageService,
   ) { }
 
   private registerMddStreamLock(projectId: string | undefined): void {
@@ -717,5 +719,43 @@ export class AiAnalysisController {
       borrador: state.borrador,
       gaps: state.gaps,
     };
+  }
+
+  // ─── Telemetry: Token Usage & Cost ─────────────────────────
+
+  /**
+   * Resumen agregado de uso de tokens por documento (incluye regeneraciones) para un proyecto.
+   * Excluye el chat del Workshop a menos que `includeChat=true`; opcionalmente filtra por stageId.
+   * Costes en USD según catálogo del proveedor activo + estimación MXN (TC fijo 20).
+   */
+  @Get("token-usage")
+  async getTokenUsage(
+    @Query("projectId") projectId: string,
+    @Query("stageId") stageId?: string,
+    @Query("includeChat") includeChat?: string,
+  ) {
+    const id = typeof projectId === "string" ? projectId.trim() : "";
+    if (!id) throw new BadRequestException("projectId is required");
+    const sid = typeof stageId === "string" ? stageId.trim() || undefined : undefined;
+    const withChat = includeChat === "true" || includeChat === "1";
+    return this.tokenUsage.getSummary(id, { stageId: sid, includeChat: withChat });
+  }
+
+  /**
+   * Lista cruda de eventos de uso (último N). Pensado para vista detallada / admin.
+   */
+  @Get("token-usage/events")
+  async listTokenUsageEvents(
+    @Query("projectId") projectId: string,
+    @Query("stageId") stageId?: string,
+    @Query("documentField") documentField?: string,
+    @Query("limit") limit?: string,
+  ) {
+    const id = typeof projectId === "string" ? projectId.trim() : "";
+    if (!id) throw new BadRequestException("projectId is required");
+    const sid = typeof stageId === "string" ? stageId.trim() || undefined : undefined;
+    const field = typeof documentField === "string" ? documentField.trim() || undefined : undefined;
+    const lim = limit ? Math.min(Math.max(Number(limit) || 100, 1), 500) : 100;
+    return this.tokenUsage.listEvents(id, { stageId: sid, documentField: field, limit: lim });
   }
 }

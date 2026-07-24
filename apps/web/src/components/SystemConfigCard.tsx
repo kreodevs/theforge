@@ -18,6 +18,7 @@ const CATEGORY_ORDER: SystemConfigCategory[] = [
   "queues",
   "mcp",
   "legacy",
+  "cost",
   "debug",
 ];
 
@@ -27,6 +28,7 @@ const CATEGORY_SHORT_LABELS: Partial<Record<SystemConfigCategory, string>> = {
   queues: "Colas",
   mcp: "MCP",
   legacy: "Legacy",
+  cost: "Coste",
   debug: "Debug",
 };
 

@@ -10,6 +10,7 @@ import {
   resolveLlmMaxTokensForPurpose,
   resolveLlmMaxTokensForWorkshopTab,
 } from "../config/llm-config.js";
+import { recordTokenUsageFromContext } from "../utils/token-usage-recorder.js";
 
 function toAnthropicMessages(
   history: ChatMessage[],
@@ -78,6 +79,15 @@ export class AnthropicAdapter implements LLMProvider {
       system: options?.systemPrompt,
       messages,
     });
+    if (res.usage) {
+      recordTokenUsageFromContext(
+        "anthropic",
+        this.model,
+        res.usage.input_tokens ?? 0,
+        res.usage.output_tokens ?? 0,
+        (res.usage.input_tokens ?? 0) + (res.usage.output_tokens ?? 0),
+      );
+    }
     const block = res.content.find((b) => b.type === "text");
     const text = block?.type === "text" ? block.text : "";
     return options?.jsonObjectMode ? `{${text}` : text;
@@ -100,6 +110,10 @@ export class AnthropicAdapter implements LLMProvider {
       stream: true,
     });
 
+    let promptTokens = 0;
+    let completionTokens = 0;
+    const modelId = this.model;
+    const providerId = "anthropic";
     return {
       async *[Symbol.asyncIterator]() {
         for await (const event of stream) {
@@ -110,6 +124,23 @@ export class AnthropicAdapter implements LLMProvider {
           ) {
             yield event.delta.text;
           }
+          if (event.type === "message_start" && event.message.usage) {
+            promptTokens = event.message.usage.input_tokens ?? 0;
+            completionTokens = event.message.usage.output_tokens ?? 0;
+          }
+          if (event.type === "message_delta" && event.usage) {
+            promptTokens = event.usage.input_tokens ?? promptTokens;
+            completionTokens = event.usage.output_tokens ?? completionTokens;
+          }
+        }
+        if (promptTokens || completionTokens) {
+          recordTokenUsageFromContext(
+            providerId,
+            modelId,
+            promptTokens,
+            completionTokens,
+            promptTokens + completionTokens,
+          );
         }
       },
     };

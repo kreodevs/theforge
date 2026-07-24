@@ -16,8 +16,10 @@ import {
   resolvePlatformConfigValue,
   setPlatformConfigOverrides,
 } from "./platform-config.runtime.js";
+import { FxRateService } from "../fx-rate/fx-rate.service.js";
 
 const SECRET_MASK = "••••••••";
+const FX_CONFIG_KEY = "mxn_per_usd";
 
 export type PatchSystemConfigDto = {
   settings?: Record<string, unknown>;
@@ -28,7 +30,10 @@ export class SystemConfigService implements OnModuleInit {
   private readonly logger = new Logger(SystemConfigService.name);
   private readonly appVersion = this.readAppVersion();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly fxRate: FxRateService,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     await this.reloadRuntimeOverrides();
@@ -53,6 +58,7 @@ export class SystemConfigService implements OnModuleInit {
     }
 
     const dbMap = await this.loadDbMap();
+    let fxRateChanged = false;
 
     for (const def of SYSTEM_CONFIG_DEFINITIONS) {
       if (!(def.key in incoming)) continue;
@@ -60,6 +66,7 @@ export class SystemConfigService implements OnModuleInit {
       if (raw === null || raw === "") {
         if (dbMap.has(def.key)) {
           await this.prisma.appConfig.delete({ where: { key: def.key } }).catch(() => {});
+          if (def.key === FX_CONFIG_KEY) fxRateChanged = true;
         }
         continue;
       }
@@ -77,6 +84,11 @@ export class SystemConfigService implements OnModuleInit {
         create: { key: def.key, value: normalized },
         update: { value: normalized },
       });
+      if (def.key === FX_CONFIG_KEY) fxRateChanged = true;
+    }
+
+    if (fxRateChanged) {
+      this.fxRate.invalidate();
     }
 
     await this.reloadRuntimeOverrides();

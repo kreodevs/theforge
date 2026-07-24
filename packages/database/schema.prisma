@@ -244,6 +244,7 @@ model Stage {
   episodicMemories EpisodicMemory[]
   documentationGaps DocumentationGap[]
   agentSessionLogs AgentSessionLog[]
+  tokenUsages      TokenUsage[]
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
 
@@ -371,6 +372,7 @@ model Project {
   agentCheckpoints     AgentStateCheckpoint[]
   changeLogs           ChangeLog[]
   documentSnapshots    DocumentSnapshot[]
+  tokenUsages          TokenUsage[]
   favoritedBy          FavoriteProject[]
   /// Oculto del dashboard por defecto (fusión archivada, etc.).
   archivedAt           DateTime?
@@ -604,4 +606,38 @@ model AgentSessionLog {
 model AppConfig {
   key   String @id
   value String
+}
+
+/// Telemetría de consumo de LLM por documento generado (incluye regeneraciones).
+/// Permite auditar coste IA por documento, modelo y nodo pipeline.
+model TokenUsage {
+  id              String   @id @default(uuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stageId         String?
+  stage           Stage?   @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  /// Campo documental destino: mddContent | specContent | architectureContent | … | chat.
+  documentField   String
+  /// Contexto de la llamada: initial | regenerate | repair | refine | chat.
+  context         String
+  /// Nodo del pipeline que produjo la llamada (software_architect, auditor, clarifier, …). Null para chat.
+  node            String?
+  /// Proveedor + modelo usado (snapshot en el momento del call).
+  providerId      String
+  modelId         String
+  promptTokens    Int
+  completionTokens Int
+  totalTokens     Int
+  /// Coste calculado en USD en el momento del call (snapshot de pricing).
+  costUsd         Float
+  /// Coste calculado en MXN (snapshoteado con `MXN_PER_USD` vigente).
+  costMxn         Float
+  /// JobId opcional (agrupa múltiples calls del mismo job).
+  jobId           String?
+  createdAt       DateTime @default(now())
+
+  @@index([projectId, documentField, createdAt(sort: Desc)])
+  @@index([stageId, documentField])
+  @@index([projectId, providerId, modelId])
+  @@index([projectId, createdAt(sort: Desc)])
 }
