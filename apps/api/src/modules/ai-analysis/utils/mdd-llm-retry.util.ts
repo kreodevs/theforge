@@ -180,6 +180,20 @@ export function deriveLlmIdentity(llm: InvokableLlm): {
   modelId: string;
 } {
   const candidate = llm as unknown as Record<string, unknown>;
+
+  // Prioridad 0: providerId/modelId explícitos en el wrapper (telemetría precisa).
+  // Los wrappers `OpenRouterFallbackChatModel` y `ChainedFallbackChatModel` envuelven
+  // un `ChatOpenAI` (o similar) sin exponer `configuration.baseURL` ni `modelName`;
+  // si el factory (create-dbga-llm) pasó `providerId`/`modelId`, los leemos directos.
+  const explicitProvider = typeof candidate.providerId === "string" ? candidate.providerId : null;
+  if (explicitProvider) {
+    const explicitModel = typeof candidate.modelId === "string" ? candidate.modelId : null;
+    return {
+      providerId: explicitProvider,
+      modelId: explicitModel ?? extractModelId(candidate) ?? "unknown",
+    };
+  }
+
   const modelId = extractModelId(candidate) ?? "unknown";
   const providerId = detectProviderFromClass(candidate) ?? detectProviderFromBaseURL(candidate) ?? detectProviderFromModelId(modelId) ?? "openai";
   return { providerId, modelId };
