@@ -162,30 +162,86 @@ function recordLlmUsageFromMessage(
 }
 
 /**
- * Duck-typing para extraer provider/modelo del `BaseChatModel`. LangChain no expone
- * una API uniforme; las subclases usan `modelName`, `model`, `lc_serializable` etc.
- * Si no se reconoce, devuelve "unknown" / "unknown" — el call se sigue registrando,
- * simplemente no se calcula coste.
+ * Extrae provider/modelo del `BaseChatModel` para registrar `TokenUsage`.
+ *
+ * Estrategia en cascada (de más fuerte a más débil):
+ *  1. Nombre de clase (`ChatAnthropic`, `ChatGoogleGenerativeAI`, `ChatOpenAI`, …).
+ *  2. `baseURL` de la instancia (donde `createDbgaLLM` guarda el endpoint del runtime).
+ *     Captura OpenRouter, Cloudflare Workers AI, Groq y custom OpenAI-compat.
+ *  3. Heurística del slug del modelo (prefijo upstream `anthropic/`, `openai/`, …
+ *     implica OpenRouter; `@cf/…` implica Cloudflare).
+ *  4. Default `openai` para ChatOpenAI nativo.
+ *
+ * Devuelve `"unknown"` para modelId si no se reconoce — el call se sigue
+ * registrando, simplemente no se calcula coste.
  */
-function deriveLlmIdentity(llm: InvokableLlm): {
+export function deriveLlmIdentity(llm: InvokableLlm): {
   providerId: string;
   modelId: string;
 } {
   const candidate = llm as unknown as Record<string, unknown>;
-  const modelId =
-    typeof candidate.modelName === "string"
-      ? candidate.modelName
-      : typeof candidate.model === "string"
-        ? candidate.model
-        : "unknown";
-  // ChatAnthropic, ChatOpenAI, ChatGoogleGenerativeAI todos exponen `lc_serializable`
-  // con un `kwargs.model` o similar. Construimos heurística por nombre de clase.
-  const className = (candidate.constructor as { name?: string })?.name ?? "";
-  let providerId = "openai-compatible";
-  if (/Anthropic/i.test(className)) providerId = "anthropic";
-  else if (/Google|Gemini|GenAI/i.test(className)) providerId = "gemini";
-  else if (/OpenAI/i.test(className)) providerId = "openai";
-  // OpenRouter pasa por ChatOpenAI con baseUrl distinto; ya queda registrado como
-  // "openai" — suficiente para agregación, podemos refinar después.
+  const modelId = extractModelId(candidate) ?? "unknown";
+  const providerId = detectProviderFromClass(candidate) ?? detectProviderFromBaseURL(candidate) ?? detectProviderFromModelId(modelId) ?? "openai";
   return { providerId, modelId };
+}
+
+function extractModelId(candidate: Record<string, unknown>): string | null {
+  // ChatOpenAI usa `modelName`; ChatAnthropic / ChatGoogleGenerativeAI / ChatBedrock usan `model`.
+  if (typeof candidate.modelName === "string" && candidate.modelName.length > 0) {
+    return candidate.modelName;
+  }
+  if (typeof candidate.model === "string" && candidate.model.length > 0) {
+    return candidate.model;
+  }
+  return null;
+}
+
+function detectProviderFromClass(candidate: Record<string, unknown>): string | null {
+  const className = (candidate.constructor as { name?: string })?.name ?? "";
+  if (/Anthropic/i.test(className)) return "anthropic";
+  if (/Bedrock/i.test(className)) return "bedrock";
+  if (/Google|Gemini|GenAI/i.test(className)) return "gemini";
+  // ChatOpenAI: no devolvemos aquí — esperamos la rama baseURL para distinguir
+  // OpenAI directo de OpenRouter / Cloudflare / Groq / custom endpoints.
+  return null;
+}
+
+function detectProviderFromBaseURL(candidate: Record<string, unknown>): string | null {
+  const baseURL = readBaseURL(candidate);
+  if (!baseURL) return null;
+  if (/openrouter\.ai/i.test(baseURL)) return "openrouter";
+  if (/generativelanguage\.googleapis\.com/i.test(baseURL)) return "gemini";
+  if (/api\.anthropic\.com/i.test(baseURL)) return "anthropic";
+  if (/api\.groq\.com/i.test(baseURL)) return "groq";
+  if (/api\.cloudflare\.com/i.test(baseURL)) return "cloudflare";
+  if (/api\.openai\.com/i.test(baseURL)) return "openai";
+  // baseURL custom desconocido (proxy, OpenAI-compat propia): queda como "openai-compatible"
+  // para que la UI lo distinga del nativo. El coste caerá a 0 si no hay pricing override.
+  return "openai-compatible";
+}
+
+function readBaseURL(candidate: Record<string, unknown>): string | null {
+  const tried: unknown[] = [
+    candidate.baseURL,
+    (candidate as { client?: { baseURL?: string } }).client?.baseURL,
+    (candidate as { configuration?: { baseURL?: string } }).configuration?.baseURL,
+    (candidate as { lc_kwargs?: { baseURL?: string } }).lc_kwargs?.baseURL,
+    (candidate as { anthropicApiUrl?: string }).anthropicApiUrl,
+    (candidate as { apiUrl?: string }).apiUrl,
+  ];
+  for (const value of tried) {
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return null;
+}
+
+function detectProviderFromModelId(modelId: string): string | null {
+  if (!modelId || modelId === "unknown") return null;
+  // OpenRouter usa slugs upstream con prefijo de proveedor.
+  if (/^(anthropic|openai|google|meta-llama|minimax|qwen|cohere|mistralai|nvidia|deepseek)\//i.test(modelId)) {
+    return "openrouter";
+  }
+  // Cloudflare Workers AI usa el prefijo @cf/.
+  if (/^@cf\//i.test(modelId)) return "cloudflare";
+  return null;
 }
