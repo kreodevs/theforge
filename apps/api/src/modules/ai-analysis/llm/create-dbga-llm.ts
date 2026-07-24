@@ -135,9 +135,12 @@ function buildWithFallbacks(
       // pasamos el providerId explícitamente para que deriveLlmIdentity
       // (mdd-llm-retry.util.ts) lo lea y no devuelva "modelId=unknown".
       runtime.providerId,
+      // Modelo primario de la cadena (`runtime.chatModel`). Sin esto el
+      // catálogo de pricing no encuentra la entrada y el costeSale a 0 USD.
+      models[0],
     );
   }
-  return new ChainedFallbackChatModel(build, models, undefined, undefined, runtime.providerId);
+  return new ChainedFallbackChatModel(build, models, undefined, undefined, runtime.providerId, models[0]);
 }
 
 export function createDbgaLLMFromRuntime(runtime: UserLLMRuntime, opts?: CreateDbgaLLMOptions): BaseChatModel {
