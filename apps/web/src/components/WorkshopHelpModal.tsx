@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import {
   ArrowRight,
   BookOpen,
+  Bot,
   Boxes,
   Brain,
   CheckSquare,
@@ -30,6 +31,7 @@ import {
 import convergeWebhookCiHelp from "../content/help/converge-webhook-ci.md?raw";
 import generacionSegundoPlanoHelp from "../content/help/generacion-en-segundo-plano.md?raw";
 import legacyNewIntegrationHelp from "../content/help/legacy-new-integration.md?raw";
+import modelosProveedorIaHelp from "../content/help/modelos-proveedor-ia.md?raw";
 import pluginsPackagingHelp from "../content/help/plugins-packaging.md?raw";
 import validacionPlanAriadneHelp from "../content/help/validacion-plan-ariadne.md?raw";
 import {
@@ -59,6 +61,7 @@ interface HelpSection {
 
 const SECTION_ICONS: Record<string, LucideIcon> = {
   manual: BookOpen,
+  "modelos-proveedor-ia": Bot,
   "legacy-new-integration": Link2,
   "converge-webhook-ci": Webhook,
   "plugins-packaging": Puzzle,
@@ -162,7 +165,14 @@ const SECTIONS: HelpSection[] = [
       "Generación en background y orden de entregables: ver **Generación en segundo plano**.",
       "",
       "Plugins comerciales (EVD, empaquetado `.tfplugin`, instalación desde UI): ver **Plugins (.tfplugin)** en esta misma ayuda.",
+      "",
+      "Modelos IA por campo de proveedor (económico / medio / top): ver **Modelos por proveedor IA**.",
     ].join("\n"),
+  },
+  {
+    id: "modelos-proveedor-ia",
+    label: "Modelos por proveedor IA",
+    content: modelosProveedorIaHelp.trim(),
   },
   {
     id: "generacion-segundo-plano",
@@ -795,7 +805,7 @@ const SECTIONS: HelpSection[] = [
 ];
 
 const NAV_GROUPS: { label: string; sectionIds: string[] }[] = [
-  { label: "Guía", sectionIds: ["manual", "generacion-segundo-plano", "validacion-plan-ariadne", "legacy-new-integration", "converge-webhook-ci", "plugins-packaging"] },
+  { label: "Guía", sectionIds: ["manual", "modelos-proveedor-ia", "generacion-segundo-plano", "validacion-plan-ariadne", "legacy-new-integration", "converge-webhook-ci", "plugins-packaging"] },
   { label: "Metodología", sectionIds: ["sdd"] },
   {
     label: "Documentos",
