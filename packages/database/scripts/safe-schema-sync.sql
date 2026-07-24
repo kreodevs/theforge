@@ -193,3 +193,62 @@ BEGIN
   END IF;
 END
 $$;
+
+-- 10. TokenUsage (telemetría de tokens LLM; migración 20260724_add_token_usage).
+-- La migración está en prisma/migrations/, pero en deploys donde la BD tiene
+-- drift (workspace image stale, image sin la migración aplicada a _prisma_migrations),
+-- esta entrada idempotente la recrea sin DROP. El entrypoint añade
+-- `resolve_applied_if_table "20260724_add_token_usage" "TokenUsage"` justo
+-- después de correr este script para que migrate deploy no falle al reintentar.
+CREATE TABLE IF NOT EXISTS "TokenUsage" (
+    "id" TEXT NOT NULL,
+    "projectId" TEXT NOT NULL,
+    "stageId" TEXT,
+    "documentField" TEXT NOT NULL,
+    "context" TEXT NOT NULL,
+    "node" TEXT,
+    "providerId" TEXT NOT NULL,
+    "modelId" TEXT NOT NULL,
+    "promptTokens" INTEGER NOT NULL,
+    "completionTokens" INTEGER NOT NULL,
+    "totalTokens" INTEGER NOT NULL,
+    "costUsd" DOUBLE PRECISION NOT NULL,
+    "costMxn" DOUBLE PRECISION NOT NULL,
+    "jobId" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "TokenUsage_pkey" PRIMARY KEY ("id")
+);
+
+CREATE INDEX IF NOT EXISTS "TokenUsage_projectId_documentField_createdAt_idx"
+    ON "TokenUsage"("projectId", "documentField", "createdAt" DESC);
+
+CREATE INDEX IF NOT EXISTS "TokenUsage_stageId_documentField_idx"
+    ON "TokenUsage"("stageId", "documentField");
+
+CREATE INDEX IF NOT EXISTS "TokenUsage_projectId_providerId_modelId_idx"
+    ON "TokenUsage"("projectId", "providerId", "modelId");
+
+CREATE INDEX IF NOT EXISTS "TokenUsage_projectId_createdAt_idx"
+    ON "TokenUsage"("projectId", "createdAt" DESC);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'TokenUsage_projectId_fkey'
+  ) THEN
+    ALTER TABLE "TokenUsage"
+      ADD CONSTRAINT "TokenUsage_projectId_fkey"
+      FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'TokenUsage_stageId_fkey'
+  ) THEN
+    ALTER TABLE "TokenUsage"
+      ADD CONSTRAINT "TokenUsage_stageId_fkey"
+      FOREIGN KEY ("stageId") REFERENCES "Stage"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;

@@ -190,6 +190,11 @@ resolve_applied_if_project_column "20260609120000_add_agent_governance_content" 
 resolve_applied_if_project_column "20260612120000_project_merge_suite" "archivedAt"
 resolve_applied_if_table "20260702_add_ui_mcp_instance" "UiMcpInstance"
 resolve_applied_if_table_column "20260703180000_ui_mcp_adapter_id" "UiMcpInstance" "adapterId"
+
+# TokenUsage (telemetría; migración 20260724_add_token_usage; safe-schema-sync.sql
+# ya crea la tabla idempotente si falta). Marcamos como applied para que
+# `migrate deploy` no falle al re-ejecutar la migración en BD ya sincronizada.
+resolve_applied_if_table "20260724_add_token_usage" "TokenUsage"
 # Checkpoints de LangGraph ahora viven en `langgraph.checkpoints` (no en `public`).
 # Si la tabla existe en el schema dedicado pero la migración está sin registrar,
 # la marcamos como aplicada para que un re-deploy no intente recrearla.
