@@ -98,4 +98,21 @@ describe("mergeSingleArchitectSectionIntoDraft", () => {
     const out = mergeSingleArchitectSectionIntoDraft(BASELINE, badArchitect, 3);
     expect(out).toContain("CREATE TABLE baseline_tenants");
   });
+
+  it("§4: conserva baseline cuando merge quirúrgico trunca contratos sustanciales", () => {
+    const richBody =
+      "GET /api/v1/baseline-only-endpoint\n".repeat(50) +
+      "\n```json\n{\"ok\":true}\n```\n";
+    const richBaseline = BASELINE.replace(
+      /## 4\. Contratos de API[\s\S]*?(?=\n## 5\.)/,
+      `## 4. Contratos de API\n${richBody}`,
+    );
+    const thinArchitect = BASELINE.replace(
+      /## 4\. Contratos de API[\s\S]*?(?=\n## 5\.)/,
+      "## 4. Contratos de API\nGET /api/v1/journey\nPOST /api/v1/journey\n".repeat(8),
+    );
+    const out = mergeSingleArchitectSectionIntoDraft(richBaseline, thinArchitect, 4);
+    expect(out).toContain("/api/v1/baseline-only-endpoint");
+    expect(out).not.toContain("/api/v1/journey");
+  });
 });

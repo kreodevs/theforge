@@ -4,8 +4,91 @@
  */
 
 import { extractSection } from "./conformance.service.js";
+import { extractSectionByNumber } from "./mdd-markdown-parser.js";
 
 const PLACEHOLDER_NOISE_RE = /(?:^|\n)#+\s*[^\n]*(?:---\s*){3,}/m;
+
+const SQL_COLUMN_TYPE_RE =
+  /\b(UUID|VARCHAR|TEXT|JSONB|TIMESTAMPTZ|BOOLEAN|INTEGER|INT|BIGINT|NUMERIC|INET|DECIMAL)\b/i;
+
+/** True si la entidad tiene definición rica en prosa §3 (columnas con tipos SQL). */
+export function entityHasRichProseInSection3(section3Body: string, tableName: string): boolean {
+  const body = (section3Body ?? "").trim();
+  const name = tableName.toLowerCase();
+  if (!body || !name) return false;
+
+  const entityPatterns = [
+    new RegExp(`^#{2,5}\\s+\`?${name}\`?\\b`, "im"),
+    new RegExp(`\\*\\*\`?${name}\`?\\*\\*`, "i"),
+    new RegExp(`^\\|\\s*\`?${name}\`?\\s*\\|`, "im"),
+    new RegExp(`^[-*]\\s+\`?${name}\`?\\b`, "im"),
+  ];
+  for (const pattern of entityPatterns) {
+    const match = body.match(pattern);
+    if (!match || match.index == null) continue;
+    const slice = body.slice(match.index, match.index + 1_200);
+    if (SQL_COLUMN_TYPE_RE.test(slice)) return true;
+    if ((slice.match(/\|\s*[a-z_][a-z0-9_]*\s*\|/gi) ?? []).length >= 2) return true;
+  }
+  return false;
+}
+
+/** Elimina CREATE TABLE mínimos cuando la misma entidad ya está definida en prosa §3. */
+export function removeThinSqlStubsWhenProseRich(draft: string): string {
+  const section3 = extractSectionByNumber(draft, 3) ?? extractSection(
+    draft,
+    /^#+\s*(?:3\.\s*)?(?:modelo\s+(?:de\s+)?datos)/im,
+  );
+  if (!section3) return draft;
+
+  const sqlMatch = section3.match(/```sql\s*([\s\S]*?)```/i);
+  if (!sqlMatch?.[1]) return draft;
+
+  const createRe =
+    /\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?["`]?([a-z_][a-z0-9_]*)["`]?\s*\(([\s\S]*?)\)\s*;/gi;
+  let sql = sqlMatch[1];
+  let changed = false;
+  let m: RegExpExecArray | null;
+  const toRemove: string[] = [];
+
+  while ((m = createRe.exec(sqlMatch[1])) !== null) {
+    const tableName = m[1]!.toLowerCase();
+    const body = m[2] ?? "";
+    const colLines = body
+      .split(/,\s*\n/)
+      .map((l) => l.trim())
+      .filter((l) => l && !/^(primary\s+key|constraint|unique|check|foreign\s+key)/i.test(l));
+    const businessCols = colLines.filter(
+      (l) => !/^(id|created_at|updated_at)\b/i.test(l.split(/\s+/)[0] ?? ""),
+    );
+    const isThin = businessCols.length <= 1 && colLines.length <= 4;
+    if (isThin && entityHasRichProseInSection3(section3, tableName)) {
+      toRemove.push(m[0]);
+    }
+  }
+
+  for (const block of toRemove) {
+    sql = sql.replace(block, "");
+    changed = true;
+  }
+  if (!changed) return draft;
+
+  sql = sql
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/^\s*\n/, "")
+    .trimEnd();
+  const newSection3 = section3.replace(sqlMatch[0], `\`\`\`sql\n${sql}\n\`\`\``);
+  return draft.replace(section3, newSection3);
+}
+
+/** Bloque UI/UX genérico (columnas id,name,status repetidas) fuera de §1–§7. */
+export function stripGenericUiUxDesignIntent(draft: string): string {
+  const trimmed = (draft ?? "").trim();
+  if (!/##\s*UI\/UX\s+Design\s+Intent/i.test(trimmed)) return draft;
+  const generic = (trimmed.match(/\bid,\s*name,\s*status\b/gi) ?? []).length >= 4;
+  if (!generic) return draft;
+  return trimmed.replace(/\n##\s*UI\/UX\s+Design\s+Intent[\s\S]*$/i, "").trimEnd() + "\n";
+}
 
 /** §4: bloques ```json con fences desbalanceados. */
 export function detectUnbalancedJsonFences(draft: string): string | null {
@@ -163,7 +246,11 @@ export function isAutoRepairableDeliveryGateWarning(issue: string): boolean {
 
 /** Nombres de tablas §3 marcadas como huérfanas (misma heurística que detectOrphanSqlTables). */
 export function listOrphanSqlTableNames(draft: string): string[] {
-  const sqlMatch = draft.match(/```sql\s*([\s\S]*?)```/i);
+  const section3 = extractSectionByNumber(draft, 3) ?? extractSection(
+    draft,
+    /^#+\s*(?:3\.\s*)?(?:modelo\s+(?:de\s+)?datos)/im,
+  );
+  const sqlMatch = (section3 ?? draft).match(/```sql\s*([\s\S]*?)```/i);
   if (!sqlMatch?.[1]) return [];
   const sql = sqlMatch[1];
   const orphans: string[] = [];
@@ -185,6 +272,7 @@ export function listOrphanSqlTableNames(draft: string): string[] {
   if (orphans.length === 0) return [];
   const erBlock = draft.match(/```mermaid\s*([\s\S]*?)```/i)?.[1] ?? "";
   return orphans.filter((t) => {
+    if (section3 && entityHasRichProseInSection3(section3, t)) return false;
     const inEr = new RegExp(`\\b${t}\\b`, "i").test(erBlock);
     const fkRef = new RegExp(`references\\s+${t}\\b`, "i").test(sql);
     return !inEr && !fkRef;
@@ -243,7 +331,11 @@ function findSqlParentTable(sql: string): string | null {
 
 /** Añade columnas de negocio y FK opcional a tablas §3 huérfanas (determinista). */
 export function enrichOrphanSqlTablesInDraft(draft: string): string {
-  const sqlMatch = draft.match(/```sql\s*([\s\S]*?)```/i);
+  const section3 = extractSectionByNumber(draft, 3) ?? extractSection(
+    draft,
+    /^#+\s*(?:3\.\s*)?(?:modelo\s+(?:de\s+)?datos)/im,
+  );
+  const sqlMatch = (section3 ?? draft).match(/```sql\s*([\s\S]*?)```/i);
   if (!sqlMatch?.[1]) return draft;
   const orphanNames = listOrphanSqlTableNames(draft);
   if (orphanNames.length === 0) return draft;
@@ -251,6 +343,7 @@ export function enrichOrphanSqlTablesInDraft(draft: string): string {
   let sql = sqlMatch[1];
   const parent = findSqlParentTable(sql);
   for (const tableName of orphanNames) {
+    if (section3 && entityHasRichProseInSection3(section3, tableName)) continue;
     const createRe = new RegExp(
       `(\\bcreate\\s+table\\s+(?:if\\s+not\\s+exists\\s+)?["\`]?${tableName}["\`]?\\s*\\()([\\s\\S]*?)(\\)\\s*;)`,
       "i",
@@ -281,6 +374,7 @@ export function stripContextPlaceholderDashes(draft: string): string {
     .replace(/^#+\s*([^\n]*?)\s+---\s+---[^\n]*$/gm, "## 1. Contexto y Alcance")
     .replace(/^[^\n#][^\n]*---\s+---\s+---[^\n]*$/gm, "")
     .replace(/^[^\n#][^\n]*---\s+---[^\n]*$/gm, "")
+    .replace(/^###\s+([A-Za-zÁÉÍÓÚÑ][^\n]{0,100}?)\s*-\s+/gm, "- **$1:** ")
     .replace(/\n{3,}/g, "\n\n")
     .trimEnd();
   if (cleaned === section1) return draft;
@@ -376,6 +470,8 @@ export function applyMddQualityAutoRepairs(draft: string): { markdown: string; r
   for (let pass = 0; pass < 3; pass++) {
     const beforeIssues = collectMddQualityIssues(out).length;
     run("§1 placeholders", stripContextPlaceholderDashes);
+    run("§3 SQL/prosa duplicada", removeThinSqlStubsWhenProseRich);
+    run("UI/UX genérico", stripGenericUiUxDesignIntent);
     run("§4/§7 JSON", fixLooseInfraManifestJson);
     run("§3 tablas huérfanas", enrichOrphanSqlTablesInDraft);
     run("Mermaid fences", fixBareMermaidFences);

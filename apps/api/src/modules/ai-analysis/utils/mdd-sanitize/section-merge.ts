@@ -5,6 +5,9 @@ import {
 } from "@theforge/shared-types";
 import { collectMddQualityIssues } from "../../../engine/mdd-quality-audit.util.js";
 import { isMddTailParallelEnabled } from "../mdd-tail-parallel.config.js";
+import {
+  isContratosSectionRegression,
+} from "./contratos-format.js";
 
 const RE_SECTION6_H2_LINE = /^##\s+(?:6\.\s+)?Seguridad/i;
 
@@ -70,6 +73,18 @@ export function stripTrailingDuplicateMddSections(draft: string): string {
     (tail.match(/^##\s+(?:7\.\s+)?(?:Infraestructura|Integraci[oó]n)/im) ?? []).length >= 1;
   if (!tailHasRepeatedCore) return draft;
   return trimmed.slice(0, range7.end).trim();
+}
+
+/** Dedup §1–§7 tras merge del Architect o reintentos del Clarifier (idempotente). */
+export function deduplicateMddDraftSections(draft: string): string {
+  let out = stripTrailingDuplicateMddSections((draft ?? "").trim());
+  if (mddHasDuplicateSectionHeadings(out)) {
+    out = deduplicateAndReorderMddSections(out);
+  }
+  if (mddHasDuplicateSectionHeadings(out)) {
+    out = stripTrailingDuplicateMddSections(out);
+  }
+  return out;
 }
 
 const CONTEXTO_HEADING = "## 1. Contexto y alcance";
@@ -571,6 +586,13 @@ export function mergeSingleArchitectSectionIntoDraft(
 
   if (!body || isMddSectionPipelinePlaceholderBody(body) || body.trim().length < MIN_SURGICAL_SECTION_BODY_LEN) {
     return baseline;
+  }
+
+  if (section === 4) {
+    const baselineBody = extractSection4Body(baseline);
+    if (isContratosSectionRegression(baselineBody, body)) {
+      return baseline;
+    }
   }
 
   if (section === 2) return replaceArquitecturaSectionBody(baseline, body);

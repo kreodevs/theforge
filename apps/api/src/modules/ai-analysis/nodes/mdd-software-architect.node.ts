@@ -16,6 +16,7 @@ import {
   getMddDraftSummary,
   getSectionsToPreserveFromExecutorPlan,
   isContratosPlaceholder,
+  isContratosSectionRegression,
   isContratosSubstantial,
   isMddSectionPlaceholderBody,
   isMddSectionPipelinePlaceholderBody,
@@ -29,6 +30,7 @@ import {
   replaceContextWhenOnlyMetadata,
   sanitizeContextSection,
   mergeSingleArchitectSectionIntoDraft,
+  deduplicateMddDraftSections,
 } from "../utils/mdd-sanitize.js";
 import {
   architectScopePromptPrefix,
@@ -961,10 +963,21 @@ export function createMddSoftwareArchitectNode(
       if (scopeSection !== null && mergeBaseline.length >= minLength) {
         mddDraft = mergeSingleArchitectSectionIntoDraft(mergeBaseline, mddDraft, scopeSection);
         LOG("merge quirúrgico scope=%s section=%s", scope, scopeSection);
+        if (scopeSection === 4) {
+          const incomingContratos = extractContratosBody(mergeBaseline);
+          const currentContratos = extractContratosBody(mddDraft);
+          if (incomingContratos && isContratosSectionRegression(incomingContratos, currentContratos)) {
+            mddDraft = replaceContratosInDraft(mddDraft, incomingContratos);
+            LOG("preservada sección 4 desde baseline (merge quirúrgico regresión len=%s→%s)",
+              incomingContratos.length,
+              currentContratos?.length ?? 0);
+          }
+        }
       }
       if (directive && affectsSection2) {
         mddDraft = applyDeploymentStackDirectiveToDraft(mddDraft, directive);
       }
+      mddDraft = deduplicateMddDraftSections(mddDraft);
       const sum = getMddDraftSummary(mddDraft);
       LOG("ok mddDraftLen=%s section2=%s", sum.length, sum.section2);
       logMddNodeOutput("SoftwareArchitect", mddDraft);

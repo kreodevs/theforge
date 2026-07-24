@@ -4,7 +4,7 @@ import { CLARIFIER_MDD_PROMPT, CLARIFIER_QUESTIONS_ONLY_MDD_PROMPT } from "../pr
 import type { MDDStateType } from "../state/index.js";
 import { getMddTemplatePlaceholder } from "../state/mdd-structured.schema.js";
 import { mergeMddStructured } from "../utils/mdd-merge-structured.js";
-import { getMddDraftSummary, extractAlreadyDocumentedTopics, extractIdentifiedInfraFromText, logMddNodeOutput } from "../utils/mdd-sanitize.js";
+import { getMddDraftSummary, extractAlreadyDocumentedTopics, extractIdentifiedInfraFromText, logMddNodeOutput, deduplicateMddDraftSections } from "../utils/mdd-sanitize.js";
 import { getUserBrief } from "../utils/mdd-user-brief.js";
 import { buildUserDeclaredStackPromptBlock } from "../utils/user-declared-stack.util.js";
 import { extractFirstJsonObject, parseJsonOrThrow } from "../utils/parse-json.js";
@@ -270,7 +270,8 @@ export function createMddClarifierNode(llm: BaseChatModel) {
       // useRendered reemplazaba el draft del LLM por mddStructuredToMarkdown, perdiendo modificaciones
       // que el usuario pidió (ej. "cambia Argon2id por bcrypt"). El structured solo se usa para
       // downstream nodes (graph_populator), no para el documento final.
-      const mddDraft = (draft && draft.length > 80 ? draft : (getMddTemplatePlaceholder(scope)));
+      const mddDraftRaw = (draft && draft.length > 80 ? draft : (getMddTemplatePlaceholder(scope)));
+      const mddDraft = deduplicateMddDraftSections(mddDraftRaw);
       const outStructured = merged ?? (slice ? mergeMddStructured(undefined, slice) : undefined);
       const sum = getMddDraftSummary(mddDraft);
       LOG("ok clarifiedScopeLen=%s mddDraftLen=%s section2=%s", scope.length, sum.length, sum.section2);

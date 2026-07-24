@@ -16,12 +16,17 @@ import {
   normalizeMddFormat,
   replaceContextWhenOnlyMetadata,
   replaceSection6Or7InDraft,
+  replaceMddSection4Body,
   sanitizeContextKeyValueAndObject,
   sanitizeContextSection,
   applyPreDeliveryGateFixes,
   detectCrossConsistencyIssues,
   prepareMddMarkdownForPersist,
 } from "./mdd-sanitize.js";
+import {
+  extractContratosSectionBody,
+  isContratosSectionRegression,
+} from "./mdd-sanitize/contratos-format.js";
 import {
   enrichMddWithUiUxDesignIntent,
   reconcileUiUxDesignIntent,
@@ -148,6 +153,7 @@ export type PrepareMddForOutputOptions = {
   specMarkdown?: string | null;
   /** Borrador pre-regen / Clarificador para restaurar §1–§2 si el pipeline los omitió. */
   baselineDraft?: string | null;
+  mddComplexity?: "LOW" | "MEDIUM" | "HIGH";
 };
 
 export async function prepareMddForOutput(
@@ -216,6 +222,7 @@ export async function prepareMddForOutput(
           })
         : undefined;
     finalMarkdown = prepareMddMarkdownForPersist(finalMarkdown);
+    const contratosBeforeSsot = extractContratosSectionBody(finalMarkdown);
     const { reconcileMddSsotBeforeDeliveryGate } = await import(
       "../../engine/mdd-ssot-repair.util.js"
     );
@@ -236,6 +243,13 @@ export async function prepareMddForOutput(
         `[MDD:DeliveryGate] SSOT repair — §3:${repaired.section3Injected.length} UAT:${repaired.uatInjected.length} §4:${repaired.section4Injected.length} platform:${repaired.platformAnnotated.length}`,
       );
     }
+    const contratosAfterSsot = extractContratosSectionBody(finalMarkdown);
+    if (isContratosSectionRegression(contratosBeforeSsot, contratosAfterSsot) && contratosBeforeSsot) {
+      finalMarkdown = replaceMddSection4Body(finalMarkdown, contratosBeforeSsot);
+      console.warn(
+        `[MDD:DeliveryGate] §4 restaurada tras SSOT repair (len ${contratosAfterSsot?.length ?? 0}→${contratosBeforeSsot.length})`,
+      );
+    }
   } catch (err) {
     console.warn(
       `[MDD:DeliveryGate] SSOT repair skipped: ${err instanceof Error ? err.message : String(err)}`,
@@ -245,6 +259,7 @@ export async function prepareMddForOutput(
     brdMarkdown: options?.brdMarkdown,
     dbgaMarkdown: options?.dbgaMarkdown,
     specMarkdown: options?.specMarkdown,
+    mddComplexity: options?.mddComplexity,
   });
   if (options?.deliveryGateRef) {
     options.deliveryGateRef.current = deliveryGate;

@@ -14,6 +14,7 @@ import {
   isAutoRepairableCrossConsistencyIssue,
   isAutoRepairableDeliveryGateWarning,
   listOrphanSqlTableNames,
+  removeThinSqlStubsWhenProseRich,
   stripContextPlaceholderDashes,
 } from "./mdd-quality-audit.util.js";
 
@@ -114,6 +115,34 @@ describe("mdd-quality-audit.util", () => {
     const cleaned = stripContextPlaceholderDashes(draft);
     assert.ok(!/---\s+---\s+---/.test(cleaned));
     assert.ok(cleaned.includes("Detalle real"));
+  });
+
+  it("stripContextPlaceholderDashes demotes ### used as bullets", () => {
+    const draft = "## 1. Contexto\n\n### Comerciales - gestión de licencias\n\nTexto.";
+    const cleaned = stripContextPlaceholderDashes(draft);
+    assert.match(cleaned, /- \*\*Comerciales:\*\* gestión de licencias/);
+  });
+
+  it("removeThinSqlStubsWhenProseRich drops thin CREATE when prose defines entity", () => {
+    const draft = `# MDD
+
+## 3. Modelo de Datos
+
+### strategies
+| column | type |
+| name | VARCHAR(255) |
+| config | JSONB |
+
+\`\`\`sql
+CREATE TABLE strategies (
+  id UUID PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL
+);
+\`\`\`
+`;
+    const cleaned = removeThinSqlStubsWhenProseRich(draft);
+    assert.ok(!/CREATE TABLE strategies/i.test(cleaned));
+    assert.ok(cleaned.includes("### strategies"));
   });
 
   it("applyMddQualityAutoRepairs reduces issues on sample MDD", () => {

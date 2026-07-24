@@ -7,6 +7,7 @@ import { AUTH_ENTITY_FAMILY, type DomainInventory } from "@theforge/shared-types
 import { extractEntities } from "./conformance.service.js";
 import { extractSectionByNumber } from "./mdd-markdown-parser.js";
 import { checkMissingDbgaCoreEntitiesInMdd } from "./domain-inventory-conformance.util.js";
+import { entityHasRichProseInSection3 } from "./mdd-quality-audit.util.js";
 
 function stubCreateTable(entity: string): string {
   return `CREATE TABLE ${entity} (
@@ -21,12 +22,14 @@ export function missingDomainEntities(
   inventory: DomainInventory,
   mddMarkdown: string,
 ): string[] {
-  const existing = extractEntities(
-    extractSectionByNumber(mddMarkdown, 3) || mddMarkdown,
-  );
-  return inventory.suggestedEntities.filter(
-    (e) => !AUTH_ENTITY_FAMILY.has(e) && !existing.has(e),
-  );
+  const section3 = extractSectionByNumber(mddMarkdown, 3) || mddMarkdown;
+  const existing = extractEntities(section3);
+  return inventory.suggestedEntities.filter((e) => {
+    if (AUTH_ENTITY_FAMILY.has(e)) return false;
+    if (existing.has(e)) return false;
+    if (entityHasRichProseInSection3(section3, e)) return false;
+    return true;
+  });
 }
 
 /**
@@ -86,6 +89,9 @@ export function mergeDbgaCoreGapsIntoMdd(
     dbgaMarkdown: params.dbgaMarkdown,
     brdMarkdown: params.brdMarkdown,
     mddMarkdown: mddMarkdown,
+  }).filter((entity) => {
+    const section3 = extractSectionByNumber(mddMarkdown, 3) || mddMarkdown;
+    return !entityHasRichProseInSection3(section3, entity);
   });
   if (missing.length === 0) return { markdown: mddMarkdown, injected: [] };
 

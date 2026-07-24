@@ -23,6 +23,7 @@ export function createMddPrepareOutputNode(options?: { uiMcpLibraryLabel?: strin
     const gateRef: { current?: ReturnType<typeof validateMddForDelivery> } = {};
     const brdMarkdown = resolveBrdFromMddState(state) || null;
     const dbgaMarkdown = (state.dbgaContent ?? "").trim() || null;
+    const baselineDraft = (state.mddDraft ?? "").trim() || null;
     const prepared = await prepareMddForOutput(
       { mddDraft: state.mddDraft, mddStructured: state.mddStructured },
       {
@@ -30,6 +31,8 @@ export function createMddPrepareOutputNode(options?: { uiMcpLibraryLabel?: strin
         uiMcpLibraryLabel: options?.uiMcpLibraryLabel ?? null,
         brdMarkdown,
         dbgaMarkdown,
+        baselineDraft,
+        mddComplexity: state.mddComplexity,
       },
     );
     const gate =

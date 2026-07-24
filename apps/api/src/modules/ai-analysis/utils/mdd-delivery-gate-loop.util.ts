@@ -43,6 +43,10 @@ const SECTION4_BLOCKER_RE =
 const CLARIFIER_BLOCKER_RE =
   /§1\s*contexto|1\.\s*contexto|2\.\s*arquitectura\s+y\s*stack\s*faltant|secciones obligatorias faltantes:.*(?:1\.\s*contexto|2\.\s*arquitectura)|placeholder.*guiones|objetivos comerciales/i;
 
+const DUPLICATE_SECTION_BLOCKER_RE =
+  /repite headings canónicos §1–§7|secciones duplicadas por acumulación del pipeline/i;
+const SECTION4_TRUNCATED_BLOCKER_RE =
+  /§4 Contratos.*truncado|catálogo API insuficiente/i;
 const MISSING_SECTION7_BLOCKER_RE =
   /secciones obligatorias faltantes:\s*7\.\s*infraestructura\b/i;
 
@@ -80,6 +84,13 @@ export function resolveDeliveryGateFixTarget(
 
   if (items.some((b) => MISSING_SECTION7_BLOCKER_RE.test(b))) {
     return "integration";
+  }
+
+  if (items.some((b) => DUPLICATE_SECTION_BLOCKER_RE.test(b))) {
+    return options?.splitArchitectPipeline ? "data_model" : "software_architect";
+  }
+  if (items.some((b) => SECTION4_TRUNCATED_BLOCKER_RE.test(b))) {
+    return options?.splitArchitectPipeline ? "api_contracts" : "software_architect";
   }
 
   let integrationScore = 0;

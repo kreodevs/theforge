@@ -9,7 +9,7 @@ import {
   validateMddStructure,
 } from "./mdd-sanitize.js";
 import { isMddSectionPipelinePlaceholderBody } from "./mdd-sanitize/section-merge.js";
-import { isContratosSubstantial } from "./mdd-sanitize/contratos-format.js";
+import { isContratosSubstantial, countContratosEndpointRows } from "./mdd-sanitize/contratos-format.js";
 import { collectMddQualityIssues, isAutoRepairableDeliveryGateWarning } from "../../engine/mdd-quality-audit.util.js";
 import { domainDeliveryGateFindings } from "../../engine/cascade-accuracy.util.js";
 import { checkBrdDecisionLogClosure } from "../../engine/brd-decision-log.util.js";
@@ -177,6 +177,14 @@ export function validateMddForDelivery(
       blockers.push(
         "§4 Contratos de API no tiene endpoints reales con request/response JSON (placeholder o solo stubs). Regenera contratos antes de persistir.",
       );
+    }
+    if (entry.num === 4 && isHigh && isContratosSubstantial(body)) {
+      const endpointRows = countContratosEndpointRows(body);
+      if (bodyLen < 800 && endpointRows < 8) {
+        blockers.push(
+          "§4 Contratos de API truncado o incompleto para proyecto HIGH (catálogo API insuficiente). Regenera contratos antes de persistir.",
+        );
+      }
     }
   }
   if (!structure.hasTechnicalMetadata) {

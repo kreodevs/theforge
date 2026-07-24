@@ -23,7 +23,9 @@ export {
   extractContratosSectionBody,
   formatContratosBody,
   isContratosPlaceholder,
+  isContratosSectionRegression,
   isContratosSubstantial,
+  countContratosEndpointRows,
   MIN_CONTRATOS_LENGTH,
   normalizeContratosTableSummary,
   repairDisplacedJsonBracesInContratos,
@@ -98,6 +100,7 @@ export {
   restoreContextSectionFromBaselineIfMissing,
   restoreMddSectionsFromBaselineStrict,
   stripTrailingDuplicateMddSections,
+  deduplicateMddDraftSections,
   validateMddStructure,
 } from "./mdd-sanitize/section-merge.js";
 export { findBalancedBrace, findBalancedBraceRespectingStrings } from "./mdd-sanitize/brace.util.js";

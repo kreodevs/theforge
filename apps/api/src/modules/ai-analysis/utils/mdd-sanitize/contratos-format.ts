@@ -168,9 +168,9 @@ const PENDIENTE_CONTRATOS_REGEX = /^\s*\(?\s*Pendiente:\s*definir\s+endpoints[\s
 /** Longitud mínima del cuerpo de §4 para considerarlo candidato a “sustancial”. */
 export const MIN_CONTRATOS_LENGTH = 150;
 
-/** Detecta endpoints reales: método+ruta, heading `### MÉTODO`, o bloque ```json. */
+/** Detecta endpoints reales: método+ruta, heading `### MÉTODO`, tabla markdown o bloque ```json. */
 export const CONTRATOS_HAS_ENDPOINTS =
-  /\b(POST|GET|PUT|DELETE|PATCH)\s+[\"']?\/|```json|###\s+(POST|GET|PUT|DELETE|PATCH)/i;
+  /\b(POST|GET|PUT|DELETE|PATCH)\s+[\"']?\/|```json|###\s+(POST|GET|PUT|DELETE|PATCH)|\|\s*(POST|GET|PUT|DELETE|PATCH)\s*\|/i;
 
 /** Placeholder explícito del pipeline / Auditor (inicio del cuerpo). */
 export const CONTRATOS_IS_PLACEHOLDER =
@@ -200,6 +200,44 @@ export function isContratosPlaceholder(body: string | null | undefined): boolean
 /** True si §4 tiene contratos usables (endpoints o JSON y no es placeholder). */
 export function isContratosSubstantial(body: string | null | undefined): boolean {
   return !!body && !isContratosPlaceholder(body) && CONTRATOS_HAS_ENDPOINTS.test(body);
+}
+
+/** Cuenta filas de endpoint (método + ruta) en §4. */
+export function countContratosEndpointRows(body: string | null | undefined): number {
+  if (!body?.trim()) return 0;
+  const direct = body.match(/\b(POST|GET|PUT|DELETE|PATCH)\s+["']?\//gi) ?? [];
+  const table = body.match(/\|\s*(POST|GET|PUT|DELETE|PATCH)\s*\|/gi) ?? [];
+  return direct.length + table.length;
+}
+
+/** Baseline sustancial cuya longitud activa la protección anti-regresión. */
+export const MIN_CONTRATOS_BASELINE_FOR_REGRESSION_GUARD = 1_200;
+
+/** Ratio mínimo (nuevo/baseline) para aceptar un merge quirúrgico de §4. */
+export const CONTRATOS_REGRESSION_LENGTH_RATIO = 0.4;
+
+/**
+ * True si el candidato es sustancial pero claramente peor que el baseline
+ * (p. ej. merge quirúrgico o SSOT repair que trunca el catálogo API).
+ */
+export function isContratosSectionRegression(
+  baselineBody: string | null | undefined,
+  candidateBody: string | null | undefined,
+): boolean {
+  const baseline = (baselineBody ?? "").trim();
+  const candidate = (candidateBody ?? "").trim();
+  if (!baseline || !candidate) return false;
+  if (!isContratosSubstantial(baseline)) return false;
+  if (!isContratosSubstantial(candidate)) return true;
+  if (baseline.length < MIN_CONTRATOS_BASELINE_FOR_REGRESSION_GUARD) return false;
+  const ratio = candidate.length / baseline.length;
+  if (ratio < CONTRATOS_REGRESSION_LENGTH_RATIO) return true;
+  const baselineEndpoints = countContratosEndpointRows(baseline);
+  const candidateEndpoints = countContratosEndpointRows(candidate);
+  if (baselineEndpoints >= 6 && candidateEndpoints < Math.ceil(baselineEndpoints * 0.5)) {
+    return true;
+  }
+  return false;
 }
 
 /**

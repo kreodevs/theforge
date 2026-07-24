@@ -20,6 +20,31 @@ const criticOutputSchema = z.object({
 
 const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:ArchitectCritic] ${msg}`, ...args);
 
+type CriticVerdict = z.infer<typeof criticOutputSchema>;
+
+/** Parsea salida del crítico: JSON estricto + fallback regex cuando el LLM mezcla prosa. */
+function parseArchitectCriticOutput(text: string): CriticVerdict | null {
+  const raw = extractFirstJsonObject(text);
+  if (raw) {
+    try {
+      const parsed = criticOutputSchema.safeParse(JSON.parse(raw));
+      if (parsed.success) return parsed.data;
+    } catch {
+      // fallback below
+    }
+  }
+  if (/verdict\s*[:=]\s*["']?ok["']?/i.test(text)) {
+    return { verdict: "ok" };
+  }
+  if (/verdict\s*[:=]\s*["']?gap["']?/i.test(text)) {
+    const gapLines = [...text.matchAll(/"([^"]{8,200})"/g)]
+      .map((m) => m[1]!.trim())
+      .filter((line) => !/verdict|gaps/i.test(line));
+    return { verdict: "gap", gaps: gapLines.length > 0 ? gapLines.slice(0, 5) : undefined };
+  }
+  return null;
+}
+
 /**
  * Nodo Architect Critic (Reflection): verifica si §3 y §4 del MDD cumplen la directiva del usuario
  * y (cuando hay BRD) la fidelidad de dominio / anti auth-skew.
@@ -94,9 +119,8 @@ export function createMddArchitectCriticNode(llm: BaseChatModel) {
     try {
       const response = await llm.invoke([new HumanMessage(prompt)]);
       const text = typeof response.content === "string" ? response.content : "";
-      const raw = extractFirstJsonObject(text);
-      const parsed = criticOutputSchema.safeParse(raw);
-      if (!parsed.success) {
+      const parsedData = parseArchitectCriticOutput(text);
+      if (!parsedData) {
         LOG("parse critic output failed, treating as gap for one retry");
         if (attempts <= 1) {
           return {
@@ -106,7 +130,7 @@ export function createMddArchitectCriticNode(llm: BaseChatModel) {
         }
         return { architectCriticFeedback: undefined, architectCriticAttempts: attempts };
       }
-      const { verdict, gaps } = parsed.data;
+      const { verdict, gaps } = parsedData;
       if (verdict === "gap" && Array.isArray(gaps) && gaps.length > 0 && attempts <= 1) {
         const feedback = gaps.join("\n");
         LOG("verdict=gap attempts=%s feedback=%s", attempts, feedback.slice(0, 80));
