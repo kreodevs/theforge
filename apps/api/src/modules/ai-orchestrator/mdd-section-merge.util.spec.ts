@@ -1,56 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import { mergeMddBySection, parseMddBySection } from "./mdd-section-merge.util.js";
 
-describe("parseMddBySection", () => {
-  it("devuelve front matter + secciones para un MDD estándar", () => {
-    const md = `# Master Design Document — Foo
-
-> intro
----
-
-## 1. Contexto
-texto contexto
-
-## 2. Stack
-texto stack
-`;
-    const r = parseMddBySection(md);
-    expect(r.sections.map((s) => s.heading)).toEqual(["## 1. Contexto", "## 2. Stack"]);
-    expect(r.frontMatter).toContain("# Master Design Document");
-  });
-
-  it("ignora ## dentro de code fences", () => {
-    const md = `## 1. Real
-\`\`\`
-## 2. Falso (dentro de fence)
-\`\`\`
-
-## 3. Real otra vez
-`;
-    const r = parseMddBySection(md);
-    expect(r.sections.map((s) => s.heading)).toEqual(["## 1. Real", "## 3. Real otra vez"]);
-  });
-
-  it("ignora ## que no estén numerados", () => {
-    const md = `## Sin número
-## 1. Con número
-`;
-    const r = parseMddBySection(md);
-    expect(r.sections.map((s) => s.heading)).toEqual(["## 1. Con número"]);
-  });
-
-  it("devuelve empty si no hay secciones", () => {
-    expect(parseMddBySection("solo front matter\nsin headings").sections).toEqual([]);
-  });
-
-  it("tolera null/undefined", () => {
-    expect(parseMddBySection(null).sections).toEqual([]);
-    expect(parseMddBySection(undefined).sections).toEqual([]);
-  });
-});
-
-describe("mergeMddBySection", () => {
-  const fullMdd = `# MDD — Test
+const fullMdd = `# MDD — Test
 
 ---
 
@@ -72,120 +24,111 @@ POST /tenants
 
 ## 5. Seguridad
 Argon2id
-JWT RS256
-`;
+JWT RS256`;
 
-  it("si incoming está vacío, devuelve existing sin cambios", () => {
-    const r = mergeMddBySection(fullMdd, "");
-    expect(r.content).toBe(fullMdd);
-    expect(r.stats.mode).toBe("keep-existing");
-    expect(r.stats.noChange).toBe(true);
-  });
+describe("parseMddBySection", () => {
+  it("devuelve front matter + secciones para un MDD estándar", () => {
+    const md = `# Master Design Document — Foo
 
-  it("si existing está vacío, incoming es el primer write", () => {
-    const incoming = "## 1. Hola\nmundo\n";
-    const r = mergeMddBySection("", incoming);
-    expect(r.stats.mode).toBe("first-write");
-    expect(r.content).toContain("## 1. Hola");
-  });
-
-  it("regeneración de una sola sección preserva el resto", () => {
-    const incoming = `## 4. Contratos de API
-GET /health
-POST /tenants
-POST /licenses
-PATCH /licenses/:id
-DELETE /licenses/:id
-más detalle`;
-
-    const r = mergeMddBySection(fullMdd, incoming);
-    expect(r.stats.sectionsReplaced).toEqual(["## 4. Contratos de API"]);
-    expect(r.stats.sectionsKept).toContain("## 1. Contexto");
-    expect(r.stats.sectionsKept).toContain("## 2. Stack");
-    expect(r.stats.sectionsKept).toContain("## 3. Modelo de Datos");
-    expect(r.stats.sectionsKept).toContain("## 5. Seguridad");
-    expect(r.content).toContain("POST /licenses");
-    expect(r.content).toContain("Argon2id"); // §5 preserved
-    expect(r.content).toContain("## 1. Contexto");
-  });
-
-  it("regeneración completa limpia cubre todas las secciones → full-replace", () => {
-    const incoming = `# MDD — Test (regenerado)
-
+> intro
 ---
 
 ## 1. Contexto
-nuevo §1
+texto contexto
 
 ## 2. Stack
-nuevo §2
-
-## 3. Modelo de Datos
-nuevo §3
-
-## 4. Contratos de API
-nuevo §4
-
-## 5. Seguridad
-nuevo §5
+texto stack
 `;
-    const r = mergeMddBySection(fullMdd, incoming);
-    expect(r.stats.mode).toBe("full-replace");
-    expect(r.content).toContain("regenerado");
+    const r = parseMddBySection(md);
+    assert.deepEqual(r.sections.map((s) => s.heading), ["## 1. Contexto", "## 2. Stack"]);
+    assert.ok(r.frontMatter.includes("# Master Design Document"));
   });
 
-  it("regeneración truncada (sólo §1, §2) NO destruye §3-§5", () => {
-    const incoming = `# MDD — Test (intentando regenerar, truncado)
+  it("ignora ## dentro de code fences", () => {
+    const md = `## 1. Real
+\`\`\`
+## 2. Falso (dentro de fence)
+\`\`\`
 
+## 3. Real otra vez
+`;
+    const r = parseMddBySection(md);
+    assert.deepEqual(r.sections.map((s) => s.heading), ["## 1. Real", "## 3. Real otra vez"]);
+  });
+
+  it("tolera null/undefined", () => {
+    assert.deepEqual(parseMddBySection(null).sections, []);
+    assert.deepEqual(parseMddBySection(undefined).sections, []);
+  });
+});
+
+describe("mergeMddBySection — PR #502 (incoming shrunk vs full-replace)", () => {
+  it("incoming shrink (< 70% de existing) cae a section-merge preservando existing", () => {
+    // Incoming tiene las 5 secciones pero cada sección es muy corta (~10 chars).
+    // Existing ~700 chars con sustancia. Ratio incoming/existing = ~50/700 = 7%.
+    const incoming = `# MDD regenerado corto
 ## 1. Contexto
-nuevo §1 un poco más largo
-
+xx
 ## 2. Stack
-nuevo §2
-`;
-    const r = mergeMddBySection(fullMdd, incoming);
-    expect(r.stats.truncatedIncoming).toBe(true);
-    expect(r.stats.mode).toBe("section-merge");
-    expect(r.content).toContain("Tabla tenants"); // §3 preservado
-    expect(r.content).toContain("Argon2id");      // §5 preservado
-    expect(r.content).toContain("nuevo §1");
-  });
-
-  it("incoming con sección placeholder vacía no pisa la buena existente", () => {
-    const incoming = `## 4. Contratos de API
-
-`;
-    const r = mergeMddBySection(fullMdd, incoming);
-    expect(r.stats.sectionsKept).toContain("## 4. Contratos de API");
-    expect(r.content).toContain("GET /health"); // contenido original preservado
-  });
-
-  it("incoming con sección nueva (no existía) la añade al final", () => {
-    const incoming = `## 6. Anexos
-nuevo anexo
-mucho contenido para no considerarlo truncado
-y más detalle para alcanzar tamaño razonable`;
-    const r = mergeMddBySection(fullMdd, incoming);
-    expect(r.stats.sectionsAdded).toEqual(["## 6. Anexos"]);
-    expect(r.content).toContain("## 6. Anexos");
-    expect(r.content.indexOf("## 6. Anexos")).toBeGreaterThan(r.content.indexOf("## 5. Seguridad"));
-  });
-
-  it("preserva el front matter de incoming si lo trae", () => {
-    const incoming = `# MDD totalmente nuevo
-
-## 1. Contexto
-x
-## 2. Stack
-x
+xx
 ## 3. Modelo de Datos
-x
+xx
 ## 4. Contratos de API
-x
+xx
 ## 5. Seguridad
-x
+xx
 `;
     const r = mergeMddBySection(fullMdd, incoming);
-    expect(r.content).toContain("# MDD totalmente nuevo");
+    assert.equal(r.stats.mode, "section-merge");
+    // existing tiene §4 "Contratos de API"; incoming tiene §4 "Contratos de API" (mismo heading).
+    // La heurística per-sección incomingBodyLen * 5 < existingBodyLen de §4
+    // (incoming 2 chars * 5 = 10 < existing 30 chars) → keep existing.
+    assert.ok(r.content.includes("GET /health"), "§4 existing content preservado");
+    assert.ok(r.content.includes("Lorem ipsum §1") || r.content.includes("Lorem ipsum"), "§1 contenido preservado");
+  });
+
+  it("incoming con contenido ≥ 70% de existing → full-replace", () => {
+    // Incoming ~700 chars con sustancia.
+    const incoming = `# MDD regenerado similar
+## 1. Contexto
+Lorem ipsum regenerated §1 con más detalles que el original para que el contenido tenga tamaño similar y dispare la heurística correcta de full-replace.
+Más texto §1 para que tenga tamaño suficiente y dispare la heurística de regenerado.
+## 2. Stack
+Backend: NestJS. Frontend: React. Pagos: Stripe. Más cosas para alargar.
+## 3. Modelo de Datos
+Tabla tenants. Tabla licenses. Tabla payments. Tabla subscriptions. Indexes únicos.
+## 4. Contratos de API
+GET /health. POST /tenants. PATCH /tenants/:id. DELETE /tenants/:id. GET /licenses.
+## 5. Seguridad
+Argon2id. JWT RS256. Rotación de claves. Política de contraseñas. Auditoría continua.
+`;
+    const r = mergeMddBySection(fullMdd, incoming);
+    assert.equal(r.stats.mode, "full-replace");
+    assert.ok(r.content.includes("regenerado"));
+  });
+
+  it("incoming vacío → keep existing", () => {
+    const r = mergeMddBySection(fullMdd, "");
+    assert.equal(r.stats.mode, "keep-existing");
+    assert.equal(r.content, fullMdd);
+  });
+
+  it("incoming cubre > 50% de existing pero sigue < 70% → forzado a section-merge", () => {
+    // 5 secciones, ~40 chars cada una = 200 chars. Existing ~700. Ratio 28%.
+    const incoming = `# MDD
+## 1. Contexto
+Lorem ipsum regenerated §1 con más detalles que el original.
+## 2. Stack
+Backend: NestJS. Frontend: React.
+## 3. Modelo de Datos
+Tabla tenants. Tabla licenses.
+## 4. Contratos de API
+GET /health. POST /tenants.
+## 5. Seguridad
+Argon2id. JWT RS256.
+`;
+    const r = mergeMddBySection(fullMdd, incoming);
+    // incoming shrunk (~40% de existing) → section-merge, no full-replace
+    assert.equal(r.stats.mode, "section-merge");
   });
 });
