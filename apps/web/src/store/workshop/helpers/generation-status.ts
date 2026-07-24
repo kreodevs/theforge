@@ -30,12 +30,15 @@ export function clearCancelledJobFromGenerationStatus(
   const activeJob = status.activeJob?.jobId === jid ? null : status.activeJob;
   const queuedJobs = status.queuedJobs.filter((j) => j.jobId !== jid);
   const mddJobs = (status.mddJobs ?? []).filter((j) => j.jobId !== jid);
+  const mddStillBusy = mddJobs.some((j) => j.status === "active" || j.status === "queued");
+  const mddStreamActive = mddStillBusy ? status.mddStreamActive : false;
   const busy = Boolean(
-    status.mddStreamActive || activeJob || queuedJobs.length > 0 || mddJobs.some((j) => j.status === "active" || j.status === "queued"),
+    mddStreamActive || activeJob || queuedJobs.length > 0 || mddStillBusy,
   );
   return {
     ...status,
     busy,
+    mddStreamActive,
     activeJob,
     queuedJobs,
     mddJobs,

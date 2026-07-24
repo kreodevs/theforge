@@ -139,9 +139,17 @@ export const createLegacyDebugSlice: StateCreator<
         agentProgress: [],
         generationStatus: clearCancelledJobFromGenerationStatus(get().generationStatus, jid),
         notice:
-          "Generación MDD cancelada. El pipeline puede tardar unos segundos en detenerse entre nodos.",
+          "Generación MDD cancelada. Si un paso LLM aún cerraba, el proyecto queda libre en cuanto el worker aborta (normalmente unos segundos).",
       });
-      await get().fetchGenerationStatus(pid);
+      void get().fetchGenerationStatus(pid);
+      const pollUntilFree = async (attempt = 0) => {
+        if (attempt >= 12) return;
+        await new Promise((r) => setTimeout(r, 500));
+        const status = await get().fetchGenerationStatus(pid, undefined, { light: true });
+        if (!status?.busy && !status?.mddStreamActive) return;
+        await pollUntilFree(attempt + 1);
+      };
+      void pollUntilFree();
       return true;
     } catch (e) {
       set({ error: friendlyFetchError(e) });

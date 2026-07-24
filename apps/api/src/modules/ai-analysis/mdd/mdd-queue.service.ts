@@ -34,6 +34,12 @@ import { AiAnalysisService } from "../ai-analysis.service.js";
 
 export const MDD_QUEUE_NAME = "theforge-mdd";
 
+/** Clave Redis compartida API ↔ worker para cancelar jobs MDD activos en BullMQ. */
+const MDD_CANCEL_KEY_PREFIX = "theforge:mdd-cancel:";
+
+/** Intervalo de poll Redis para abort cooperativo (ms). */
+const MDD_CANCEL_POLL_MS = 500;
+
 export type MddJobMode = "pipeline" | "manager" | "section" | "legacy" | "upstream-sync";
 
 export interface MddJobData {
@@ -143,6 +149,7 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly inMemoryRunningProjects = new Set<string>();
   private readonly inMemoryPendingByProject = new Map<string, string[]>();
   private readonly jobAbortControllers = new Map<string, AbortController>();
+  private readonly cancelRequestedJobIds = new Set<string>();
   private readonly MAX_ATTEMPTS = 3;
 
   constructor(
@@ -162,10 +169,69 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
     return !!resolveRedisUrlOrThrow();
   }
 
-  /** True si hay job MDD en cola o ejecutándose (incl. stream SSE activo). */
+  /** True si hay job MDD en cola o ejecutándose (excluye jobs en cancelación cooperativa). */
   isProjectBusy(projectId: string): boolean {
-    if (this.generationGuard.isMddStreamActive(projectId)) return true;
-    if (this.inMemoryRunningProjects.has(projectId)) return true;
+    if (this.generationGuard.isMddStreamActive(projectId)) {
+      for (const [jobId, mem] of this.inMemoryJobs) {
+        if (mem.data.projectId !== projectId || mem.status !== "active") continue;
+        if (!this.cancelRequestedJobIds.has(jobId)) return true;
+      }
+    }
+    if (this.inMemoryRunningProjects.has(projectId)) {
+      for (const [jobId, mem] of this.inMemoryJobs) {
+        if (mem.data.projectId === projectId && mem.status === "active") {
+          if (!this.cancelRequestedJobIds.has(jobId)) return true;
+        }
+      }
+    }
+    const pending = this.inMemoryPendingByProject.get(projectId);
+    if (pending?.length) return true;
+    return false;
+  }
+
+  /** True si el usuario pidió cancelar y el worker aún no terminó de abortar. */
+  async isCancelRequested(jobId: string): Promise<boolean> {
+    if (this.cancelRequestedJobIds.has(jobId)) return true;
+    if (!this.queue) return false;
+    try {
+      const client = await this.queue.client;
+      const val = await client.get(`${MDD_CANCEL_KEY_PREFIX}${jobId}`);
+      return Boolean(val);
+    } catch {
+      return false;
+    }
+  }
+
+  private async markCancelRequested(jobId: string): Promise<void> {
+    this.cancelRequestedJobIds.add(jobId);
+    if (!this.queue) return;
+    const client = await this.queue.client;
+    await client.set(`${MDD_CANCEL_KEY_PREFIX}${jobId}`, "1", "EX", 86_400);
+  }
+
+  private async clearCancelRequested(jobId: string): Promise<void> {
+    this.cancelRequestedJobIds.delete(jobId);
+    if (!this.queue) return;
+    const client = await this.queue.client;
+    await client.del(`${MDD_CANCEL_KEY_PREFIX}${jobId}`);
+  }
+
+  private startCancelPoll(jobId: string, abortController: AbortController): () => void {
+    if (!this.queue) return () => undefined;
+    const interval = setInterval(() => {
+      void (async () => {
+        if (await this.isCancelRequested(jobId)) abortController.abort();
+      })().catch(() => undefined);
+    }, MDD_CANCEL_POLL_MS);
+    return () => clearInterval(interval);
+  }
+
+  /** True si hay job MDD bloqueante (excluye jobs en cancelación cooperativa). */
+  async isProjectBlocking(projectId: string): Promise<boolean> {
+    const active = await this.listActiveJobsForProject(projectId);
+    for (const job of active) {
+      if (!(await this.isCancelRequested(job.jobId))) return true;
+    }
     const pending = this.inMemoryPendingByProject.get(projectId);
     if (pending?.length) return true;
     return false;
@@ -228,7 +294,17 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
   /** Jobs MDD activos o en cola con progreso (para generation-status / UI). */
   async listJobsForProject(projectId: string): Promise<MddJobSnapshot[]> {
     const active = await this.listActiveJobsForProject(projectId);
-    return this.buildJobSnapshotsForLabel(active);
+    const visible = (
+      await Promise.all(
+        active.map(async (ref) => ({
+          ref,
+          cancelling: await this.isCancelRequested(ref.jobId),
+        })),
+      )
+    )
+      .filter((entry) => !entry.cancelling)
+      .map((entry) => entry.ref);
+    return this.buildJobSnapshotsForLabel(visible);
   }
 
   /** Solo el job primario consulta progreso completo (dashboard / etiquetas). */
@@ -280,7 +356,9 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
         return { cancelled: true, status: "cancelled" };
       }
       if (mem.status === "active") {
+        await this.markCancelRequested(jobId);
         this.jobAbortControllers.get(jobId)?.abort();
+        this.generationGuard.unregisterMddStream(projectId);
         this.logger.log(`In-memory MDD job ${jobId} cancelación solicitada (active) projectId=${projectId}`);
         return { cancelled: true, status: "cancelling" };
       }
@@ -308,11 +386,14 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
     }
     if (state === "waiting" || state === "delayed" || state === "waiting-children") {
       await job.remove();
+      await this.clearCancelRequested(jobId);
       this.logger.log(`BullMQ MDD job ${jobId} cancelado (queued) projectId=${projectId}`);
       return { cancelled: true, status: "cancelled" };
     }
     if (state === "active") {
+      await this.markCancelRequested(jobId);
       this.jobAbortControllers.get(jobId)?.abort();
+      this.generationGuard.unregisterMddStream(projectId);
       this.logger.log(`BullMQ MDD job ${jobId} cancelación solicitada (active) projectId=${projectId}`);
       return { cancelled: true, status: "cancelling" };
     }
@@ -382,13 +463,7 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async assertCanEnqueue(projectId: string): Promise<void> {
-    if (this.isProjectBusy(projectId)) {
-      throw new ConflictException(
-        "Ya hay una generación de MDD en curso para este proyecto. Espera a que termine o recarga el estado.",
-      );
-    }
-    const active = await this.listActiveJobsForProject(projectId);
-    if (active.length > 0) {
+    if (await this.isProjectBlocking(projectId)) {
       throw new ConflictException(
         "Ya hay una generación de MDD en curso para este proyecto. Espera a que termine o recarga el estado.",
       );
@@ -471,8 +546,12 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
     const { projectId } = data;
     const abortController = new AbortController();
     this.jobAbortControllers.set(jobId, abortController);
+    const stopCancelPoll = this.startCancelPoll(jobId, abortController);
     this.generationGuard.registerMddStream(projectId);
     try {
+      if (await this.isCancelRequested(jobId)) {
+        abortController.abort();
+      }
       if (data.mode === "legacy") {
         onProgress({ phase: "legacy", message: "Generando MDD desde codebase…" });
         if (abortController.signal.aborted) {
@@ -494,8 +573,10 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
         signal: abortController.signal,
       });
     } finally {
+      stopCancelPoll();
       this.jobAbortControllers.delete(jobId);
       this.generationGuard.unregisterMddStream(projectId);
+      await this.clearCancelRequested(jobId);
     }
   }
 

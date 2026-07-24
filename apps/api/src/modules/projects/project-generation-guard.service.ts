@@ -219,9 +219,7 @@ export class ProjectGenerationGuardService {
     }
 
     const mddJobs = await this.mddQueue.buildJobSnapshotsForLabel(mddRefs);
-    const mddJobsBusy = mddJobs.some((job) => job.status === "active" || job.status === "queued");
-    const mddStreamActive =
-      this.isMddStreamActive(projectId) || this.mddQueue.isProjectBusy(projectId) || mddJobsBusy;
+    const mddStreamActive = await this.mddQueue.isProjectBlocking(projectId);
 
     const merged = [...deliverableRefs, ...bgSnapshots];
     const activeJob =
@@ -255,9 +253,9 @@ export class ProjectGenerationGuardService {
     bgSnapshots: GenerationJobSnapshot[];
   }> {
     const mddJobs = await this.mddQueue.listJobsForProject(projectId);
-    const mddJobsBusy = mddJobs.some((job) => job.status === "active" || job.status === "queued");
     const mddStreamActive =
-      this.isMddStreamActive(projectId) || this.mddQueue.isProjectBusy(projectId) || mddJobsBusy;
+      (await this.mddQueue.isProjectBlocking(projectId)) ||
+      mddJobs.some((job) => job.status === "active" || job.status === "queued");
 
     const queueJobs = await this.deliverablesQueue.listActiveJobsForProject(projectId);
     const bgSnapshots: GenerationJobSnapshot[] = [];
