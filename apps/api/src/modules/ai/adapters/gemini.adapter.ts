@@ -6,6 +6,23 @@ import type {
 } from "../interfaces/llm-provider.interface.js";
 import type { ChatImagePart, ChecklistResult } from "@theforge/shared-types";
 import type { UserLLMRuntime } from "../providers/llm-runtime.types.js";
+import { recordTokenUsageFromContext } from "../utils/token-usage-recorder.js";
+
+function extractGeminiUsage(metadata: unknown): {
+  promptTokens: number;
+  completionTokens: number;
+} {
+  if (!metadata || typeof metadata !== "object") return { promptTokens: 0, completionTokens: 0 };
+  const m = metadata as {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    totalTokenCount?: number;
+  };
+  return {
+    promptTokens: m.promptTokenCount ?? 0,
+    completionTokens: m.candidatesTokenCount ?? 0,
+  };
+}
 
 function historyToGemini(history: ChatMessage[]): { role: string; parts: { text: string }[] }[] {
   return history.map((m) => ({
@@ -49,6 +66,16 @@ export class GeminiAdapter implements LLMProvider {
     const chat = model.startChat({ history: historyToGemini(history) });
     const parts = [{ text: prompt }, ...imageParts(options?.userMessageImages)];
     const res = await chat.sendMessage(parts);
+    const usage = extractGeminiUsage(res.response.usageMetadata);
+    if (usage.promptTokens || usage.completionTokens) {
+      recordTokenUsageFromContext(
+        "gemini",
+        this.chatModel,
+        usage.promptTokens,
+        usage.completionTokens,
+        usage.promptTokens + usage.completionTokens,
+      );
+    }
     return res.response.text();
   }
 
@@ -62,11 +89,26 @@ export class GeminiAdapter implements LLMProvider {
     const parts = [{ text: prompt }, ...imageParts(options?.userMessageImages)];
     const res = await chat.sendMessageStream(parts);
 
+    let promptTokens = 0;
+    let completionTokens = 0;
+    const chatModel = this.chatModel;
     return {
       async *[Symbol.asyncIterator]() {
         for await (const chunk of res.stream) {
           const t = chunk.text();
           if (t) yield t;
+          const usage = extractGeminiUsage(chunk.usageMetadata);
+          if (usage.promptTokens) promptTokens = usage.promptTokens;
+          if (usage.completionTokens) completionTokens = usage.completionTokens;
+        }
+        if (promptTokens || completionTokens) {
+          recordTokenUsageFromContext(
+            "gemini",
+            chatModel,
+            promptTokens,
+            completionTokens,
+            promptTokens + completionTokens,
+          );
         }
       },
     };

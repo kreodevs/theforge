@@ -20,6 +20,7 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { Runnable } from "@langchain/core/runnables";
 import type { BaseMessage } from "@langchain/core/messages";
+import { recordTokenUsageFromContext } from "../../ai/utils/token-usage-recorder.js";
 
 export type InvokeWithRetryOptions = {
   /** Etiqueta corta para logs: "SoftwareArchitect", "Clarifier", etc. */
@@ -87,6 +88,7 @@ export async function invokeLlmWithRetry(
     if (wait > 0) await sleep(wait);
     try {
       const response = await (llm as { invoke: (m: BaseMessage[]) => Promise<unknown> }).invoke(messages);
+      recordLlmUsageFromMessage(llm, response, tag);
       const text = extractLlmText(response);
       if (isValid(text)) {
         if (attempt > 1) {
@@ -108,4 +110,82 @@ export async function invokeLlmWithRetry(
   }
   console.error(`[${tag}] LLM sin respuesta válida tras ${max} intentos — devolviendo null`);
   return null;
+}
+
+/**
+ * Extrae usage_metadata de un AIMessage de LangChain y lo registra en `TokenUsage`
+ * si hay un contexto de telemetría activo. No-op si el LLM no expone usage.
+ * El provider/modelo se derivan del llm pasado por parámetro (duck-typing).
+ */
+function recordLlmUsageFromMessage(
+  llm: InvokableLlm,
+  response: unknown,
+  _tag: string,
+): void {
+  if (!response || typeof response !== "object") return;
+  const message = response as {
+    usage_metadata?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      total_tokens?: number;
+    };
+    response_metadata?: {
+      tokenUsage?: {
+        promptTokens?: number;
+        completionTokens?: number;
+        totalTokens?: number;
+      };
+    };
+  };
+  const usage =
+    message.usage_metadata ??
+    (message.response_metadata?.tokenUsage
+      ? {
+          input_tokens: message.response_metadata.tokenUsage.promptTokens,
+          output_tokens: message.response_metadata.tokenUsage.completionTokens,
+          total_tokens: message.response_metadata.tokenUsage.totalTokens,
+        }
+      : undefined);
+  if (!usage) return;
+  const promptTokens = usage.input_tokens ?? 0;
+  const completionTokens = usage.output_tokens ?? 0;
+  const totalTokens = usage.total_tokens ?? promptTokens + completionTokens;
+  if (!promptTokens && !completionTokens) return;
+  const { providerId, modelId } = deriveLlmIdentity(llm);
+  recordTokenUsageFromContext(
+    providerId,
+    modelId,
+    promptTokens,
+    completionTokens,
+    totalTokens,
+  );
+}
+
+/**
+ * Duck-typing para extraer provider/modelo del `BaseChatModel`. LangChain no expone
+ * una API uniforme; las subclases usan `modelName`, `model`, `lc_serializable` etc.
+ * Si no se reconoce, devuelve "unknown" / "unknown" — el call se sigue registrando,
+ * simplemente no se calcula coste.
+ */
+function deriveLlmIdentity(llm: InvokableLlm): {
+  providerId: string;
+  modelId: string;
+} {
+  const candidate = llm as unknown as Record<string, unknown>;
+  const modelId =
+    typeof candidate.modelName === "string"
+      ? candidate.modelName
+      : typeof candidate.model === "string"
+        ? candidate.model
+        : "unknown";
+  // ChatAnthropic, ChatOpenAI, ChatGoogleGenerativeAI todos exponen `lc_serializable`
+  // con un `kwargs.model` o similar. Construimos heurística por nombre de clase.
+  const className = (candidate.constructor as { name?: string })?.name ?? "";
+  let providerId = "openai-compatible";
+  if (/Anthropic/i.test(className)) providerId = "anthropic";
+  else if (/Google|Gemini|GenAI/i.test(className)) providerId = "gemini";
+  else if (/OpenAI/i.test(className)) providerId = "openai";
+  // OpenRouter pasa por ChatOpenAI con baseUrl distinto; ya queda registrado como
+  // "openai" — suficiente para agregación, podemos refinar después.
+  return { providerId, modelId };
 }

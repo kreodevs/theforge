@@ -78,6 +78,22 @@ export interface GenerateResponseOptions {
   techDocsContext?: string | null;
   /** Fuerza salida JSON (OpenAI `response_format`; otros adapters vía system). */
   jsonObjectMode?: boolean;
+  /**
+   * Telemetría opcional: si se proporciona, los adapters registran uso de tokens
+   * en `TokenUsage` para este proyecto/etapa. Cuando se omite, no se persiste.
+   * Típico: callers de Workshop/Pipeline pasan `projectId` + `stageId` + `documentField`.
+   */
+  telemetryContext?: {
+    projectId: string;
+    stageId?: string | null;
+    /** "mddContent" | "specContent" | … | "chat". */
+    documentField: string;
+    /** "initial" | "regenerate" | "repair" | "refine" | "chat". */
+    context?: string;
+    /** Nodo pipeline (software_architect, clarifier, …). Null para chat. */
+    node?: string | null;
+    jobId?: string | null;
+  };
 }
 
 export interface LLMProvider {

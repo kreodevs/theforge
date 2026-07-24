@@ -629,6 +629,14 @@ export class SessionsService {
       intent: ready.intentRoute.intent,
       learningHistory: ready.learningHistory || undefined,
       userMessageImages: ready.userTurn.imagesForLlm,
+      telemetryContext: {
+        projectId: ready.session.projectId,
+        stageId: ready.options?.stageId ?? null,
+        documentField: "chat",
+        context: "chat",
+        node: null,
+        jobId: null,
+      },
     });
   }
 

@@ -37,6 +37,8 @@ export function buildSessionChatGenerateOptions(
     intent: IntentRouteResult["intent"];
     learningHistory?: string;
     userMessageImages?: GenerateResponseOptions["userMessageImages"];
+    /** Cuando se proporciona, persiste uso de tokens para este proyecto/etapa. */
+    telemetryContext?: GenerateResponseOptions["telemetryContext"];
   },
 ): GenerateResponseOptions {
   return {
@@ -66,5 +68,6 @@ export function buildSessionChatGenerateOptions(
     uxGuideDesignRefEffectiveSlug: options?.uxGuideDesignRefEffectiveSlug,
     uxGuideDesignRefMode: options?.uxGuideDesignRefMode,
     userMessageImages: ctx.userMessageImages,
+    telemetryContext: ctx.telemetryContext,
   };
 }

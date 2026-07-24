@@ -31,6 +31,7 @@ import { getRequestUserId, runWithRequestUserAsync } from "../../../common/reque
 import { ProjectGenerationGuardService } from "../../projects/project-generation-guard.service.js";
 import { LegacyCoordinatorService } from "../../legacy-flow/legacy-coordinator.service.js";
 import { AiAnalysisService } from "../ai-analysis.service.js";
+import { runWithTokenUsageContext } from "../token-usage/token-usage.context.js";
 
 export const MDD_QUEUE_NAME = "theforge-mdd";
 
@@ -557,9 +558,19 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
         if (abortController.signal.aborted) {
           throw new Error("Cancelado por el usuario");
         }
-        const res = await this.legacyCoordinator.generateMdd(projectId, data.stageId, {
-          includeContent: false,
-        });
+        const res = await runWithTokenUsageContext(
+          {
+            projectId,
+            stageId: data.stageId ?? null,
+            documentField: "mddContent",
+            context: data.mddContent || data.initialMessage ? "regenerate" : "initial",
+            jobId,
+          },
+          () =>
+            this.legacyCoordinator.generateMdd(projectId, data.stageId, {
+              includeContent: false,
+            }),
+        );
         return {
           ok: res.ok,
           mode: "legacy",
@@ -569,9 +580,19 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
           outcome: "done",
         };
       }
-      return await this.aiAnalysis.runMddGenerationJob(data, onProgress, {
-        signal: abortController.signal,
-      });
+      return await runWithTokenUsageContext(
+        {
+          projectId,
+          stageId: data.stageId ?? null,
+          documentField: "mddContent",
+          context: data.mddContent || data.initialMessage ? "regenerate" : "initial",
+          jobId,
+        },
+        () =>
+          this.aiAnalysis.runMddGenerationJob(data, onProgress, {
+            signal: abortController.signal,
+          }),
+      );
     } finally {
       stopCancelPoll();
       this.jobAbortControllers.delete(jobId);

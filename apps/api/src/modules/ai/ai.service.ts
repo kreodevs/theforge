@@ -106,6 +106,7 @@ import {
   buildGreenfieldCoverageChecklist,
 } from "../engine/sdd-coverage-checklist.util.js";
 import { resolveLlmMaxTokensForPurpose } from "./config/llm-config.js";
+import { runWithTokenUsageContext } from "../ai-analysis/token-usage/token-usage.context.js";
 import { MERMAID_REGENERATE_PROMPT } from "./prompts/mermaid-regenerate-prompt.js";
 import { repairMermaidBlockBody, stripMermaidFenceWrappers } from "@theforge/shared-types/mermaid";
 import { PluginDocumentPipelineService } from "../../plugins/plugin-document-pipeline.service.js";
@@ -269,6 +270,8 @@ export interface LegacyGenerateOptions {
   domainInventory?: DomainInventory | null;
   /** Hooks de plugins: id de proyecto para before/afterDocumentRender */
   projectId?: string;
+  /** Stage ID para telemetría de tokens (tabla TokenUsage). */
+  stageId?: string;
   /** Contexto de entregables para hooks de plugins */
   hookContext?: Record<string, string | null | undefined>;
 }
@@ -409,7 +412,17 @@ export class AiService {
         context: options.hookContext ?? {},
         prompt,
         systemPrompt,
-        generateOptions,
+        generateOptions: {
+          ...generateOptions,
+          telemetryContext: {
+            projectId: options.projectId,
+            stageId: options.stageId ?? null,
+            documentField: `${documentType}Content`,
+            context: "initial",
+            node: null,
+            jobId: null,
+          },
+        },
       });
     }
     return this.generateResponse(prompt, [], { systemPrompt, ...generateOptions });
@@ -487,37 +500,40 @@ export class AiService {
     history: LlmChatMessage[],
     options?: GenerateResponseOptions,
   ): Promise<string> {
-    try {
-      const phase0TechDocs = await this.resolvePhase0TechDocsForChat(prompt, options);
-      const systemPrompt = buildWorkshopSystemPrompt(options, {
-        variant: "sync",
-        history,
-        userPrompt: prompt,
-        phase0TechDocs,
-      });
-      const ts = () => new Date().toISOString();
-      console.log(`[AiService] ${ts()} → Enviando al LLM:`, {
-        activeTab: options?.activeTab,
-        welcomeBrief: options?.welcomeBrief === true,
-        promptLength: prompt.length,
-        promptPreview: prompt.slice(0, 120) + (prompt.length > 120 ? "…" : ""),
-        systemPromptLength: systemPrompt.length,
-        approxTotalChars: systemPrompt.length + prompt.length,
-        historyLength: history.length,
-      });
-      const out = await (await this.provider()).generateResponse(prompt, history, {
-        systemPrompt,
-        userMessageImages: options?.userMessageImages,
-      });
-      console.log(`[AiService] ${ts()} ← Respuesta del LLM recibida:`, {
-        length: out?.length ?? 0,
-        preview: (out ?? "").slice(0, 200) + ((out?.length ?? 0) > 200 ? "…" : ""),
-      });
-      return out;
-    } catch (err) {
-      console.error("[AiService] generateResponse error", err);
-      throw err;
-    }
+    const invoke = async (): Promise<string> => {
+      try {
+        const phase0TechDocs = await this.resolvePhase0TechDocsForChat(prompt, options);
+        const systemPrompt = buildWorkshopSystemPrompt(options, {
+          variant: "sync",
+          history,
+          userPrompt: prompt,
+          phase0TechDocs,
+        });
+        const ts = () => new Date().toISOString();
+        console.log(`[AiService] ${ts()} → Enviando al LLM:`, {
+          activeTab: options?.activeTab,
+          welcomeBrief: options?.welcomeBrief === true,
+          promptLength: prompt.length,
+          promptPreview: prompt.slice(0, 120) + (prompt.length > 120 ? "…" : ""),
+          systemPromptLength: systemPrompt.length,
+          approxTotalChars: systemPrompt.length + prompt.length,
+          historyLength: history.length,
+        });
+        const out = await (await this.provider()).generateResponse(prompt, history, {
+          systemPrompt,
+          userMessageImages: options?.userMessageImages,
+        });
+        console.log(`[AiService] ${ts()} ← Respuesta del LLM recibida:`, {
+          length: out?.length ?? 0,
+          preview: (out ?? "").slice(0, 200) + ((out?.length ?? 0) > 200 ? "…" : ""),
+        });
+        return out;
+      } catch (err) {
+        console.error("[AiService] generateResponse error", err);
+        throw err;
+      }
+    };
+    return this.withTelemetryContext(options, invoke);
   }
 
   /**
@@ -555,13 +571,6 @@ export class AiService {
     history: LlmChatMessage[],
     options?: GenerateResponseOptions,
   ): Promise<AsyncIterable<string>> {
-    const phase0TechDocs = await this.resolvePhase0TechDocsForChat(prompt, options);
-    const systemPrompt = buildWorkshopSystemPrompt(options, {
-      variant: "stream",
-      history,
-      userPrompt: prompt,
-      phase0TechDocs,
-    });
     const userId = getRequestUserId();
     try {
       const runtime = await this.aiFactory.resolveRuntime(userId);
@@ -573,7 +582,40 @@ export class AiService {
         `[generateResponseStream] resolveRuntime falló userId=${userId}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-    return (await this.provider()).generateResponseStream(prompt, history, { ...options, systemPrompt });
+    const invoke = async (): Promise<AsyncIterable<string>> => {
+      const phase0TechDocs = await this.resolvePhase0TechDocsForChat(prompt, options);
+      const systemPrompt = buildWorkshopSystemPrompt(options, {
+        variant: "stream",
+        history,
+        userPrompt: prompt,
+        phase0TechDocs,
+      });
+      return (await this.provider()).generateResponseStream(prompt, history, { ...options, systemPrompt });
+    };
+    return this.withTelemetryContext(options, invoke);
+  }
+
+  /**
+   * Envuelve la llamada LLM en `runWithTokenUsageContext` cuando `options.telemetryContext`
+   * está presente, para que los adapters capturen uso por proyecto/etapa/documento.
+   */
+  private async withTelemetryContext<T>(
+    options: GenerateResponseOptions | undefined,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const tc = options?.telemetryContext;
+    if (!tc) return fn();
+    return runWithTokenUsageContext(
+      {
+        projectId: tc.projectId,
+        stageId: tc.stageId ?? null,
+        documentField: tc.documentField,
+        context: tc.context ?? "unknown",
+        node: tc.node ?? null,
+        jobId: tc.jobId ?? null,
+      },
+      fn,
+    );
   }
 
   /**

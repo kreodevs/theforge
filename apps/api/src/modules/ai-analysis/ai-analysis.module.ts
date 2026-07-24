@@ -15,6 +15,7 @@ import { MddManualAuditService } from "./mdd/mdd-manual-audit.service.js";
 import { MddQueueService } from "./mdd/mdd-queue.service.js";
 import { MddUpstreamSyncService } from "./mdd/mdd-upstream-sync.service.js";
 import { TraceabilitySuggestService } from "./traceability/traceability-suggest.service.js";
+import { TokenUsageService } from "./token-usage/token-usage.service.js";
 import { GraphMemoryModule } from "./graph-memory/graph-memory.module.js";
 import { Phase0Module } from "./phase0/phase0.module.js";
 import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
@@ -42,6 +43,7 @@ import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
     MddQueueService,
     MddUpstreamSyncService,
     TraceabilitySuggestService,
+    TokenUsageService,
   ],
   exports: [
     AiAnalysisService,
@@ -53,6 +55,7 @@ import { UiMcpModule } from "../ui-mcp/ui-mcp.module.js";
     MddQueueService,
     MddUpstreamSyncService,
     TraceabilitySuggestService,
+    TokenUsageService,
   ],
 })
 export class AiAnalysisModule { }
