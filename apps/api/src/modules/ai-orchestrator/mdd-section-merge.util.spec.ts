@@ -87,8 +87,11 @@ xx
     assert.ok(r.content.includes("Lorem ipsum §1") || r.content.includes("Lorem ipsum"), "§1 contenido preservado");
   });
 
-  it("incoming con contenido ≥ 70% de existing → full-replace", () => {
-    // Incoming ~700 chars con sustancia.
+  it("incoming con contenido ≥ 70% de existing → section-merge preserva existing bueno", () => {
+    // PR #503: full-replace eliminado. Siempre section-merge para preservar
+    // contenido bueno de iter 1. La heurística per-sección de 20% protege
+    // contra placeholders vacíos, y las secciones nuevas de incoming se
+    // añaden al final.
     const incoming = `# MDD regenerado similar
 ## 1. Contexto
 Lorem ipsum regenerated §1 con más detalles que el original para que el contenido tenga tamaño similar y dispare la heurística correcta de full-replace.
@@ -103,8 +106,14 @@ GET /health. POST /tenants. PATCH /tenants/:id. DELETE /tenants/:id. GET /licens
 Argon2id. JWT RS256. Rotación de claves. Política de contraseñas. Auditoría continua.
 `;
     const r = mergeMddBySection(fullMdd, incoming);
-    assert.equal(r.stats.mode, "full-replace");
-    assert.ok(r.content.includes("regenerado"));
+    // full-replace eliminado → siempre section-merge cuando existing no vacío
+    assert.equal(r.stats.mode, "section-merge");
+    // Las secciones de incoming reemplazan a existing sección por sección
+    // (porque cada una tiene ≥ 20% de su contraparte, no hay placeholder vacío).
+    assert.ok(r.stats.sectionsReplaced.length > 0, "secciones de incoming integradas");
+    // El contenido de existing se mantiene en las secciones donde incoming
+    // no aporta (defensa ante regeneraciones que solo tocan algunos campos).
+    assert.ok(r.content.includes("Debe tener tamaño suficiente") || r.content.includes("regenerado"));
   });
 
   it("incoming vacío → keep existing", () => {

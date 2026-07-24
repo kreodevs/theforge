@@ -214,49 +214,33 @@ export function mergeMddBySection(
   const added: string[] = [];
   const kept: string[] = [];
 
-  // Decisión: si incoming NO es truncado y trae un set de secciones que es un
-  // super-conjunto (o casi) de existing, es regeneración completa → replace
-  // (sólo si la cobertura es suficiente). En caso contrario merge.
-  const incomingCoversAll = Array.from(existingByKey.keys()).every((k) =>
-    incomingByKey.has(k),
-  );
-  // Regla de "energía": si incoming trae todas las secciones pero es
-  // significativamente más corto que existing (ej. clarifier iter 2 devolviendo
-  // 14k chars vs existing 24k), NO hacer full-replace aunque cubra las
-  // secciones. Caer a section-merge, que ya tiene la heurística per-sección
-  // de 20% (incomingBodyLen * 5 < existingBodyLen → keep existing).
-  // Esto evita que iteraciones regenerativas destruyan contenido bueno cuando
-  // el LLM produce un MDD "completo pero corto".
-  const incomingChars =
-    incomingParsed.frontMatter.length +
-    incomingParsed.sections.reduce((a, s) => a + s.heading.length + s.body.length, 0);
-  const existingChars =
-    existingParsed.frontMatter.length +
-    existingParsed.sections.reduce((a, s) => a + s.heading.length + s.body.length, 0);
-  const incomingIsShrunk = existingChars > 0 && incomingChars * 100 < existingChars * 70;
-  const looksLikeFullRegen =
-    !truncated &&
-    incomingCoversAll &&
-    incomingParsed.sections.length >= existingParsed.sections.length - 1 &&
-    !incomingIsShrunk;
-
-  if (looksLikeFullRegen) {
-    // Full replace — incoming trae (casi) todas las secciones que ya existían.
-    // Secciones nuevas en incoming (que no existían): también replace (added=0
-    // porque ya están "incluidas" en el incoming).
+  // Regla de "energía": FORZAR section-merge siempre que existing tenga
+  // contenido. full-replace NUNCA es necesario en este flujo porque el
+  // section-merge ya preserva las secciones existentes que incoming no cubre,
+  // reemplaza las que sí cubre (con threshold de 20% por-sección que protege
+  // contra placeholders), y añade secciones nuevas de incoming al final.
+  // El "full-replace" era una optimización que en la práctica degrada
+  // contenido cuando el LLM regenera con menos detalle (caso del Clarifier
+  // iter 2 sobre el documento bueno de iter 1).
+  if (existing && existing.trim().length > 0) {
+    // Existing no vacío → usar SIEMPRE section-merge para preservar calidad.
+    // La "inteligencia" del merge por sección + threshold 20% protege
+    // contra placeholders vacíos del incoming.
+  } else {
+    // Existing vacío (primer write) → incoming es el primer write.
     const content = serializeMerged(
-      incomingParsed.frontMatter || existingParsed.frontMatter,
+      incomingParsed.frontMatter,
       incomingParsed.sections,
     );
     return {
       content,
       stats: {
-        sectionsReplaced: incomingParsed.sections.map((s) => s.heading),
-        sectionsAdded: [],
+        sectionsReplaced: [],
+        sectionsAdded: incomingParsed.sections.map((s) => s.heading),
         sectionsKept: [],
-        noChange: normalized(content) === normalized(existing ?? ""),
+        noChange: false,
         truncatedIncoming: false,
-        mode: "full-replace",
+        mode: "first-write",
       },
     };
   }
