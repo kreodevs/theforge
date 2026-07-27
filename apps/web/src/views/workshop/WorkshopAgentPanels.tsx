@@ -1,6 +1,7 @@
 import { Bot } from "lucide-react";
 import { AgentGovernancePanel } from "@/components/AgentGovernancePanel";
 import { AgentSessionLogPanel } from "@/components/AgentSessionLogPanel";
+import { SecurityArchitectureAuditPanel } from "@/components/SecurityArchitectureAuditPanel";
 import { DocEmptyState } from "@/components/DocEmptyState";
 import { PendingDocumentationGapsPanel } from "@/components/PendingDocumentationGapsPanel";
 import { WorkshopAgentProgressPanel } from "@/components/WorkshopAgentProgressPanel";
@@ -78,6 +79,18 @@ export function WorkshopAgentPanels({
       <AgentSessionLogPanel
         projectId={projectId}
         stageId={activeStageId}
+        variant="workspace"
+        className="min-h-0 flex-1 border-0 bg-transparent p-0 shadow-none"
+      />
+    );
+  }
+
+  if (centralPanel === "agent-security-audit" && projectId && activeStageId) {
+    return (
+      <SecurityArchitectureAuditPanel
+        projectId={projectId}
+        stageId={activeStageId}
+        mddContent={effectiveMddTrimmed}
         variant="workspace"
         className="min-h-0 flex-1 border-0 bg-transparent p-0 shadow-none"
       />

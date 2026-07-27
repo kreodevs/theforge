@@ -43,6 +43,8 @@ const railControlActiveClass = (extra?: string) =>
 export interface WorkshopAgentActivitySidebarSectionProps {
   projectId: string;
   stageId: string | null | undefined;
+  /** Oculta ítems que requieren MDD (p. ej. auditoría seguridad). */
+  hasMdd?: boolean;
   /** Collapsed icon rail (lg+). */
   rail: boolean;
   activeDocPanel: string;
@@ -75,6 +77,7 @@ function CollapsedRailHint({
 export function WorkshopAgentActivitySidebarSection({
   projectId,
   stageId,
+  hasMdd = false,
   rail,
   activeDocPanel,
   workshopAgentsBusy,
@@ -82,7 +85,7 @@ export function WorkshopAgentActivitySidebarSection({
   refreshToken,
 }: WorkshopAgentActivitySidebarSectionProps) {
   const [pendingCount, setPendingCount] = useState(0);
-  const navItems = buildWorkshopAgentActivityNavItems();
+  const navItems = buildWorkshopAgentActivityNavItems({ hasMdd });
 
   const fetchPendingCount = useCallback(async () => {
     if (!projectId || !stageId) return;

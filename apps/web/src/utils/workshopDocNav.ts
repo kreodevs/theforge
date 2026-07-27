@@ -22,6 +22,7 @@ import {
   Presentation,
   ScrollText,
   Server,
+  ShieldAlert,
   Target,
 } from "lucide-react";
 import type { ArtifactTypeDefinition } from "@theforge/shared-types";
@@ -37,6 +38,7 @@ export type WorkshopMandatoryNewProjectStepId =
 /** Central panels for agent activity (sidebar nav + workshop workspace). */
 export const WORKSHOP_AGENT_PENDING_CHANGES_PANEL = "agent-pending-changes" as const;
 export const WORKSHOP_AGENT_SESSION_LOG_PANEL = "agent-session-log" as const;
+export const WORKSHOP_AGENT_SECURITY_AUDIT_PANEL = "agent-security-audit" as const;
 
 /** Prefijo para IDs de paneles generados por plugins. */
 const PLUGIN_PANEL_PREFIX = "plugin:";
@@ -62,6 +64,7 @@ const LUCIDE_ICON_MAP: Record<string, LucideIcon> = {
   Brain,
   Link2,
   ScrollText,
+  ShieldAlert,
 };
 
 export function isPluginPanel(panelId: string): boolean {
@@ -101,16 +104,19 @@ export function buildPluginDocNavItems(ctx: WorkshopDocNavBuildContext): Worksho
 
 export type WorkshopAgentActivityPanelId =
   | typeof WORKSHOP_AGENT_PENDING_CHANGES_PANEL
-  | typeof WORKSHOP_AGENT_SESSION_LOG_PANEL;
+  | typeof WORKSHOP_AGENT_SESSION_LOG_PANEL
+  | typeof WORKSHOP_AGENT_SECURITY_AUDIT_PANEL;
 
 export function isWorkshopAgentActivityPanel(panel: string): panel is WorkshopAgentActivityPanelId {
   return (
-    panel === WORKSHOP_AGENT_PENDING_CHANGES_PANEL || panel === WORKSHOP_AGENT_SESSION_LOG_PANEL
+    panel === WORKSHOP_AGENT_PENDING_CHANGES_PANEL ||
+    panel === WORKSHOP_AGENT_SESSION_LOG_PANEL ||
+    panel === WORKSHOP_AGENT_SECURITY_AUDIT_PANEL
   );
 }
 
-export function buildWorkshopAgentActivityNavItems(): WorkshopDocNavItem[] {
-  return [
+export function buildWorkshopAgentActivityNavItems(opts?: { hasMdd?: boolean }): WorkshopDocNavItem[] {
+  const items: WorkshopDocNavItem[] = [
     {
       id: WORKSHOP_AGENT_PENDING_CHANGES_PANEL,
       label: "Cambios pendientes",
@@ -126,6 +132,18 @@ export function buildWorkshopAgentActivityNavItems(): WorkshopDocNavItem[] {
       content: null,
     },
   ];
+
+  if (opts?.hasMdd) {
+    items.push({
+      id: WORKSHOP_AGENT_SECURITY_AUDIT_PANEL,
+      label: "Auditoría seguridad",
+      title: "Auditor adversarial de seguridad y arquitectura sobre el MDD (solo hallazgos)",
+      Icon: ShieldAlert,
+      content: null,
+    });
+  }
+
+  return items;
 }
 
 export function isWorkshopMandatoryDeliverableStep(
@@ -529,6 +547,11 @@ export function getWorkshopDocPanelHeader(
       title: "Log de sesión",
       subtitle: "Gaps MCP, reconciliaciones y eventos de la sesión agéntica",
       Icon: ScrollText,
+    },
+    [WORKSHOP_AGENT_SECURITY_AUDIT_PANEL]: {
+      title: "Auditoría de seguridad y arquitectura",
+      subtitle: "Hallazgos adversariales sobre el MDD (read-only, no reescribe)",
+      Icon: ShieldAlert,
     },
   };
 

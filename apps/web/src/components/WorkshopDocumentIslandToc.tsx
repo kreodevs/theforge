@@ -21,6 +21,7 @@ const NON_MARKDOWN_PANELS = new Set([
   "wireframes",
   "agent-pending-changes",
   "agent-session-log",
+  "agent-security-audit",
 ]);
 
 export function isWorkshopMarkdownPreviewActive(

@@ -108,6 +108,16 @@
         "default": "./dist-cjs/mdd-governance-pattern-compat.js"
       }
     },
+    "./mdd-security-audit-display": {
+      "import": {
+        "types": "./dist/mdd-security-audit-display.d.ts",
+        "default": "./dist/mdd-security-audit-display.js"
+      },
+      "require": {
+        "types": "./dist-cjs/mdd-security-audit-display.d.ts",
+        "default": "./dist-cjs/mdd-security-audit-display.js"
+      }
+    },
     "./mdd-upstream-sync-node": {
       "import": {
         "types": "./dist/mdd-upstream-sync-node.d.ts",

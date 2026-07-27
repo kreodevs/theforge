@@ -1280,6 +1280,7 @@ export default function WorkshopView({
     | "integration"
     | "agent-pending-changes"
     | "agent-session-log"
+    | "agent-security-audit"
     | (string & {});
   const centralPanel = useWorkshopStore((s) => s.workshopActiveDocPanel) as DocPanel;
   const setCentralPanel = useWorkshopStore((s) => s.setWorkshopActiveDocPanel);
@@ -1292,6 +1293,7 @@ export default function WorkshopView({
       "aem",
       "agent-pending-changes",
       "agent-session-log",
+      "agent-security-audit",
     ]);
     if (nonChatPanels.has(centralPanel)) return "mdd";
     return centralPanel as import("../components/ChatContainer").ActiveTab;

@@ -1002,6 +1002,7 @@ export function DashboardSidebar({
                     <WorkshopAgentActivitySidebarSection
                       projectId={workshopProject.id}
                       stageId={activeStageId}
+                      hasMdd={!!effectiveMddTrimmed}
                       rail={rail}
                       activeDocPanel={activeDocPanel}
                       workshopAgentsBusy={workshopAgentsBusy}

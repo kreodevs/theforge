@@ -6,6 +6,7 @@ import { AiAnalysisService } from "./ai-analysis.service.js";
 import { EstimationService } from "./estimation/estimation.service.js";
 import { Phase0InterviewService } from "./phase0/phase0-interview.service.js";
 import { MddManualAuditService } from "./mdd/mdd-manual-audit.service.js";
+import { MddSecurityArchitectureAuditService } from "./mdd/mdd-security-architecture-audit.service.js";
 import { TraceabilitySuggestService } from "./traceability/traceability-suggest.service.js";
 import type { TraceabilitySuggestFixRequest } from "@theforge/shared-types";
 import { parseChatImageAttachments } from "../ai/utils/chat-image-attachments.util.js";
@@ -22,6 +23,7 @@ export class AiAnalysisController {
     private readonly estimationService: EstimationService,
     private readonly phase0Interview: Phase0InterviewService,
     private readonly mddManualAudit: MddManualAuditService,
+    private readonly mddSecurityArchitectureAudit: MddSecurityArchitectureAuditService,
     private readonly traceabilitySuggest: TraceabilitySuggestService,
     private readonly prisma: PrismaService,
     private readonly generationGuard: ProjectGenerationGuardService,
@@ -210,6 +212,25 @@ export class AiAnalysisController {
     const mddContent =
       typeof body?.mddContent === "string" ? body.mddContent.trim() || undefined : undefined;
     return this.mddManualAudit.audit(projectId, stageId, mddContent);
+  }
+
+  /** Auditoría adversarial read-only de seguridad y arquitectura sobre el MDD (no reescribe). */
+  @Post("mdd/security-audit")
+  async securityAuditMdd(
+    @Body() body: {
+      projectId?: string;
+      stageId?: string;
+      mddContent?: string;
+      deepAudit?: boolean;
+    },
+  ) {
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    if (!projectId) throw new BadRequestException("projectId is required");
+    const stageId = typeof body?.stageId === "string" ? body.stageId.trim() || undefined : undefined;
+    const mddContent =
+      typeof body?.mddContent === "string" ? body.mddContent.trim() || undefined : undefined;
+    const deepAudit = body?.deepAudit === true;
+    return this.mddSecurityArchitectureAudit.audit(projectId, stageId, mddContent, { deepAudit });
   }
 
   @Post("mdd/audit/answer")

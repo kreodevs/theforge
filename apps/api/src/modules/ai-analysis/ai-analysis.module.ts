@@ -11,6 +11,7 @@ import { CheckpointerService } from "./checkpoint/checkpointer.service.js";
 import { NodeCacheService } from "./checkpoint/node-cache.service.js";
 import { EstimationModule } from "./estimation/estimation.module.js";
 import { MddManualAuditService } from "./mdd/mdd-manual-audit.service.js";
+import { MddSecurityArchitectureAuditService } from "./mdd/mdd-security-architecture-audit.service.js";
 import { MddQueueService } from "./mdd/mdd-queue.service.js";
 import { MddUpstreamSyncService } from "./mdd/mdd-upstream-sync.service.js";
 import { TraceabilitySuggestService } from "./traceability/traceability-suggest.service.js";
@@ -38,6 +39,7 @@ import { MddCoherenceModule } from "../engine/mdd-coherence/mdd-coherence.module
     CheckpointerService,
     AiAnalysisService,
     MddManualAuditService,
+    MddSecurityArchitectureAuditService,
     MddQueueService,
     MddUpstreamSyncService,
     TraceabilitySuggestService,

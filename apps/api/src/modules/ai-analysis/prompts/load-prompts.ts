@@ -227,3 +227,10 @@ export const CROSS_CONSISTENCY_MDD_PROMPT = loadPrompt(
   "cross-consistency-prompt.md",
   "Eres el Revisor de Consistencia Cruzada del MDD. Responde OK_CONSISTENT o un array JSON de parches find/replace.",
 );
+
+/** Auditor adversarial read-only: hallazgos de seguridad y arquitectura (no reescribe MDD). */
+export const SECURITY_ARCHITECTURE_AUDITOR_MDD_PROMPT = loadPrompt(
+  "mdd",
+  "security-architecture-auditor-prompt.md",
+  "Eres el Auditor Principal de Seguridad y Arquitectura. Audita el documento y produce hallazgos verificables. No reescribas el documento.",
+);

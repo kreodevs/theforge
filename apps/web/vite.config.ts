@@ -50,6 +50,13 @@ export default defineConfig({
         ),
       },
       {
+        find: "@theforge/shared-types/mdd-security-audit-display",
+        replacement: path.resolve(
+          __dirname,
+          "../../packages/shared-types/src/mdd-security-audit-display.ts",
+        ),
+      },
+      {
         find: "@theforge/shared-types/mdd-governance-patterns",
         replacement: path.resolve(
           __dirname,

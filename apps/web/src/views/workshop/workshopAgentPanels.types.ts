@@ -3,7 +3,8 @@ import type { AgentGovernanceScaffold } from "@theforge/shared-types";
 export type WorkshopAgentPanelId =
   | "agent-governance"
   | "agent-pending-changes"
-  | "agent-session-log";
+  | "agent-session-log"
+  | "agent-security-audit";
 
 export interface WorkshopAgentPanelsProps {
   centralPanel: WorkshopAgentPanelId | string;
