@@ -6,7 +6,10 @@
 import {
   PLATFORM_ORPHAN_TABLES,
   type DomainInventory,
+  type Paso0DecisionCatalog,
+  isPaso0ForbiddenEntityTable,
 } from "@theforge/shared-types";
+import { listPaso0TablesToStripFromSection3 } from "./mdd-paso0-enforcement.util.js";
 import { extractEntities } from "./conformance.service.js";
 import { extractBrdCapabilities } from "./domain-inventory.util.js";
 import { extractSectionByNumber } from "./mdd-markdown-parser.js";
@@ -75,8 +78,16 @@ export function isPlatformTableJustified(
     mddMarkdown?: string | null;
     specMarkdown?: string | null;
     inventory?: DomainInventory | null;
+    paso0Catalog?: Paso0DecisionCatalog | null;
   },
 ): boolean {
+  const normalized = table.toLowerCase();
+  if (params.paso0Catalog) {
+    if (isPaso0ForbiddenEntityTable(normalized, params.paso0Catalog)) return false;
+    const paso0Strip = new Set(listPaso0TablesToStripFromSection3(params.paso0Catalog));
+    if (paso0Strip.has(normalized)) return false;
+  }
+
   if (!PLATFORM_ORPHAN_TABLES.has(table)) return true;
 
   const section3 =
@@ -116,6 +127,7 @@ export function listUnjustifiedPlatformTables(params: {
   mddMarkdown: string;
   specMarkdown?: string | null;
   inventory?: DomainInventory | null;
+  paso0Catalog?: Paso0DecisionCatalog | null;
 }): string[] {
   const section3 = extractSectionByNumber(params.mddMarkdown ?? "", 3) || params.mddMarkdown || "";
   const mddEntities = extractEntities(section3);
@@ -148,6 +160,7 @@ export function annotateJustifiedPlatformTablesInMdd(
     dbgaMarkdown?: string | null;
     specMarkdown?: string | null;
     inventory?: DomainInventory | null;
+    paso0Catalog?: Paso0DecisionCatalog | null;
   },
 ): { markdown: string; annotated: string[] } {
   let out = mddMarkdown ?? "";

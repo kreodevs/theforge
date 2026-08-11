@@ -114,12 +114,15 @@ export function collectDomainInventoryConformanceGaps(params: {
   mddMarkdown: string;
   specMarkdown?: string | null;
   inventory?: DomainInventory | null;
+  paso0Catalog?: import("@theforge/shared-types").Paso0DecisionCatalog | null;
 }): DomainInventoryConformanceReport {
-  const missingDbgaCoreInMdd = checkMissingDbgaCoreEntitiesInMdd({
-    dbgaMarkdown: params.dbgaMarkdown,
-    brdMarkdown: params.brdMarkdown,
-    mddMarkdown: params.mddMarkdown,
-  });
+  const missingDbgaCoreInMdd = params.paso0Catalog
+    ? []
+    : checkMissingDbgaCoreEntitiesInMdd({
+        dbgaMarkdown: params.dbgaMarkdown,
+        brdMarkdown: params.brdMarkdown,
+        mddMarkdown: params.mddMarkdown,
+      });
   const platformTablesWithoutJustification = checkPlatformTablesOutsideBrd(params);
 
   const gaps: string[] = [];

@@ -2,6 +2,21 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { evaluateMddCoherenceFromMarkdown } from "./mdd-coherence.util.js";
 import { repairMddCoherenceSection4Gaps } from "./mdd-coherence-repair.util.js";
+import type { Paso0DecisionCatalog } from "@theforge/shared-types";
+import { PASO0_DECISION_CATALOG_KIND } from "@theforge/shared-types";
+
+const paso0CatalogFixture: Paso0DecisionCatalog = {
+  kind: PASO0_DECISION_CATALOG_KIND,
+  version: 1,
+  extractedAt: "2026-01-01T00:00:00.000Z",
+  sourceHash: "test",
+  decisions: [{ id: "D-003", rule: "SSO Integral es la fuente de identidad" }],
+  mvpCapabilities: [],
+  outOfScope: [],
+  entities: [{ term: "Contexto", definition: "Unidad de colaboración", decisionIds: ["D-002"] }],
+  invariants: [],
+  risks: [],
+};
 
 /** Fixture KMS-like: §4 tabla (no H3) + auth/infra + entidades hyphen/underscore. */
 function kmsLikeMdd(): string {
@@ -96,5 +111,63 @@ CREATE TABLE users (id UUID PRIMARY KEY);
     assert.match(repaired.markdown, /\/api\/v1\/widgets/i);
     const after = evaluateMddCoherenceFromMarkdown(repaired.markdown);
     assert.equal(after.orphanEntityCount, 0);
+  });
+
+  it("no inyecta GET para tablas prohibidas/inventadas con paso0Catalog", () => {
+    const catalog = paso0CatalogFixture;
+    const mdd = `
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE llm_configs (id UUID PRIMARY KEY);
+CREATE TABLE agent_runs (id UUID PRIMARY KEY);
+CREATE TABLE contexts (id UUID PRIMARY KEY);
+\`\`\`
+
+## 4. Contratos de API
+| GET | \`/api/v1/contexts\` | Contexts |
+`;
+    const repaired = repairMddCoherenceSection4Gaps(mdd, { paso0Catalog: catalog });
+    assert.equal(repaired.injected.length, 0);
+    assert.doesNotMatch(repaired.markdown, /llm-configs/i);
+    assert.doesNotMatch(repaired.markdown, /agent-runs/i);
+  });
+
+  it("no inyecta GET /channels ni /conversations con paso0Catalog", () => {
+    const catalog = paso0CatalogFixture;
+    const mdd = `
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE channels (id UUID PRIMARY KEY);
+CREATE TABLE conversations (id UUID PRIMARY KEY);
+CREATE TABLE contexts (id UUID PRIMARY KEY);
+\`\`\`
+
+## 4. Contratos de API
+| GET | \`/api/v1/contexts\` | Contexts |
+`;
+    const repaired = repairMddCoherenceSection4Gaps(mdd, { paso0Catalog: catalog });
+    assert.equal(repaired.injected.length, 0);
+    assert.doesNotMatch(repaired.markdown, /\/api\/v1\/channels/i);
+    assert.doesNotMatch(repaired.markdown, /\/api\/v1\/conversations/i);
+    assert.doesNotMatch(repaired.markdown, /coherence auto/i);
+  });
+
+  it("no inyecta GET para mcp_plugins ni requests con paso0Catalog", () => {
+    const catalog = paso0CatalogFixture;
+    const mdd = `
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE mcp_plugins (id UUID PRIMARY KEY);
+CREATE TABLE requests (id UUID PRIMARY KEY);
+CREATE TABLE contexts (id UUID PRIMARY KEY);
+\`\`\`
+
+## 4. Contratos de API
+| GET | \`/api/v1/contexts\` | Contexts |
+`;
+    const repaired = repairMddCoherenceSection4Gaps(mdd, { paso0Catalog: catalog });
+    assert.equal(repaired.injected.length, 0);
+    assert.doesNotMatch(repaired.markdown, /mcp-plugins/i);
+    assert.doesNotMatch(repaired.markdown, /\/api\/v1\/requests/i);
   });
 });

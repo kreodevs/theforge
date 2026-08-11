@@ -15,6 +15,15 @@ import { isPlatformTableJustified } from "./platform-table-justify.util.js";
 import { isChatLlmPlatformScope } from "./mdd-platform-table-strip.util.js";
 import { corpusExcludesMultiTenantSaaS } from "./mdd-brd-scope.util.js";
 import { stableCrudUserStoryId, stableJourneyUserStoryId } from "@theforge/shared-types";
+import type { Paso0DecisionCatalog } from "@theforge/shared-types";
+import {
+  catalogToSuggestedEntitySlugs,
+  formatPaso0CatalogGuardBlock,
+  formatPaso0ArchitectMandatoryBlock,
+  isPaso0ForbiddenEntityTable,
+  listPaso0MandatoryEntities,
+} from "@theforge/shared-types";
+import { catalogToBrdCapabilityRows } from "../ai-analysis/phase0/paso0-pasted-definitive.util.js";
 
 const AUTH_CAPABILITY_RE =
   /\b(autenticaci[oó]n|autorizaci[oó]n|login|mfa|ldap|rbac|sso|sesiones?|credenciales)\b/i;
@@ -313,8 +322,17 @@ const PLATFORM_INVENTORY_NOISE = new Set([
 function shouldSuggestPlatformInventoryEntity(
   entity: string,
   corpus: string,
+  paso0Catalog?: Paso0DecisionCatalog | null,
 ): boolean {
   const e = entity.toLowerCase();
+  if (paso0Catalog) {
+    if (isPaso0ForbiddenEntityTable(e, paso0Catalog)) return false;
+    const mandatory = new Set(listPaso0MandatoryEntities(paso0Catalog));
+    if (mandatory.has(e)) return true;
+    const catalogSlugs = new Set(catalogToSuggestedEntitySlugs(paso0Catalog));
+    if (catalogSlugs.has(e)) return true;
+    return false;
+  }
   if (!PLATFORM_INVENTORY_NOISE.has(e)) return true;
   if (e === "tenants" || e === "tenant_quotas") {
     return !corpusExcludesMultiTenantSaaS(corpus);
@@ -322,23 +340,50 @@ function shouldSuggestPlatformInventoryEntity(
   return isChatLlmPlatformScope(corpus);
 }
 
+function normalizeCapabilityTitle(title: string): string {
+  return title
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function buildDomainInventory(input: {
   brdMarkdown?: string | null;
   dbgaMarkdown?: string | null;
   mddMarkdown?: string | null;
   mddEntities?: Iterable<string>;
+  paso0Catalog?: Paso0DecisionCatalog | null;
 }): DomainInventory {
-  const capabilities = extractBrdCapabilities(input.brdMarkdown ?? "");
-  const suggestedFromProse = suggestEntitiesFromProse(
-    input.brdMarkdown,
-    input.dbgaMarkdown,
-    input.mddMarkdown,
-  );
-  const dbgaCanonical = extractDbgaCanonicalEntities(input.dbgaMarkdown ?? "");
+  let capabilities = extractBrdCapabilities(input.brdMarkdown ?? "");
+  if (input.paso0Catalog) {
+    const fromCatalog = catalogToBrdCapabilityRows(input.paso0Catalog);
+    if (capabilities.length === 0) {
+      capabilities = fromCatalog;
+    } else if (fromCatalog.length > 0) {
+      const merged = new Map(fromCatalog.map((c) => [normalizeCapabilityTitle(c.title), c]));
+      for (const brdCap of capabilities) {
+        merged.set(normalizeCapabilityTitle(brdCap.title), brdCap);
+      }
+      capabilities = [...merged.values()];
+    }
+  }
+  const suggestedFromProse = input.paso0Catalog
+    ? suggestEntitiesFromProse(input.dbgaMarkdown, input.mddMarkdown).filter(
+        (e) => !isPaso0ForbiddenEntityTable(e, input.paso0Catalog),
+      )
+    : suggestEntitiesFromProse(input.brdMarkdown, input.dbgaMarkdown, input.mddMarkdown);
+  const dbgaCanonical = input.paso0Catalog
+    ? []
+    : extractDbgaCanonicalEntities(input.dbgaMarkdown ?? "");
+  const catalogEntities = input.paso0Catalog
+    ? listPaso0MandatoryEntities(input.paso0Catalog)
+    : [];
   const corpus = [input.brdMarkdown, input.dbgaMarkdown, input.mddMarkdown].filter(Boolean).join("\n");
-  const suggestedRaw = [...new Set([...suggestedFromProse, ...dbgaCanonical])];
+  const suggestedRaw = [...new Set([...catalogEntities, ...suggestedFromProse, ...dbgaCanonical])];
   const suggestedEntities = suggestedRaw
-    .filter((e) => shouldSuggestPlatformInventoryEntity(e, corpus))
+    .filter((e) => shouldSuggestPlatformInventoryEntity(e, corpus, input.paso0Catalog))
     .filter(
       (e) =>
         !PLATFORM_ORPHAN_TABLES.has(e) ||
@@ -363,6 +408,13 @@ export function buildDomainInventory(input: {
     crudMatrix,
     adminSurfaces,
   };
+}
+
+/** Inventario mínimo obligatorio desde catálogo Paso 0 (Clarifier / Arquitecto). */
+export function buildMandatoryDomainInventoryFromPaso0(
+  catalog: Paso0DecisionCatalog,
+): DomainInventory {
+  return buildDomainInventory({ paso0Catalog: catalog });
 }
 
 /** True when MDD entities are overwhelmingly auth family while BRD has non-auth capabilities. */
@@ -405,11 +457,18 @@ export function domainEntityCoverage(
  * Compact block for LLM prompts (Clarifier / SA / Critic / cascade checklist).
  * Caps length so it stays within context budgets.
  */
-export function formatDomainInventoryForPrompt(inventory: DomainInventory, maxChars = 3500): string {
+export function formatDomainInventoryForPrompt(
+  inventory: DomainInventory,
+  maxChars = 3500,
+  paso0Catalog?: Paso0DecisionCatalog | null,
+): string {
   const domainCaps = inventory.capabilities.filter((c) => !c.isAuthRelated);
   const authCaps = inventory.capabilities.filter((c) => c.isAuthRelated);
+  const header = paso0Catalog
+    ? "**Inventario de dominio (catálogo Paso 0 D-ID — no inventar fuera de esto):**"
+    : "**Inventario de dominio (derivado del BRD/DBGA — fidelidad obligatoria):**";
   const lines: string[] = [
-    "**Inventario de dominio (derivado del BRD/DBGA — fidelidad obligatoria):**",
+    header,
     "",
     `Capacidades de negocio (${domainCaps.length}): ${domainCaps
       .slice(0, 20)
@@ -447,8 +506,14 @@ export function formatDomainInventoryForPrompt(inventory: DomainInventory, maxCh
   }
   lines.push(
     "",
-    "Reglas: (1) §3/§4 y entregables deben anclar estas capacidades/entidades. (2) Auth es complemento, no el único dominio. (3) Si falta una entidad de negocio en el MVP, declárala en Fuera de alcance — no la omitas en silencio.",
+    paso0Catalog
+      ? "Reglas: (1) §3/§4 solo entidades del catálogo Paso 0. (2) Prohibido tenants/channels/conversations como raíz. (3) SSO Integral para identidad (D-003). (4) Stack D-162 = propuestas."
+      : "Reglas: (1) §3/§4 y entregables deben anclar estas capacidades/entidades. (2) Auth es complemento, no el único dominio. (3) Si falta una entidad de negocio en el MVP, declárala en Fuera de alcance — no la omitas en silencio.",
   );
+  if (paso0Catalog) {
+    lines.push("", formatPaso0ArchitectMandatoryBlock(paso0Catalog, Math.min(2_800, Math.floor(maxChars * 0.35))));
+    lines.push("", formatPaso0CatalogGuardBlock(paso0Catalog, Math.min(3_000, Math.floor(maxChars * 0.55))));
+  }
   const text = lines.join("\n");
   return text.length <= maxChars ? text : text.slice(0, maxChars) + "\n…[inventario truncado]";
 }

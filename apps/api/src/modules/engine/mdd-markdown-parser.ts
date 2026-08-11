@@ -29,7 +29,7 @@ export function extractSectionByNumber(md: string, sectionNum: number): string {
   const idx = matches.findIndex((x) => x.num === sectionNum);
   if (idx === -1) return "";
   const start = matches[idx]!.index;
-  const next = matches[idx + 1];
+  const next = matches.slice(idx + 1).find((x) => x.num > sectionNum);
   const end = next ? next.index : md.length;
   return md.slice(start, end).trim();
 }

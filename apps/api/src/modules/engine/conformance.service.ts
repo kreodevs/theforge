@@ -108,7 +108,9 @@ export { extractSection };
 /** Extrae nombres de entidades/tablas (CREATE TABLE, **Entity**, tabla markdown, listas) de un bloque. */
 export function extractEntities(text: string): Set<string> {
   const entities = new Set<string>();
-  const createTable = text.matchAll(/\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?["`]?([a-z_][a-z0-9_]*)/gi);
+  const createTable = text.matchAll(
+    /\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?(?:["']?[a-z_][a-z0-9_]*["']?\.)?["']?([a-z_][a-z0-9_]*)/gi,
+  );
   for (const m of createTable) {
     if (m[1]) entities.add(m[1].toLowerCase());
   }

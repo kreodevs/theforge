@@ -2,11 +2,12 @@
  * Elimina tablas ruido TheForge/chat de §3 cuando el alcance del proyecto no es plataforma conversacional.
  */
 
-import { PLATFORM_ORPHAN_TABLES } from "@theforge/shared-types";
-import type { DomainInventory } from "@theforge/shared-types";
+import { PLATFORM_ORPHAN_TABLES, PASO0_INVENTED_PLATFORM_TABLES, isPaso0ForbiddenEntityTable } from "@theforge/shared-types";
+import type { DomainInventory, Paso0DecisionCatalog } from "@theforge/shared-types";
 import { corpusExcludesMultiTenantSaaS } from "./mdd-brd-scope.util.js";
 import { extractSectionByNumber } from "./mdd-markdown-parser.js";
 import { isPlatformTableJustified } from "./platform-table-justify.util.js";
+import { listPaso0TablesToStripFromSection3 } from "./mdd-paso0-enforcement.util.js";
 
 /** Tablas típicas de plataforma chat/LLM que no deben contaminar dominios ajenos (KMS, catálogo, etc.). */
 export const THEFORGE_PLATFORM_NOISE_TABLES = new Set([
@@ -66,13 +67,23 @@ function shouldStripPlatformTable(
     specMarkdown?: string | null;
     mddMarkdown?: string | null;
     inventory?: DomainInventory | null;
+    paso0Catalog?: Paso0DecisionCatalog | null;
   },
 ): boolean {
+  const normalized = table.toLowerCase();
+  if (params.paso0Catalog) {
+    if (isPaso0ForbiddenEntityTable(normalized, params.paso0Catalog)) return true;
+    const paso0Strip = new Set(listPaso0TablesToStripFromSection3(params.paso0Catalog));
+    if (paso0Strip.has(normalized)) return true;
+  }
+
   const corpus = buildCorpus(params);
   if (MULTI_TENANT_SAAS_NOISE_TABLES.has(table) && corpusExcludesMultiTenantSaaS(corpus)) {
     return true;
   }
-  if (!THEFORGE_PLATFORM_NOISE_TABLES.has(table)) return false;
+  if (!THEFORGE_PLATFORM_NOISE_TABLES.has(table) && !PASO0_INVENTED_PLATFORM_TABLES.has(normalized)) {
+    return false;
+  }
   if (!isChatLlmPlatformScope(corpus)) return true;
   return !isPlatformTableJustified(table, { ...params, mddMarkdown: params.mddMarkdown ?? "" });
 }
@@ -102,6 +113,7 @@ export function stripUnjustifiedPlatformTablesFromMdd(
     dbgaMarkdown?: string | null;
     specMarkdown?: string | null;
     inventory?: DomainInventory | null;
+    paso0Catalog?: Paso0DecisionCatalog | null;
   },
 ): { markdown: string; stripped: string[] } {
   const draft = (mddMarkdown ?? "").trim();
@@ -116,7 +128,12 @@ export function stripUnjustifiedPlatformTablesFromMdd(
   let sql = sqlMatch[1];
   const stripped: string[] = [];
 
-  const tablesToScan = new Set([...THEFORGE_PLATFORM_NOISE_TABLES, ...MULTI_TENANT_SAAS_NOISE_TABLES]);
+  const tablesToScan = new Set([
+    ...THEFORGE_PLATFORM_NOISE_TABLES,
+    ...MULTI_TENANT_SAAS_NOISE_TABLES,
+    ...PASO0_INVENTED_PLATFORM_TABLES,
+    ...(params.paso0Catalog ? listPaso0TablesToStripFromSection3(params.paso0Catalog) : []),
+  ]);
   for (const table of tablesToScan) {
     const createRe = new RegExp(
       `CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?["']?${table}["']?\\s*\\(`,

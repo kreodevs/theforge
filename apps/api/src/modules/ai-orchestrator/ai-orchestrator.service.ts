@@ -2,6 +2,7 @@ import { HttpException, HttpStatus, Inject, Injectable, NotFoundException } from
 import type { ChatImagePart, ChatMessage, WorkshopChatScope } from "@theforge/shared-types";
 import {
   filterChatForWorkshopView,
+  mergePhase0SummaryPreservePaso0Sidecar,
   resolveWorkshopChatScope,
 } from "@theforge/shared-types";
 import {
@@ -469,7 +470,12 @@ export class AiOrchestratorService {
     }
     if (phase0FromResponse != null && phase0FromResponse.length > 0) {
       console.log("[Orchestrator] persisting phase0SummaryContent length:", phase0FromResponse.length);
-      updatedProject = await this.projects.update(projectId, { phase0SummaryContent: phase0FromResponse });
+      updatedProject = await this.projects.update(projectId, {
+        phase0SummaryContent: mergePhase0SummaryPreservePaso0Sidecar(
+          project.phase0SummaryContent,
+          phase0FromResponse,
+        ),
+      });
     }
     if (brdFromResponse != null && brdFromResponse.length > 0) {
       await this.projects.patchStage(projectId, route.stageId, { brdContent: brdFromResponse });
@@ -818,7 +824,10 @@ export class AiOrchestratorService {
         }
         if (tab === "phase0" && tabAllowsDocPersist && msg.phase0SummaryContent != null && msg.phase0SummaryContent.length > 0) {
           updatedProject = await this.projects.update(projectId, {
-            phase0SummaryContent: msg.phase0SummaryContent,
+            phase0SummaryContent: mergePhase0SummaryPreservePaso0Sidecar(
+              project.phase0SummaryContent,
+              msg.phase0SummaryContent,
+            ),
           });
         }
         if (tabAllowsDocPersist && tab === "spec" && msg.specContent != null && msg.specContent.length > 0) {

@@ -5,12 +5,20 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { buildDomainInventory } from "./domain-inventory.util.js";
+import { extractPaso0DecisionCatalog } from "../ai-analysis/phase0/paso0-pasted-definitive.util.js";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   composeDomainTableStubsSql,
   mergeDbgaCoreGapsIntoMdd,
   mergeDomainTablesIntoMdd,
   missingDomainEntities,
 } from "./compose-section3-from-inventory.util.js";
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../../../../");
+const step0Path = join(repoRoot, "STEP_0-review.md");
+const paso0Catalog = extractPaso0DecisionCatalog(readFileSync(step0Path, "utf8"));
 
 const BRD = `
 ## 3. Capacidades
@@ -132,5 +140,53 @@ CREATE TABLE users (
     assert.doesNotMatch(markdown, /dbga_core_stubs/);
     assert.match(markdown, /CREATE TABLE operations/);
     assert.ok(!injected.includes("operations"));
+  });
+
+  it("paso0 stub injection crea attachments con columnas scan_status, no channels", () => {
+    const inv = buildDomainInventory({ paso0Catalog });
+    const mdd = `# MDD
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE applications (id UUID PRIMARY KEY);
+CREATE TABLE contexts (id UUID PRIMARY KEY);
+CREATE TABLE messages (id UUID PRIMARY KEY);
+\`\`\`
+`;
+    const missing = missingDomainEntities(inv, mdd, paso0Catalog);
+    assert.ok(missing.includes("attachments"));
+    assert.ok(!missing.includes("channels"));
+    const sql = composeDomainTableStubsSql(inv, mdd, paso0Catalog);
+    assert.match(sql, /CREATE TABLE attachments/i);
+    assert.match(sql, /scan_status/i);
+    assert.doesNotMatch(sql, /CREATE TABLE channels/i);
+    const { markdown, injected } = mergeDomainTablesIntoMdd(mdd, inv, paso0Catalog);
+    assert.ok(injected.includes("attachments"));
+    assert.match(markdown, /scan_status/i);
+  });
+
+  it("paso0 stub injection crea business_events con columnas §3.5 e idempotencia", () => {
+    const inv = buildDomainInventory({ paso0Catalog });
+    const mdd = `# MDD
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE applications (id UUID PRIMARY KEY);
+CREATE TABLE contexts (id UUID PRIMARY KEY);
+CREATE TABLE messages (id UUID PRIMARY KEY);
+\`\`\`
+`;
+    const missing = missingDomainEntities(inv, mdd, paso0Catalog);
+    assert.ok(missing.includes("business_events"));
+    const sql = composeDomainTableStubsSql(inv, mdd, paso0Catalog);
+    assert.match(sql, /CREATE TABLE business_events/i);
+    assert.match(sql, /source_application/i);
+    assert.match(sql, /event_id/i);
+    assert.match(sql, /event_type/i);
+    assert.match(sql, /payload JSONB/i);
+    assert.match(sql, /occurred_at/i);
+    assert.match(sql, /uq_event_dedup UNIQUE \(source_application, event_id\)/i);
+    const { markdown, injected } = mergeDomainTablesIntoMdd(mdd, inv, paso0Catalog);
+    assert.ok(injected.includes("business_events"));
+    assert.match(markdown, /CREATE TABLE business_events/i);
+    assert.match(markdown, /source_application/i);
   });
 });

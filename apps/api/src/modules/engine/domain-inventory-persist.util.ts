@@ -49,6 +49,7 @@ export function rebuildDomainInventoryPreferringBrd(input: {
   brdMarkdown?: string | null;
   dbgaMarkdown?: string | null;
   mddMarkdown?: string | null;
+  paso0Catalog?: import("@theforge/shared-types").Paso0DecisionCatalog | null;
 }): DomainInventory {
   const mddEntities = extractEntities(
     extractSectionByNumber(input.mddMarkdown ?? "", 3) || input.mddMarkdown || "",
@@ -58,5 +59,6 @@ export function rebuildDomainInventoryPreferringBrd(input: {
     dbgaMarkdown: input.dbgaMarkdown,
     mddMarkdown: input.mddMarkdown,
     mddEntities,
+    paso0Catalog: input.paso0Catalog,
   });
 }
