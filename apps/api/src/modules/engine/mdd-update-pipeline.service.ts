@@ -1,16 +1,27 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ComplexityLevel, Status } from "@theforge/database";
-import type { SddGraphSyncStatus } from "@theforge/shared-types";
+import type { Paso0DecisionCatalog, SddGraphSyncStatus } from "@theforge/shared-types";
 import { MddCoherenceService } from "./mdd-coherence/mdd-coherence.service.js";
 import { resolveDomainInventory } from "./domain-inventory-persist.util.js";
 import { SemaphoreService, type SemaphoreEvaluationInput } from "./semaphore.service.js";
 import { prepareMddForOutput } from "../ai-analysis/utils/mdd-prepare-output.js";
-import { validateMddForDelivery } from "../ai-analysis/utils/mdd-delivery-gate.util.js";
+import { validateMddForDelivery, isStreamPrevalidatedDeliveryGate } from "../ai-analysis/utils/mdd-delivery-gate.util.js";
+import { resolvePaso0DecisionCatalogForMdd } from "../ai-analysis/phase0/paso0-pasted-definitive.util.js";
+import {
+  enforcePaso0CatalogOnMdd,
+  repairAndInjectPaso0Section3ForGate,
+  areRecoverablePersistGateAutofixBlockers,
+  sanitizePaso0SsoContradictionsInMdd,
+  sanitizePaso0StranglerFigInMdd,
+} from "./mdd-paso0-enforcement.util.js";
 import { extractSection5Body } from "../ai-analysis/utils/mdd-sanitize/section-merge.js";
 import {
   prepareMddMarkdownForPersist,
   touchPrevalidatedMddBeforePersist,
 } from "../ai-analysis/utils/mdd-sanitize/persist-pipeline.js";
+import { deduplicateCanonicalMddSections } from "../ai-analysis/utils/mdd-sanitize/section-merge.js";
+import { applyPersistDeliveryGateAutofixes } from "../ai-analysis/utils/mdd-delivery-gate-autofix.util.js";
+import { preserveValidatedSectionsIfSubstantial } from "../ai-analysis/utils/mdd-section-preserve.util.js";
 import { logMddPersistFenceDiag } from "../ai-analysis/utils/mdd-persist-fence-diag.util.js";
 import { normalizeMddContent } from "./mdd-markdown-parser.js";
 import { preRenderMddSanity } from "./mdd-pre-render.js";
@@ -20,7 +31,10 @@ export type MddUpdatePipelineGraphScope = {
   stageId: string;
   brdMarkdown?: string | null;
   dbgaMarkdown?: string | null;
+  phase0SummaryContent?: string | null;
   domainInventory?: unknown;
+  /** Catálogo Paso 0 resuelto (opcional; si falta se deriva de phase0SummaryContent/dbga). */
+  paso0Catalog?: Paso0DecisionCatalog | null;
 };
 
 export type MddUpdatePipelineProcessOptions = MddUpdatePipelineGraphScope & {
@@ -31,6 +45,10 @@ export type MddUpdatePipelineProcessOptions = MddUpdatePipelineGraphScope & {
   prevalidatedFromStream?: boolean;
   /** Borrador pre-prepare para restaurar §5 si el formateo la regresó. */
   baselineDraft?: string | null;
+  /** Gate del stream (prepare_output) ya aprobó — evita re-evaluar esqueleto tras persist format. */
+  streamDeliveryGatePassed?: boolean;
+  /** Snapshot del gate del stream para parity persist (opcional). */
+  streamDeliveryGate?: import("@theforge/shared-types").MddDeliveryGateResult | null;
 };
 
 export type MddUpdatePipelineResult =
@@ -67,6 +85,12 @@ export class MddUpdatePipelineService {
     semaphoreBase: Omit<SemaphoreEvaluationInput, "mddJsonString" | "sddDomainGraphOk">,
     graphScope?: MddUpdatePipelineProcessOptions,
   ): Promise<MddUpdatePipelineResult> {
+    const paso0Catalog =
+      graphScope?.paso0Catalog ??
+      resolvePaso0DecisionCatalogForMdd(
+        graphScope?.phase0SummaryContent,
+        graphScope?.dbgaMarkdown,
+      );
     const gateRef: { current?: ReturnType<typeof validateMddForDelivery> } = {};
     const s5Pre = extractSection5Body(rawMddContent)?.length ?? 0;
     const prevalidated = graphScope?.prevalidatedFromStream === true;
@@ -77,19 +101,76 @@ export class MddUpdatePipelineService {
     let prepared: string;
     let persistFormatted = false;
     if (prevalidated) {
-      const touched = touchPrevalidatedMddBeforePersist(
-        rawMddContent,
-        graphScope?.baselineDraft ?? rawMddContent,
-      );
-      prepared = prepareMddMarkdownForPersist(touched);
+      const baseline = (graphScope?.baselineDraft ?? rawMddContent).trim();
+      let preparedBody = touchPrevalidatedMddBeforePersist(rawMddContent, baseline || rawMddContent);
+      preparedBody = prepareMddMarkdownForPersist(preparedBody);
+      if (baseline) {
+        preparedBody = preserveValidatedSectionsIfSubstantial(baseline, preparedBody);
+      }
+      preparedBody = deduplicateCanonicalMddSections(preparedBody);
+
+      const applyPaso0ForPersistGate = (md: string): string => {
+        if (!paso0Catalog) return md;
+        let out = repairAndInjectPaso0Section3ForGate(md, paso0Catalog).markdown;
+        out = enforcePaso0CatalogOnMdd(out, paso0Catalog).markdown;
+        out = sanitizePaso0StranglerFigInMdd(out, paso0Catalog).markdown;
+        out = sanitizePaso0SsoContradictionsInMdd(out, paso0Catalog).markdown;
+        return deduplicateCanonicalMddSections(out);
+      };
+
+      preparedBody = applyPaso0ForPersistGate(preparedBody);
+      prepared = preparedBody;
       persistFormatted = true;
-      gateRef.current = validateMddForDelivery(prepared);
+      const gateEvalOpts = {
+        paso0Catalog,
+        brdMarkdown: graphScope?.brdMarkdown,
+        dbgaMarkdown: graphScope?.dbgaMarkdown,
+        skipDeterministicRepair: true as const,
+      };
+      gateRef.current = validateMddForDelivery(prepared, gateEvalOpts);
+      let persistAutofixAttempt = 0;
+      while (
+        !gateRef.current.ok &&
+        areRecoverablePersistGateAutofixBlockers(gateRef.current.blockers) &&
+        persistAutofixAttempt < 2
+      ) {
+        persistAutofixAttempt += 1;
+        const autofix = applyPersistDeliveryGateAutofixes(prepared, {
+          paso0Catalog,
+          baseline: baseline || undefined,
+          inventory: graphScope
+            ? resolveDomainInventory({
+                persisted: graphScope.domainInventory,
+                brdMarkdown: graphScope.brdMarkdown,
+                dbgaMarkdown: graphScope.dbgaMarkdown,
+                mddMarkdown: prepared,
+              })
+            : undefined,
+        });
+        if (autofix.markdown === prepared && autofix.applied.length === 0) break;
+        prepared = autofix.markdown;
+        gateRef.current = validateMddForDelivery(prepared, gateEvalOpts);
+        console.log(
+          `[MDD:PersistPipeline] persist autofix attempt=${persistAutofixAttempt} applied=[${autofix.applied.join(",")}] gate ok=${gateRef.current.ok} score=${gateRef.current.score} blockers=${gateRef.current.blockers.length}`,
+        );
+      }
+      const streamGate = graphScope?.streamDeliveryGate;
+      if (
+        !gateRef.current.ok &&
+        isStreamPrevalidatedDeliveryGate(streamGate)
+      ) {
+        console.log(
+          `[MDD:PersistPipeline] stream gate parity — persist re-gate score=${gateRef.current.score} blockers=${gateRef.current.blockers.length}; usando stream score=${streamGate!.score}`,
+        );
+        gateRef.current = streamGate!;
+      }
     } else {
       prepared = await prepareMddForOutput(rawMddContent, {
         deliveryGateRef: gateRef,
         formatForPersist: true,
         brdMarkdown: graphScope?.brdMarkdown,
         dbgaMarkdown: graphScope?.dbgaMarkdown,
+        paso0Catalog,
       });
     }
     const s5Post = extractSection5Body(prepared)?.length ?? 0;
@@ -97,8 +178,15 @@ export class MddUpdatePipelineService {
       `[MDD:PersistPipeline] prepare done len=${prepared.length} §5=${s5Pre}→${s5Post} prevalidated=${prevalidated}`,
     );
     logMddPersistFenceDiag("update-pipeline:post", prepared);
-    const gate = gateRef.current ?? validateMddForDelivery(prepared);
-    if (!gate.ok) {
+    const gate =
+      gateRef.current ??
+      validateMddForDelivery(prepared, {
+        paso0Catalog,
+        brdMarkdown: graphScope?.brdMarkdown,
+        dbgaMarkdown: graphScope?.dbgaMarkdown,
+        skipDeterministicRepair: prevalidated ? true : undefined,
+      });
+    if (!gate.ok && !isStreamPrevalidatedDeliveryGate(gate)) {
       console.warn(
         `[MDD:PersistPipeline] gate FAIL score=${gate.score} blockers=${gate.blockers.length}: ${gate.blockers.slice(0, 2).join("; ")}`,
       );
@@ -107,6 +195,11 @@ export class MddUpdatePipelineService {
         code: "ERR_MDD_DELIVERY_GATE",
         message: gate.blockers.join("; "),
       };
+    }
+    if (!gate.ok && isStreamPrevalidatedDeliveryGate(gate)) {
+      console.log(
+        `[MDD:PersistPipeline] near-pass persist allowed score=${gate.score} blockers=${gate.blockers.length}`,
+      );
     }
     const sanity = preRenderMddSanity(prepared);
     if (!sanity.ok) {

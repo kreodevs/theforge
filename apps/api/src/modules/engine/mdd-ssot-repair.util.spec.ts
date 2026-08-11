@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
-import { reconcileMddSsotBeforeDeliveryGate } from "./mdd-ssot-repair.util.js";
+import { reconcileMddSsotBeforeDeliveryGate, shouldSkipDestructiveSsotRepair } from "./mdd-ssot-repair.util.js";
+import { extractPaso0DecisionCatalog } from "../ai-analysis/phase0/paso0-pasted-definitive.util.js";
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../../../../");
 
 const BRD = `
 ## UAT
@@ -104,5 +110,43 @@ CREATE TABLE users (id UUID PRIMARY KEY);
         ["channels", "llm_configs", "mcp_plugins", "requests", "agent_runs"].includes(e),
       ),
     );
+  });
+
+  it("con catálogo Paso 0 elimina tablas prohibidas y no inyecta DBGA core trading", () => {
+    const catalog = extractPaso0DecisionCatalog(readFileSync(join(repoRoot, "STEP_0-review.md"), "utf8"));
+    const mdd = `
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE channels (id UUID PRIMARY KEY);
+CREATE TABLE contexts (id UUID PRIMARY KEY);
+CREATE TABLE users (id UUID PRIMARY KEY);
+\`\`\`
+`;
+    const result = reconcileMddSsotBeforeDeliveryGate(mdd, { paso0Catalog: catalog });
+    assert.doesNotMatch(result.markdown, /CREATE TABLE channels/i);
+    assert.doesNotMatch(result.markdown, /CREATE TABLE watchlists/i);
+    assert.doesNotMatch(result.markdown, /\/api\/v1\/watchlists/i);
+    assert.ok(result.paso0Stripped.includes("channels"));
+    assert.ok(result.remainingGaps.some((g) => g.includes("[Paso 0")));
+    assert.ok(Array.isArray(result.paso0StrippedRoutes));
+    assert.ok(Array.isArray(result.paso0MissingCanonical));
+    assert.ok(Array.isArray(result.paso0Gaps));
+  });
+
+  it("shouldSkipDestructiveSsotRepair omite strip plataforma cuando faltan muchas entidades Paso 0", () => {
+    const catalog = extractPaso0DecisionCatalog(readFileSync(join(repoRoot, "STEP_0-review.md"), "utf8"));
+    const sparse = "## 3. Modelo\n```sql\nCREATE TABLE applications (id UUID PRIMARY KEY);\n```\n";
+    const guard = shouldSkipDestructiveSsotRepair(sparse, catalog);
+    assert.equal(guard.skip, true);
+    const mdd = `
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE channels (id UUID PRIMARY KEY);
+CREATE TABLE contexts (id UUID PRIMARY KEY);
+\`\`\`
+`;
+    const result = reconcileMddSsotBeforeDeliveryGate(mdd, { paso0Catalog: catalog });
+    assert.doesNotMatch(result.markdown, /CREATE TABLE channels/i);
+    assert.match(result.markdown, /CREATE TABLE contexts/i);
   });
 });

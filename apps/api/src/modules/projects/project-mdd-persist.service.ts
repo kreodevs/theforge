@@ -18,7 +18,7 @@ import {
   evaluateMddDeliveryGatePrepared,
   MDD_DELIVERY_GATE_ERR,
 } from "../ai-analysis/utils/mdd-delivery-gate-guard.util.js";
-import { mergeDeliveryGateIntoShortTermContext } from "../ai-analysis/utils/mdd-delivery-gate.util.js";
+import { mergeDeliveryGateIntoShortTermContext, isStreamPrevalidatedDeliveryGate } from "../ai-analysis/utils/mdd-delivery-gate.util.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { loadAccessibleProjectWithStages } from "./project-access.util.js";
@@ -33,6 +33,7 @@ import { ProjectEstimationRecalcService } from "./project-estimation-recalc.serv
 import { ProjectDeliverableGateService } from "./project-deliverable-gate.service.js";
 import { applyDeterministicMddRepairs } from "./mdd-deterministic-repair.util.js";
 import { resolveDomainInventory } from "../engine/domain-inventory-persist.util.js";
+import { resolvePaso0DecisionCatalogForMdd } from "../ai-analysis/phase0/paso0-pasted-definitive.util.js";
 import type { DomainInventory } from "@theforge/shared-types";
 import { pickPrimaryStage, type StageWithEstimation } from "./stage-helpers.js";
 import {
@@ -130,7 +131,14 @@ export class ProjectMddPersistService {
   async persistMddFromBackgroundJob(
     projectId: string,
     rawMarkdown: string,
-    options?: { stageId?: string; finalize?: boolean; lockedPatternIds?: readonly string[] },
+    options?: {
+      stageId?: string;
+      finalize?: boolean;
+      lockedPatternIds?: readonly string[];
+      /** Markdown validado en stream (prepare_output) — no re-ejecutar SSOT destructivo. */
+      streamValidatedMarkdown?: string;
+      streamDeliveryGate?: import("@theforge/shared-types").MddDeliveryGateResult | null;
+    },
   ): Promise<void> {
     const existing = await loadAccessibleProjectWithStages(this.prisma, projectId);
     const targetStage: StageWithEstimation | undefined =
@@ -145,14 +153,24 @@ export class ProjectMddPersistService {
     const applyLockedPatterns = (md: string): string =>
       lockedIds.size > 0 ? updateMddGovernancePatterns(md, lockedIds) : md;
 
-    const cleaned = cleanDocumentContent(peelDocumentBodyForPersist(rawMarkdown));
+    const streamPrevalidated = isStreamPrevalidatedDeliveryGate(options?.streamDeliveryGate);
+    const streamArtifact = (options?.streamValidatedMarkdown ?? rawMarkdown).trim();
+    const cleaned = cleanDocumentContent(peelDocumentBodyForPersist(streamArtifact));
     if (cleaned.trim().length < 48) return;
 
     const enforced = enforceMddGovernancePatternsOnPersist(cleaned, targetStage.mddContent, {});
     const mddForPipeline = applyLockedPatterns(enforced.markdown);
 
     if (!options?.finalize) {
-      const prepared = await prepareMddForOutput(mddForPipeline, { formatForPersist: false });
+      const paso0Catalog =
+        resolvePaso0DecisionCatalogForMdd(existing.phase0SummaryContent, existing.dbgaContent) ??
+        undefined;
+      const prepared = await prepareMddForOutput(mddForPipeline, {
+        formatForPersist: false,
+        paso0Catalog,
+        brdMarkdown: targetStage.brdContent,
+        dbgaMarkdown: existing.dbgaContent,
+      });
       const stored = applyLockedPatterns(prepared);
       await this.prisma.stage.update({
         where: { id: targetStage.id },
@@ -170,13 +188,17 @@ export class ProjectMddPersistService {
       dbgaMarkdown: existing.dbgaContent,
       mddMarkdown: mddForPipeline,
     });
-    const repaired = applyDeterministicMddRepairs(mddForPipeline, {
-      brdMarkdown: targetStage.brdContent,
-      dbgaMarkdown: existing.dbgaContent,
-      inventory,
-      specMarkdown: existing.specContent,
-    });
-    const pipelineInput = repaired.changed ? repaired.markdown : mddForPipeline;
+    const pipelineInput = streamPrevalidated
+      ? mddForPipeline
+      : (() => {
+          const repaired = applyDeterministicMddRepairs(mddForPipeline, {
+            brdMarkdown: targetStage.brdContent,
+            dbgaMarkdown: existing.dbgaContent,
+            inventory,
+            specMarkdown: existing.specContent,
+          });
+          return repaired.changed ? repaired.markdown : mddForPipeline;
+        })();
 
     const result = await this.mddUpdatePipeline.process(
       pipelineInput,
@@ -186,9 +208,12 @@ export class ProjectMddPersistService {
         stageId: targetStage.id,
         brdMarkdown: targetStage.brdContent,
         dbgaMarkdown: existing.dbgaContent,
+        phase0SummaryContent: existing.phase0SummaryContent,
         domainInventory: targetStage.domainInventory,
         prevalidatedFromStream: true,
         baselineDraft: mddForPipeline,
+        streamDeliveryGatePassed: streamPrevalidated,
+        streamDeliveryGate: options?.streamDeliveryGate ?? undefined,
       },
     );
     if (!result.ok) {
@@ -295,7 +320,7 @@ export class ProjectMddPersistService {
     });
     const projectRow = await this.prisma.project.findUnique({
       where: { id: projectId },
-      select: { dbgaContent: true, specContent: true },
+      select: { dbgaContent: true, specContent: true, phase0SummaryContent: true },
     });
     const inventory = resolveDomainInventory({
       persisted: stageRow?.domainInventory as DomainInventory | null | undefined,
@@ -320,6 +345,7 @@ export class ProjectMddPersistService {
         stageId,
         brdMarkdown: stageRow?.brdContent,
         dbgaMarkdown: projectRow?.dbgaContent,
+        phase0SummaryContent: projectRow?.phase0SummaryContent,
         domainInventory: stageRow?.domainInventory,
       },
     );

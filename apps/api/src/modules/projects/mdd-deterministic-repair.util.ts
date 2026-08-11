@@ -2,13 +2,19 @@
  * Reparaciones deterministas MDD (BRD pre-patch, inventario, SSOT) para convergencia post-cascada.
  */
 
-import type { DomainInventory } from "@theforge/shared-types";
+import type { DomainInventory, Paso0DecisionCatalog } from "@theforge/shared-types";
 import { patchMddFromBrdTraceability } from "../engine/brd-mdd-pre-patch.util.js";
 import { rebuildDomainInventoryPreferringBrd } from "../engine/domain-inventory-persist.util.js";
 import { reconcileDomainInventoryIntoMdd } from "../engine/domain-inventory-reconciler.util.js";
 import { reconcileMddSsotBeforeDeliveryGate } from "../engine/mdd-ssot-repair.util.js";
 import { applyPreDeliveryGateFixes } from "../ai-analysis/utils/mdd-sanitize.js";
 import { repairMddCoherenceSection4Gaps } from "../engine/mdd-coherence/mdd-coherence-repair.util.js";
+import {
+  enforcePaso0CatalogOnMdd,
+  repairAndInjectPaso0Section3ForGate,
+} from "../engine/mdd-paso0-enforcement.util.js";
+import { applyPaso0TailSectionEnrichment } from "../engine/mdd-paso0-trazabilidad.util.js";
+import { fixSecurityManifestCoherence } from "../ai-analysis/utils/mdd-sanitize/security-manifest.js";
 
 export type DeterministicMddRepairResult = {
   markdown: string;
@@ -23,6 +29,7 @@ export function applyDeterministicMddRepairs(
     dbgaMarkdown?: string | null;
     inventory?: DomainInventory | null;
     specMarkdown?: string | null;
+    paso0Catalog?: Paso0DecisionCatalog | null;
   },
 ): DeterministicMddRepairResult {
   const notes: string[] = [];
@@ -49,6 +56,7 @@ export function applyDeterministicMddRepairs(
     dbgaMarkdown: params.dbgaMarkdown,
     specMarkdown: params.specMarkdown,
     inventory: params.inventory,
+    paso0Catalog: params.paso0Catalog,
   });
   if (ssot.markdown !== markdown) {
     markdown = ssot.markdown;
@@ -61,10 +69,34 @@ export function applyDeterministicMddRepairs(
 
   const coherence = repairMddCoherenceSection4Gaps(markdown, {
     inventory: params.inventory,
+    paso0Catalog: params.paso0Catalog,
   });
   if (coherence.injected.length > 0) {
     markdown = coherence.markdown;
     notes.push(...coherence.injected.map((id) => `coherence §4: ${id}`));
+  }
+
+  if (params.paso0Catalog) {
+    const section3Repair = repairAndInjectPaso0Section3ForGate(markdown, params.paso0Catalog);
+    if (section3Repair.applied.length > 0) {
+      markdown = section3Repair.markdown;
+      notes.push(...section3Repair.applied.map((x) => `paso0 §3: ${x}`));
+    }
+    const paso0Final = enforcePaso0CatalogOnMdd(markdown, params.paso0Catalog);
+    if (paso0Final.markdown !== markdown) {
+      markdown = paso0Final.markdown;
+    }
+    if (paso0Final.section4StrippedRoutes.length > 0) {
+      notes.push(
+        ...paso0Final.section4StrippedRoutes.map((r) => `paso0 §4 strip: ${r}`),
+      );
+    }
+    markdown = fixSecurityManifestCoherence(markdown, { paso0Catalog: params.paso0Catalog });
+    const tail = applyPaso0TailSectionEnrichment(markdown, params.paso0Catalog);
+    if (tail.applied.length > 0) {
+      markdown = tail.markdown;
+      notes.push(...tail.applied.map((x) => `paso0 tail: ${x}`));
+    }
   }
 
   return {
@@ -79,6 +111,7 @@ export type PrepareMddForDeliveryGateOptions = {
   dbgaMarkdown?: string | null;
   inventory?: DomainInventory | null;
   specMarkdown?: string | null;
+  paso0Catalog?: Paso0DecisionCatalog | null;
   /** Si true, no aplica reparaciones deterministas (tests unitarios del gate en bruto). */
   skipDeterministicRepair?: boolean;
 };
@@ -107,6 +140,7 @@ export function prepareMddForDeliveryGateValidation(
             brdMarkdown: params.brdMarkdown,
             dbgaMarkdown: params.dbgaMarkdown,
             mddMarkdown: base,
+            paso0Catalog: params.paso0Catalog,
           })
         : null);
 
@@ -115,6 +149,7 @@ export function prepareMddForDeliveryGateValidation(
       dbgaMarkdown: params.dbgaMarkdown,
       inventory,
       specMarkdown: params.specMarkdown,
+      paso0Catalog: params.paso0Catalog,
     });
     markdown = repaired.markdown;
     notes.push(...repaired.notes);
