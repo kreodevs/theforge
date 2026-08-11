@@ -52,6 +52,8 @@ export * from "./document-persist-validation.js";
 export * from "./mdd-governance-patterns.js";
 export * from "./mdd-governance-pattern-compat.js";
 export * from "./phase0-content.js";
+export * from "./paso0-decision-catalog.js";
+export * from "./paso0-trazabilidad-catalog.js";
 export * from "./project-integration.js";
 export * from "./project-notion-portability.js";
 export * from "./spec-kit-bundle.js";
