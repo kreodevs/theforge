@@ -50,6 +50,9 @@ export const MIN_SCOPED_REPAIR_DRAFT_LEN = 15_000;
 
 const DEFAULT_VALIDATED_SECTIONS = [1, 2, 3, 4, 5, 6, 7] as const;
 
+/** Margen mínimo §1: no restaurar desde baseline más corto que el actual (evita 25→215 loops). */
+const SECTION1_ANTI_SHRINK_MIN_CUR_LEN = 100;
+
 /** True si §5 es baseline válido (no tail placeholder del pipeline). */
 function section5BodyIsPreserveBaseline(body: string | null | undefined): boolean {
   const trimmed = (body ?? "").trim();
@@ -548,6 +551,15 @@ function preserveSectionBodyIfSubstantial(
   const curShorter = (curBody?.length ?? 0) < (prevBody?.length ?? 0) * 0.5;
   const baselineLen = prevBody?.length ?? 0;
   const curLen = curBody?.length ?? 0;
+
+  if (
+    sectionLabel === "§1" &&
+    curLen >= SECTION1_ANTI_SHRINK_MIN_CUR_LEN &&
+    curLen > baselineLen
+  ) {
+    return current;
+  }
+
   const currentDup = mddHasDuplicateSectionHeadings(current);
   const skipCtx = {
     curSubstantial,
@@ -833,7 +845,22 @@ export type PreserveValidatedSectionsOptions = {
   sections?: readonly number[];
   /** Secciones a omitir (p. ej. la §N que el Arquitecto acaba de reescribir). */
   excludeSections?: readonly number[];
+  /** Snapshot Clarifier — preferir sobre baseline cuando §1 del baseline es marginal. */
+  clarifierSnapshot?: string | null;
 };
+
+function resolveSection1PreserveBaseline(
+  baselineDraft: string,
+  clarifierSnapshot?: string | null,
+): string {
+  const snap = (clarifierSnapshot ?? "").trim();
+  if (snap && draftHasSubstantialSection1(snap)) {
+    const snapLen = extractContextSectionBody(snap)?.length ?? 0;
+    const baseLen = extractContextSectionBody(baselineDraft)?.length ?? 0;
+    if (snapLen >= baseLen) return snap;
+  }
+  return baselineDraft;
+}
 
 function resolveValidatedSectionsToPreserve(options?: PreserveValidatedSectionsOptions): number[] {
   const exclude = new Set(options?.excludeSections ?? []);
@@ -884,13 +911,14 @@ export function preserveValidatedSectionsIfSubstantial(
 
   let out = currentDraft;
   const sections = resolveValidatedSectionsToPreserve(options);
+  const section1Baseline = resolveSection1PreserveBaseline(baseline, options?.clarifierSnapshot);
 
   if (
     sections.includes(1) &&
     !draftHasSubstantialSection1(out) &&
-    draftHasSubstantialSection1(baseline)
+    draftHasSubstantialSection1(section1Baseline)
   ) {
-    out = preserveSectionByNumber(baseline, out, 1);
+    out = preserveSectionByNumber(section1Baseline, out, 1);
     if (!draftHasSubstantialSection1(out)) {
       console.warn(
         `[MDD:SectionPreserve] Preserve: §1 no pudo restaurarse → draft corrupto; preservando §2–§7`,

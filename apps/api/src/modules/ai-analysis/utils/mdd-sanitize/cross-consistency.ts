@@ -1,4 +1,7 @@
+import type { Paso0DecisionCatalog } from "@theforge/shared-types";
+import { catalogRequiresSsoIntegral } from "@theforge/shared-types";
 import { extractMddSectionBody } from "./section-body.util.js";
+import { listPaso0TablesToStripFromSection3 } from "../../../engine/mdd-paso0-enforcement.util.js";
 import {
   draftUsesLdapPrimaryAuth,
   fixIntegrationMetadataCoherence,
@@ -990,9 +993,29 @@ const LOCKOUT_DETAIL_RE =
 const LOGIC_LOCKOUT_TRIGGER_RE =
   /\b(bloqueo\s+de\s+cuenta|lock\s+account|intentos\s+fallidos|failed\s+attempts|máximo\s+de\s+intentos|fallos?\b|lockout\b)/i;
 
+function draftImpliesSsoIntegralOnly(draft: string): boolean {
+  for (const heading of ["## 1. Contexto y alcance", "## 1. Contexto", "## 6. Seguridad"]) {
+    const section = extractMddSectionBody(draft, heading);
+    if (section && /\b(sso\s+integral|d-003)\b/i.test(section.body)) return true;
+  }
+  return /\b(sso\s+integral|d-003)\b/i.test(draft);
+}
+
+function requiresSsoIntegralOnly(
+  draft: string,
+  paso0Catalog?: Paso0DecisionCatalog | null,
+): boolean {
+  if (paso0Catalog && catalogRequiresSsoIntegral(paso0Catalog)) return true;
+  return draftImpliesSsoIntegralOnly(draft);
+}
+
 /** Inyecta párrafo OWASP de lockout en §6 si §5 lo requiere y falta número de intentos. */
-export function ensureSecurityLockoutInSection6(draft: string): string {
+export function ensureSecurityLockoutInSection6(
+  draft: string,
+  options?: { paso0Catalog?: Paso0DecisionCatalog | null },
+): string {
   if (!draft?.trim()) return draft;
+  if (requiresSsoIntegralOnly(draft, options?.paso0Catalog ?? null)) return draft;
   const logicSec = extractMddSectionBody(draft, "## 5. Lógica y Edge Cases");
   if (!logicSec || !LOGIC_LOCKOUT_TRIGGER_RE.test(logicSec.body)) return draft;
 
@@ -1108,12 +1131,87 @@ function injectTotpSecretColumnIntoUserTable(sql: string): string {
   return sql.slice(0, block.start) + newBlock + sql.slice(block.end);
 }
 
+const NESTED_CREATE_TABLE_IN_BLOCK_RE = /\(\s*[\s\S]*?\bCREATE\s+TABLE\b/i;
+
+function sqlBlockHasNestedCreateTable(sql: string): boolean {
+  const createRe = /CREATE\s+TABLE/gi;
+  let m: RegExpExecArray | null;
+  while ((m = createRe.exec(sql)) !== null) {
+    const openParen = sql.indexOf("(", m.index);
+    if (openParen < 0) continue;
+    let depth = 0;
+    for (let i = openParen; i < sql.length; i++) {
+      if (sql[i] === "(") depth++;
+      else if (sql[i] === ")") {
+        depth--;
+        if (depth === 0) {
+          const block = sql.slice(openParen + 1, i);
+          if (/\bCREATE\s+TABLE\b/i.test(block)) return true;
+          break;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function isValidSecurityTableStub(stub: string): boolean {
+  const trimmed = stub.trim();
+  if (!/^CREATE\s+TABLE\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\(/i.test(trimmed)) return false;
+  if (NESTED_CREATE_TABLE_IN_BLOCK_RE.test(trimmed)) return false;
+  let depth = 0;
+  let seenOpen = false;
+  for (const ch of trimmed) {
+    if (ch === "(") {
+      depth++;
+      seenOpen = true;
+    } else if (ch === ")") {
+      depth--;
+    }
+  }
+  return seenOpen && depth === 0 && /\)\s*;\s*$/.test(trimmed);
+}
+
+function sqlBlockReadyForStubAppend(sql: string): boolean {
+  const trimmed = sql.trimEnd();
+  if (!trimmed) return true;
+  if (sqlBlockHasNestedCreateTable(trimmed)) return false;
+
+  const createRe = /CREATE\s+TABLE/gi;
+  let lastCreateIdx = -1;
+  let m: RegExpExecArray | null;
+  while ((m = createRe.exec(trimmed)) !== null) {
+    lastCreateIdx = m.index;
+  }
+  if (lastCreateIdx < 0) return true;
+
+  const fromLastCreate = trimmed.slice(lastCreateIdx);
+  const openParen = fromLastCreate.indexOf("(");
+  if (openParen < 0) return true;
+
+  let depth = 0;
+  for (let i = openParen; i < fromLastCreate.length; i++) {
+    if (fromLastCreate[i] === "(") depth++;
+    else if (fromLastCreate[i] === ")") depth--;
+  }
+  return depth === 0;
+}
+
 /**
  * Añade stubs DDL mínimos en §3 solo para tablas/columnas mencionadas en §6 y ausentes en SQL.
+ * Con catálogo Paso 0: omite tablas prohibidas/inventadas y auth local (SSO Integral D-003).
  */
-export function ensureSecurityTableStubsFromSection6(draft: string): string {
+export function ensureSecurityTableStubsFromSection6(
+  draft: string,
+  options?: { paso0Catalog?: Paso0DecisionCatalog | null },
+): string {
   if (!draft?.trim()) return draft;
-  const missing = detectSecurityTablesMissingInSection3(draft);
+  let missing = detectSecurityTablesMissingInSection3(draft);
+  const paso0Catalog = options?.paso0Catalog ?? null;
+  if (paso0Catalog) {
+    const strip = new Set(listPaso0TablesToStripFromSection3(paso0Catalog));
+    missing = missing.filter((table) => !strip.has(table.toLowerCase()));
+  }
   const needsTotp = section6RequiresTotpSecretColumn(draft);
   if (missing.length === 0 && !needsTotp) return draft;
 
@@ -1126,11 +1224,14 @@ export function ensureSecurityTableStubsFromSection6(draft: string): string {
 
   body = body.replace(sqlRe, (full, inner: string) => {
     let sql = inner.trimEnd();
+    if (missing.length > 0 && !sqlBlockReadyForStubAppend(sql)) return full;
     for (const table of missing) {
       const stub = SECURITY_TABLE_STUB_DDL[table as (typeof SEC6_EXPECTED_TABLES)[number]];
-      if (stub) sql += `\n${stub}`;
+      if (stub && isValidSecurityTableStub(stub)) sql += `\n${stub}`;
     }
-    if (needsTotp) sql = injectTotpSecretColumnIntoUserTable(sql);
+    if (needsTotp && sqlBlockReadyForStubAppend(sql)) {
+      sql = injectTotpSecretColumnIntoUserTable(sql);
+    }
     return sql === inner.trimEnd() ? full : "```sql\n" + sql + "\n```";
   });
 

@@ -1,5 +1,23 @@
+import type { Paso0DecisionCatalog } from "@theforge/shared-types";
+import { catalogRequiresSsoIntegral } from "@theforge/shared-types";
 import { extractMddSectionBody } from "./section-body.util.js";
 import { corpusExcludesMultiTenantSaaS } from "../../../engine/mdd-brd-scope.util.js";
+
+function draftImpliesSsoIntegralOnly(draft: string): boolean {
+  for (const heading of ["## 1. Contexto y alcance", "## 1. Contexto", "## 6. Seguridad"]) {
+    const section = extractMddSectionBody(draft, heading);
+    if (section && /\b(sso\s+integral|d-003)\b/i.test(section.body)) return true;
+  }
+  return /\b(sso\s+integral|d-003)\b/i.test(draft);
+}
+
+function requiresSsoIntegralOnly(
+  draft: string,
+  paso0Catalog?: Paso0DecisionCatalog | null,
+): boolean {
+  if (paso0Catalog && catalogRequiresSsoIntegral(paso0Catalog)) return true;
+  return draftImpliesSsoIntegralOnly(draft);
+}
 
 /** True si LDAP/AD es autenticación principal de usuarios humanos (§1, §2 o §6). */
 export function draftUsesLdapPrimaryAuth(draft: string): boolean {
@@ -14,11 +32,15 @@ export function draftUsesLdapPrimaryAuth(draft: string): boolean {
 }
 
 /** Alinea manifest §7 (security) con LDAP y estrategia MFA del borrador. */
-export function fixSecurityManifestCoherence(draft: string): string {
+export function fixSecurityManifestCoherence(
+  draft: string,
+  options?: { paso0Catalog?: Paso0DecisionCatalog | null },
+): string {
   const infra = extractMddSectionBody(draft, "## 7. Infraestructura");
   if (!infra || !/```json/i.test(infra.body)) return draft;
 
   let body = infra.body;
+  const ssoIntegralOnly = requiresSsoIntegralOnly(draft, options?.paso0Catalog);
   const usesLdap = draftUsesLdapPrimaryAuth(draft);
   const sec6 = extractMddSectionBody(draft, "## 6. Seguridad");
   const mfaInSec6 = sec6 != null && /\bMFA\b|\bTOTP\b/i.test(sec6.body);
@@ -66,11 +88,21 @@ export function fixSecurityManifestCoherence(draft: string): string {
   if (sec6MentionsArgon2 && /"hashing_algorithm"\s*:\s*"bcrypt"/i.test(body)) {
     body = body.replace(/"hashing_algorithm"\s*:\s*"bcrypt"/gi, '"hashing_algorithm": "Argon2id"');
     if (!/"hashing_scope"\s*:/i.test(body)) {
+      const hashingScope = ssoIntegralOnly
+        ? "bootstrap_and_service_secrets_only"
+        : "local_passwords_and_bootstrap";
       body = body.replace(
         /"hashing_algorithm"\s*:\s*"[^"]*"/i,
-        (m) => `${m},\n      "hashing_scope": "local_passwords_and_bootstrap"`,
+        (m) => `${m},\n      "hashing_scope": "${hashingScope}"`,
       );
     }
+  }
+
+  if (ssoIntegralOnly) {
+    body = body.replace(
+      /"hashing_scope"\s*:\s*"local_passwords[^"]*"/gi,
+      '"hashing_scope": "bootstrap_and_service_secrets_only"',
+    );
   }
 
   if (body === infra.body) return draft;

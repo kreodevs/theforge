@@ -21,6 +21,8 @@ import { sanitizeMermaidInDraft } from "../../../engine/mdd-pre-render.js";
 import { extractMddSectionBody } from "./section-body.util.js";
 import {
   deduplicateAndReorderMddSections,
+  deduplicateCanonicalMddSections,
+  deduplicateMddAppendixSections,
   deduplicateMddDraftSections,
   ensureMissingCanonicalSections,
   extractContextSectionBody,
@@ -106,6 +108,19 @@ import {
 } from "../mdd-section-preserve.util.js";
 import { logMddPersistFenceDiag } from "../mdd-persist-fence-diag.util.js";
 import { extractSection4Body } from "./section-merge.js";
+import { deduplicatePaso0TailSections } from "../../../engine/mdd-paso0-trazabilidad.util.js";
+
+const STRANGLER_WIZARD_PATTERN_ID = "strangler-fig-estrangulamiento";
+
+function shouldDeselectStranglerFigFromPersistedWizard(mddMarkdown: string): boolean {
+  const corpus = mddMarkdown ?? "";
+  return (
+    /\bD-121\b/i.test(corpus) &&
+    /corte por campaña|sin convivencia operativa permanente|migraci[oó]n OBP por corte/i.test(
+      corpus,
+    )
+  );
+}
 
 function warnSection5LenChange(step: string, before: number, after: number): void {
   if (before !== after) {
@@ -206,6 +221,7 @@ export function applyPreDeliveryGateFixes(draft: string): string {
       out = deduplicateAndReorderMddSections(out);
     }
   }
+  out = deduplicateMddAppendixSections(out);
   out = deduplicateUatSections(out);
   out = hydrateEmptyManifestStackInDraft(out);
   out = ensureDocumentFenceParity(out);
@@ -333,6 +349,9 @@ export function prepareMddMarkdownForPersist(mddMarkdown: string): string {
   logMddPersistFenceDiag("[MDD:PersistPipeline] entry", mddMarkdown);
   const preservedGov = extractGovernanceSection(mddMarkdown);
   const lockedPatternIds = selectedPatternIdsFromMdd(mddMarkdown);
+  if (shouldDeselectStranglerFigFromPersistedWizard(mddMarkdown)) {
+    lockedPatternIds.delete(STRANGLER_WIZARD_PATTERN_ID);
+  }
   let body = normalizeCanonicalMddSectionHeadings(mddMarkdown);
   body = peelDocumentBodyForPersist(body);
   let formatted = formatDocumentMarkdown(body);
@@ -354,6 +373,7 @@ export function prepareMddMarkdownForPersist(mddMarkdown: string): string {
   formatted = closeUnclosedFencesBeforeCanonicalH2(formatted);
   formatted = ensureDocumentFenceParity(formatted);
   formatted = deduplicateMddDraftSections(formatted);
+  formatted = deduplicateMddAppendixSections(formatted);
   logMddPersistFenceDiag("[MDD:PersistPipeline] after deduplicateMddDraftSections", formatted);
   if (mddHasDuplicateSectionHeadings(formatted)) {
     formatted = deduplicateAndReorderMddSections(formatted);
@@ -364,6 +384,17 @@ export function prepareMddMarkdownForPersist(mddMarkdown: string): string {
   logMddPersistFenceDiag("[MDD:PersistPipeline] after finalizeMddPersistFormatting", formatted);
   formatted = ensureDocumentFenceParity(formatted);
   logMddPersistFenceDiag("[MDD:PersistPipeline] after ensureDocumentFenceParity", formatted);
+  // Dedupe canónico al final: formateo/preserve pueden reintroducir ## 1–## 7 duplicados (job 135).
+  formatted = deduplicateCanonicalMddSections(formatted);
+  formatted = deduplicateMddAppendixSections(formatted);
+  const tailDedupe = deduplicatePaso0TailSections(formatted);
+  if (tailDedupe.removed.length > 0) {
+    formatted = tailDedupe.markdown;
+  }
+  if (mddHasDuplicateSectionHeadings(formatted)) {
+    formatted = deduplicateAndReorderMddSections(formatted);
+    logMddPersistFenceDiag("[MDD:PersistPipeline] after final deduplicateAndReorderMddSections", formatted);
+  }
   logMddPersistFenceDiag("[MDD:PersistPipeline] exit", formatted);
   return formatted;
 }

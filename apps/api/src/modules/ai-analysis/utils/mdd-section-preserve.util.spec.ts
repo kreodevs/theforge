@@ -514,3 +514,48 @@ ${S3_BODY}
     assert.equal((out.match(/^##\s+1\.\s*Contexto/gim) ?? []).length, 1);
   });
 });
+
+describe("preserveValidatedSectionsIfSubstantial §1 anti-shrink", () => {
+  it("no reemplaza §1 más larga por baseline marginal corto", () => {
+    const longS1 = "Workspace Chat es plataforma corporativa. ".repeat(20);
+    const current = `# MDD
+## 1. Contexto
+${longS1}
+
+## 2. Arquitectura y Stack
+${S2_BODY}
+`;
+    const shortBaseline = `# MDD
+## 1. Contexto
+(Basado en: BRD pegado)
+
+## 2. Arquitectura y Stack
+${S2_BODY}
+`;
+    const out = preserveValidatedSectionsIfSubstantial(shortBaseline, current);
+    assert.ok(out.includes(longS1.slice(0, 40)));
+  });
+
+  it("prefiere clarifierSnapshot sobre baseline marginal para restaurar §1", () => {
+    const clarifierS1 = "Contexto definitivo Paso 0 con D-IDs. ".repeat(25);
+    const clarifierSnap = `# MDD
+## 1. Contexto
+${clarifierS1}
+`;
+    const baseline = `# MDD
+## 1. Contexto
+(Basado en: stamp)
+
+## 2. Arquitectura y Stack
+${S2_BODY}
+`;
+    const wiped = baseline.replace(
+      /## 1\. Contexto[\s\S]*?(?=## 2\.)/,
+      "## 1. Contexto\n\n(Pendiente)\n\n",
+    );
+    const out = preserveValidatedSectionsIfSubstantial(baseline, wiped, {
+      clarifierSnapshot: clarifierSnap,
+    });
+    assert.ok(out.includes(clarifierS1.slice(0, 40)));
+  });
+});

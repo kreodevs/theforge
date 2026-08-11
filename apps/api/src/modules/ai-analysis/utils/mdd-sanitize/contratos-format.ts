@@ -3,6 +3,7 @@
 import {
   closeTrailingUnclosedFences,
   closeUnclosedFencesBeforeCanonicalH2,
+  ensureDocumentFenceParity,
   getSectionBody,
   indexOfNextH2OutsideFenced,
 } from "./section-fence.util.js";
@@ -101,8 +102,17 @@ export function repairGluedEmptyJsonArrays(text: string): string {
       .replace(/:\s*\[\s*,/g, ": [],")
       .replace(/:\s*\[\s*,\s*\]/g, ": []")
       .replace(/:\s*\[\s*,\s*\n/g, ": []\n")
+      .replace(/:\s*\[\s*\]\s*,\s*\{/g, ": [],")
+      .replace(/:\s*\[\s*\]\s*\{/g, ": []")
+      .replace(/:\s*\[\s*\]\s*,\s*\{\s*("(?:errors|meta|pagination|links)[^"]*")/gi, ': [], $1')
       .replace(/,\s*\[\s*,/g, ", [],")
-      .replace(/\[\s*,\s*\]/g, "[]");
+      .replace(/\[\s*,\s*\]/g, "[]")
+      .replace(/\[\s*,\s*,/g, "[,")
+      .replace(/:\s*\[\s*,\s*\{/g, ": []")
+      .replace(/:\s*\[\s*\]\s*\{\s*("(?:errors|meta|pagination|links|data)":)/gi, ': [], $1')
+      .replace(/("(?:errors|data|items|results)"\s*:\s*\[\s*\])\s*\{\s*("(?:errors|meta|pagination|links|status)":)/gi, "$1, $2")
+      .replace(/:\s*\[\s*\]\s*\n\s*\{/g, ": [],")
+      .replace(/\[\s*\]\s*,\s*\{\s*"/g, '[], "');
   }
   return out;
 }
@@ -113,6 +123,212 @@ export function repairGluedEmptyJsonArrays(text: string): string {
 export function repairContratosJsonGlueIssues(body: string): string {
   if (!body?.trim()) return body ?? "";
   return repairNestedJsonFencesInDraft(repairGluedEmptyJsonArrays(body));
+}
+
+/** Placeholder parseable sin clave top-level `request` (evita gate Paso 0 «entidad request»). */
+export const MINIMAL_CONTRATO_JSON_PLACEHOLDER = JSON.stringify(
+  {
+    response: {
+      data: null,
+      meta: {
+        status: "pending",
+        note: "contract detail pending — regenerate endpoint",
+      },
+    },
+  },
+  null,
+  2,
+);
+
+const CONTRACT_STUB_NOTE_RE = /contract\s+stub|pending\s+endpoint\s+detail/i;
+
+/** True si el JSON parseado es el stub del pipeline (request.note o meta.note de stub). */
+export function isContractStubJsonValue(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const obj = value as Record<string, unknown>;
+  const req = obj.request;
+  if (req && typeof req === "object" && req !== null) {
+    const note = (req as Record<string, unknown>).note;
+    if (typeof note === "string" && CONTRACT_STUB_NOTE_RE.test(note)) return true;
+  }
+  const response = obj.response;
+  if (response && typeof response === "object" && response !== null) {
+    const meta = (response as Record<string, unknown>).meta;
+    if (meta && typeof meta === "object" && meta !== null) {
+      const note = (meta as Record<string, unknown>).note;
+      if (typeof note === "string" && CONTRACT_STUB_NOTE_RE.test(note)) return true;
+    }
+  }
+  return false;
+}
+
+/** Elimina o sustituye bloques ```json con stub pipeline (request.note contract stub). */
+export function stripContractStubJsonBlocks(body: string): { body: string; stripped: number } {
+  let stripped = 0;
+  const out = (body ?? "").replace(/```json\s*\n([\s\S]*?)```/gi, (full, inner: string) => {
+    const trimmed = (inner ?? "").trim();
+    if (!trimmed) return full;
+    try {
+      const parsed = JSON.parse(repairGluedEmptyJsonArrays(trimmed)) as unknown;
+      if (!isContractStubJsonValue(parsed)) return full;
+    } catch {
+      if (!CONTRACT_STUB_NOTE_RE.test(trimmed) || !/"request"\s*:/.test(trimmed)) return full;
+    }
+    stripped += 1;
+    return `\`\`\`json\n${MINIMAL_CONTRATO_JSON_PLACEHOLDER}\n\`\`\``;
+  });
+  return { body: out, stripped };
+}
+
+/**
+ * Repara artefactos markdown huérfanos en §4 (fences, ---}, ] antes de headings).
+ * Idempotente; usar antes de parsear JSON.
+ */
+export function repairContratosMarkdownArtifacts(body: string): string {
+  let out = (body ?? "").trim();
+  if (!out) return out;
+  out = out
+    .replace(/---\}/g, "---")
+    .replace(/\}\s*---\}/g, "---")
+    .replace(/\]\s*(#{1,6}\s+(?:GET|POST|PUT|PATCH|DELETE)\b)/gi, "\n$1")
+    .replace(/\}\s*(#{1,6}\s+(?:GET|POST|PUT|PATCH|DELETE)\b)/gi, "\n$1")
+    .replace(/\n```\s*\n(?=#{1,6}\s+(?:GET|POST|PUT|PATCH|DELETE)\b)/gi, "\n");
+
+  const lines = out.split("\n");
+  const rebuilt: string[] = [];
+  let fenceParity = 0;
+  for (const line of lines) {
+    if (fenceParity === 1 && /^#{1,6}\s+(?:GET|POST|PUT|PATCH|DELETE)\b/i.test(line.trim())) {
+      rebuilt.push("```", "");
+      fenceParity = 0;
+    }
+    rebuilt.push(line);
+    fenceParity = (fenceParity + (line.match(/```/g) ?? []).length) % 2;
+  }
+  out = rebuilt.join("\n");
+
+  out = ensureDocumentFenceParity(out);
+  return out.trimEnd();
+}
+
+/** Quita markdown huérfano pegado al JSON (p. ej. `]### GET`, `}**Response`). */
+export function stripSection4JsonOrphanMarkdownGlue(inner: string): string {
+  let out = (inner ?? "").trim();
+  if (!out) return out;
+  out = out
+    .replace(/\]\s*#{1,6}\s+(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\b[^\n]*/gi, "]")
+    .replace(/\}\s*\*\*Response\b/gi, "}")
+    .replace(/\}\s+(?=\*\*Response\b)/g, "}")
+    .replace(/\]\s*\*\*Response\b/gi, "]")
+    .replace(/\]\s*#{1,6}\s+/g, "]");
+  return out.trimEnd();
+}
+
+/** Repara arrays/objetos huérfanos al final del bloque JSON antes de parsear. */
+function repairTrailingJsonOrphans(inner: string): string {
+  let out = stripSection4JsonOrphanMarkdownGlue(inner);
+  out = repairGluedEmptyJsonArrays(out);
+  out = out.replace(/("(?:data|items|results)"\s*:\s*\[\s*\])\s*,\s*\{\s*("(?:errors|meta|pagination|links)[^"]*")/gi, "$1, $2");
+  let delta = countJsonBraceDelta(out);
+  while (delta < 0 && out.includes("}")) {
+    const idx = out.lastIndexOf("}");
+    out = out.slice(0, idx) + out.slice(idx + 1);
+    delta = countJsonBraceDelta(out);
+  }
+  return out.trimEnd();
+}
+
+function tryExtractPartialContratosJsonObject(inner: string): string | null {
+  const trimmed = stripSection4JsonOrphanMarkdownGlue(repairGluedEmptyJsonArrays(inner ?? ""));
+  if (!trimmed) return null;
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace === -1 || lastBrace <= firstBrace) return null;
+  const slice = trimmed.slice(firstBrace, lastBrace + 1);
+  try {
+    const parsed = fixSingleNestedArrayWrappers(JSON.parse(slice) as unknown);
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return null;
+  }
+}
+
+function tryPrettyParseContratosJsonBlock(inner: string): string | null {
+  const trimmed = (inner ?? "").trim();
+  if (!trimmed) return JSON.stringify({}, null, 2);
+  const candidates = [
+    trimmed,
+    repairGluedEmptyJsonArrays(trimmed),
+    stripSection4JsonOrphanMarkdownGlue(repairGluedEmptyJsonArrays(trimmed)),
+    repairTrailingJsonOrphans(repairGluedEmptyJsonArrays(trimmed)),
+    repairJsonCodeBlockInner(repairGluedEmptyJsonArrays(trimmed)),
+    repairJsonCodeBlockInner(repairTrailingJsonOrphans(repairGluedEmptyJsonArrays(trimmed))),
+    tryExtractPartialContratosJsonObject(trimmed),
+  ];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    if (candidate == null) continue;
+    const key = candidate.trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    try {
+      const parsed = fixSingleNestedArrayWrappers(JSON.parse(key) as unknown);
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+/**
+ * Reparación determinista de bloques ```json en §4 antes del gate/persist.
+ * Último recurso: sustituye fences aún inválidos por JSON mínimo parseable (evita hard-fail del job).
+ */
+export function sanitizeSection4JsonBlocksForDelivery(body: string): { body: string; fixed: string[] } {
+  const fixed: string[] = [];
+  let out = (body ?? "").trim();
+  if (!out) return { body: out, fixed };
+
+  const artifactsBefore = out;
+  out = repairContratosMarkdownArtifacts(out);
+  if (out !== artifactsBefore) fixed.push("§4-markdown-artifacts");
+
+  const stubStrip = stripContractStubJsonBlocks(out);
+  if (stubStrip.stripped > 0) {
+    out = stubStrip.body;
+    fixed.push("§4-json-stub-stripped");
+  }
+
+  const glueBefore = out;
+  out = repairDisplacedJsonBracesInContratos(repairContratosJsonGlueIssues(out));
+  if (out !== glueBefore) fixed.push("§4-json-braces-glue");
+
+  out = out.replace(/```json\s*\n([\s\S]*?)```/gi, (_full, inner: string) => {
+    const original = inner.trim();
+    const pretty = tryPrettyParseContratosJsonBlock(original);
+    if (pretty != null) {
+      try {
+        if (isContractStubJsonValue(JSON.parse(pretty) as unknown)) {
+          fixed.push("§4-json-stub-replaced");
+          return `\`\`\`json\n${MINIMAL_CONTRATO_JSON_PLACEHOLDER}\n\`\`\``;
+        }
+      } catch {
+        /* keep pretty */
+      }
+      if (pretty !== original) fixed.push("§4-json-inner-repair");
+      return `\`\`\`json\n${pretty}\n\`\`\``;
+    }
+    const partial = tryExtractPartialContratosJsonObject(original);
+    if (partial != null) {
+      fixed.push("§4-json-partial-extract");
+      return `\`\`\`json\n${partial}\n\`\`\``;
+    }
+    fixed.push("§4-json-placeholder");
+    return `\`\`\`json\n${MINIMAL_CONTRATO_JSON_PLACEHOLDER}\n\`\`\``;
+  });
+
+  return { body: out, fixed: [...new Set(fixed)] };
 }
 
 /**

@@ -204,17 +204,58 @@ export function stripTrailingDuplicateMddSections(draft: string): string {
   return draft;
 }
 
-/** Dedup §1–§7 tras merge del Architect o reintentos del Clarifier (idempotente). */
-export function deduplicateMddDraftSections(draft: string): string {
-  // Cerrar fences antes de dedupe: §4 impar traga §5–§7 y dispara ciclos anti-swallow (job 100/101).
+/**
+ * Dedup agresivo §1–§7 para persist/gate: reordena, trunca cola duplicada y reintenta reorder.
+ * Idempotente; usar tras formateo final o restore desde baseline (job 135).
+ */
+export function deduplicateCanonicalMddSections(draft: string): string {
   let out = closeUnclosedFencesBeforeCanonicalH2((draft ?? "").trim());
-  if (mddHasDuplicateSectionHeadings(out)) {
-    out = deduplicateAndReorderMddSections(out);
-  }
+  if (!out || !mddHasDuplicateSectionHeadings(out)) return out;
+  out = deduplicateAndReorderMddSections(out);
   if (mddHasDuplicateSectionHeadings(out)) {
     out = stripTrailingDuplicateMddSections(out);
   }
+  if (mddHasDuplicateSectionHeadings(out)) {
+    out = deduplicateAndReorderMddSections(out);
+  }
   return out;
+}
+
+/** Dedup §1–§7 tras merge del Architect o reintentos del Clarifier (idempotente). */
+export function deduplicateMddDraftSections(draft: string): string {
+  return deduplicateCanonicalMddSections(draft);
+}
+
+/** Elimina duplicados de UI/UX Design Intent y Registro de cambios (cola post-§7). */
+export function deduplicateMddAppendixSections(draft: string): string {
+  let out = (draft ?? "").trim();
+  if (!out) return out;
+
+  const uiHeadingRe = /\n##\s+UI\/UX\s+Design\s+Intent\b/gi;
+  const uiMatches = [...out.matchAll(uiHeadingRe)];
+  if (uiMatches.length > 1) {
+    for (let i = uiMatches.length - 1; i >= 1; i--) {
+      const start = uiMatches[i]!.index!;
+      const tail = out.slice(start);
+      const headingLine = tail.match(/^\n##[^\n]*/)?.[0] ?? "";
+      const afterHeading = tail.slice(headingLine.length);
+      const nextSection = afterHeading.search(/\n##\s+/);
+      const end = nextSection >= 0 ? start + headingLine.length + nextSection : out.length;
+      out = out.slice(0, start) + out.slice(end);
+    }
+  }
+
+  const changelogRe = /\n##\s+Registro de cambios del documento\b/gi;
+  const changelogMatches = [...out.matchAll(changelogRe)];
+  if (changelogMatches.length > 1) {
+    for (let i = 0; i < changelogMatches.length - 1; i++) {
+      const start = changelogMatches[i]!.index!;
+      const end = changelogMatches[i + 1]!.index!;
+      out = out.slice(0, start) + out.slice(end);
+    }
+  }
+
+  return out.trimEnd() + (out.endsWith("\n") ? "" : "\n");
 }
 
 /**

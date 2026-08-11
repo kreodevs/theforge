@@ -113,6 +113,7 @@ export {
   restoreMddSectionsFromBaselineStrict,
   splitMddUiUxDesignIntentSuffix,
   stripTrailingDuplicateMddSections,
+  deduplicateCanonicalMddSections,
   deduplicateMddDraftSections,
   validateMddStructure,
 } from "./mdd-sanitize/section-merge.js";

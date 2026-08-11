@@ -597,6 +597,34 @@ TLS entre microservicios y PostgreSQL.
     assert.ok(!issues.some((i) => i.includes("bcrypt") && i.includes("Argon2")));
   });
 
+  it("usa bootstrap_and_service_secrets_only en manifest con SSO Integral (D-003)", () => {
+    const draft = `## 1. Contexto
+
+- Identidad corporativa vía SSO Integral (D-003); sin registro ni contraseña local.
+
+## 6. Seguridad
+
+- Las contraseñas locales se almacenan con Argon2id (memoria 64 MB, tiempo 3) solo para bootstrap de servicio.
+
+## 7. Infraestructura
+
+\`\`\`json
+{
+  "stack": {
+    "security": {
+      "hashing_algorithm": "bcrypt",
+      "hashing_rounds": 12,
+      "hashing_scope": "local_passwords_and_bootstrap"
+    }
+  }
+}
+\`\`\`
+`;
+    const out = fixDeterministicMddCoherence(draft);
+    assert.ok(out.includes('"hashing_scope": "bootstrap_and_service_secrets_only"'));
+    assert.ok(!/"hashing_scope"\s*:\s*"local_passwords/i.test(out));
+  });
+
   it("mantiene bcrypt en manifest cuando §6 solo documenta bcrypt", () => {
     const draft = `## 6. Seguridad
 
@@ -1925,6 +1953,32 @@ Docker.
     const out = ensureSecurityLockoutInSection6(draft);
     assert.equal(out, draft);
   });
+
+  it("no inyecta lockout cuando catálogo exige SSO Integral (D-003)", () => {
+    const catalog = {
+      decisions: [{ id: "D-003", rule: "SSO Integral es la fuente de identidad" }],
+      entities: [],
+      outOfScope: [],
+    };
+    const draft = `# MDD
+
+## 5. Lógica y Edge Cases
+
+Los intentos fallidos de login se registran en security_events.
+
+## 6. Seguridad
+
+Identidad vía SSO Integral (D-003).
+
+## 7. Infraestructura
+
+Docker.
+`;
+    const out = ensureSecurityLockoutInSection6(draft, {
+      paso0Catalog: catalog as import("@theforge/shared-types").Paso0DecisionCatalog,
+    });
+    assert.ok(!out.includes(SECURITY_LOCKOUT_DEFAULT_PARAGRAPH));
+  });
 });
 
 describe("ensureSecurityTableStubsFromSection6 totp", () => {
@@ -1954,6 +2008,63 @@ K8s.
     assert.ok(/\btotp_secret\s+BYTEA\b/i.test(userBlock));
     assert.ok(!/DEFAULT now\(\)\s*\n\s*,/i.test(userBlock));
     assert.ok(!/totp_secret BYTEA,/i.test(userBlock));
+  });
+
+  it("no inyecta security_events ni refresh_tokens con catálogo SSO (D-003)", () => {
+    const catalog = {
+      decisions: [{ id: "D-003", rule: "SSO Integral es la fuente de identidad" }],
+      entities: [],
+      outOfScope: [],
+    };
+    const draft = `# MDD
+
+## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE users (id UUID PRIMARY KEY);
+\`\`\`
+
+## 6. Seguridad
+
+Los intentos fallidos se registran en security_events.
+Los refresh tokens rotativos se almacenan en refresh_tokens.
+
+## 7. Infraestructura
+
+K8s.
+`;
+    const out = ensureSecurityTableStubsFromSection6(draft, {
+      paso0Catalog: catalog as import("@theforge/shared-types").Paso0DecisionCatalog,
+    });
+    assert.doesNotMatch(out, /CREATE\s+TABLE\s+security_events\b/i);
+    assert.doesNotMatch(out, /CREATE\s+TABLE\s+refresh_tokens\b/i);
+  });
+
+  it("no append stubs cuando §3 SQL tiene CREATE TABLE anidado", () => {
+    const draft = `# MDD
+
+## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE analytics_rollups (
+  id BIGSERIAL PRIMARY KEY,
+  metric_key VARCHAR(120) NOT NULL
+CREATE TABLE security_events (
+  id UUID PRIMARY KEY
+);
+);
+\`\`\`
+
+## 6. Seguridad
+
+Los intentos fallidos se registran en security_events.
+
+## 7. Infraestructura
+
+K8s.
+`;
+    const out = ensureSecurityTableStubsFromSection6(draft);
+    assert.equal((out.match(/CREATE\s+TABLE\s+security_events/gi) ?? []).length, 1);
   });
 });
 
