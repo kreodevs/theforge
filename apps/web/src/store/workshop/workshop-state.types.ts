@@ -342,6 +342,9 @@ export interface WorkshopState {
   verifyDeliverable: (projectId: string, deliverable: "blueprint" | "api" | "infra" | "architecture" | "use-cases" | "user-stories") => Promise<string>;
   setDbgaContent: (content: string | null) => void;
   persistDbgaContent: (content: string) => Promise<void>;
+  ingestPastedPaso0: (
+    content: string,
+  ) => Promise<{ ingested: boolean; decisionCount?: number; mvpCapabilityCount?: number; sourceHash?: string; reason?: string }>;
   clearDbgaContent: (projectId: string) => Promise<void>;
   generateBenchmark: (projectId: string, userIdea: string, urls?: string[]) => Promise<Project | null>;
   generateMddFromBenchmark: (projectId: string) => Promise<Project | null>;

@@ -16,17 +16,28 @@ interface Props {
 
 export function Phase0PastePanel({ onComplete }: Props) {
   const persistDbgaContent = useWorkshopStore((s) => s.persistDbgaContent);
+  const ingestPastedPaso0 = useWorkshopStore((s) => s.ingestPastedPaso0);
   const [content, setContent] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ingestNote, setIngestNote] = useState<string | null>(null);
 
   const handleSave = async () => {
     const trimmed = content.trim();
     if (!trimmed) return;
     setSaving(true);
     setError(null);
+    setIngestNote(null);
     try {
       await persistDbgaContent(trimmed);
+      const ingest = await ingestPastedPaso0(trimmed);
+      if (ingest.ingested) {
+        setIngestNote(
+          `Catálogo D-ID ingerido: ${ingest.decisionCount ?? 0} decisiones, ${ingest.mvpCapabilityCount ?? 0} capacidades MVP.`,
+        );
+      } else if (ingest.reason) {
+        console.info("[Phase0PastePanel] ingest skipped:", ingest.reason);
+      }
       await onComplete();
     } catch (e) {
       setError(formatUserFacingThrownError(e, "No se pudo guardar el Paso 0"));
@@ -53,6 +64,11 @@ export function Phase0PastePanel({ onComplete }: Props) {
             className="flex-1 min-h-[200px] w-full bg-[color-mix(in_oklch,var(--muted)_50%,var(--card))] border border-[var(--border)] rounded-lg p-4 text-sm font-mono text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent outline-none resize-none"
             spellCheck={false}
           />
+          {ingestNote ? (
+            <p className="text-sm text-[var(--foreground-subtle)]" role="status">
+              {ingestNote}
+            </p>
+          ) : null}
           {error ? (
             <p
               className="text-sm text-[color-mix(in_oklch,var(--destructive)_88%,var(--foreground))]"

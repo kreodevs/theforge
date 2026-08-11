@@ -93,6 +93,7 @@ type DeliverablesSliceActions = Pick<
   | "verifyDeliverable"
   | "setDbgaContent"
   | "persistDbgaContent"
+  | "ingestPastedPaso0"
   | "clearDbgaContent"
   | "generateBenchmark"
   | "setPhase0SummaryContent"
@@ -877,6 +878,37 @@ export const createDeliverablesSlice: StateCreator<
 
   persistDbgaContent: async (content) => {
     await persistField("dbgaContent", content, get, set);
+  },
+
+  ingestPastedPaso0: async (content) => {
+    const projectId = get().project?.id;
+    if (!projectId?.trim()) {
+      return { ingested: false, reason: "Proyecto no cargado" };
+    }
+    try {
+      const r = await apiFetch(`${API_BASE}/projects/${projectId}/phase0/ingest-pasted`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dbgaContent: content, source: "paste" }),
+      });
+      if (!r.ok) {
+        const errText = await r.text();
+        return { ingested: false, reason: errText || "Error al ingerir Paso 0" };
+      }
+      const data = (await r.json()) as {
+        ingested: boolean;
+        decisionCount?: number;
+        mvpCapabilityCount?: number;
+        sourceHash?: string;
+        reason?: string;
+      };
+      if (data.ingested) {
+        await get().fetchProject(projectId);
+      }
+      return data;
+    } catch (e) {
+      return { ingested: false, reason: e instanceof Error ? e.message : "Error de red" };
+    }
   },
 
   setAgentProgress: (progress) => set({ agentProgress: progress }),

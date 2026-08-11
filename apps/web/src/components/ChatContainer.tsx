@@ -26,6 +26,7 @@ import {
   isDeliverablesCascadeLoadingReason,
   isDeliverablesCascadeUiActive,
 } from "../utils/deliverablesCascadeUi";
+import { mddJobStillRunning } from "../store/workshop/helpers/mdd-pipeline-chat.util";
 import { cn } from "@/lib/utils";
 import type { ChatImagePart } from "@theforge/shared-types";
 import { filterChatForWorkshopView } from "@theforge/shared-types";
@@ -536,9 +537,15 @@ export default function ChatContainer({
   const phase0AssistedTemplateLabel = useWorkshopStore((s) => s.phase0AssistedTemplateLabel);
   const phase0AssistedBootstrapMessage = useWorkshopStore((s) => s.phase0AssistedBootstrapMessage);
   const stopPhase0Assisted = useWorkshopStore((s) => s.stopPhase0Assisted);
+  const dbgaContentForWelcome = useWorkshopStore(
+    (s) => s.dbgaContent ?? s.project?.dbgaContent ?? s.project?.phase0SummaryContent ?? "",
+  );
+  const mddContentForWelcome = useWorkshopStore((s) => s.mddContent ?? s.project?.mddContent ?? "");
   const isBenchmarkStreaming = activeTab === "benchmark" && loading && loadingReason === "benchmark";
+  const isMddJobRunningOnServer = mddJobStillRunning(generationStatus);
   const isMddStreaming =
-    loading && (loadingReason === "mdd" || loadingReason === "mdd-section");
+    isMddJobRunningOnServer ||
+    (loading && (loadingReason === "mdd" || loadingReason === "mdd-section"));
   const showAgentProgress =
     isBenchmarkStreaming ||
     isMddStreaming ||
@@ -607,32 +614,51 @@ export default function ChatContainer({
   useEffect(() => {
     const tab = activeTab ?? "mdd";
     if (!projectId?.trim()) return;
-    if (tab === "mdd") return;
-    const welcomeTabs: ActiveTab[] = ["brd", "ux-ui-guide", "benchmark"];
-    if (!welcomeTabs.includes(tab)) return;
-    if (phase0AssistedActive && tab === "benchmark") return;
-    if (!session?.id) {
+
+    const requestWelcome = () => {
       if (welcomedTabRef.current === tab) return;
       welcomedTabRef.current = tab;
       const t = window.setTimeout(() => {
         void fetchWelcome(projectId, tab);
       }, 120);
       return () => window.clearTimeout(t);
+    };
+
+    if (tab === "mdd") {
+      const hasPriorWork =
+        dbgaContentForWelcome.trim().length > 0 || mddContentForWelcome.trim().length > 0;
+      if (!hasPriorWork) return;
+      if (!session?.id) return requestWelcome();
+      const count = filterChatForWorkshopView(session.chatLog ?? [], tab, {
+        stageId: activeStageIdForChat,
+        scope: chatScope,
+      }).length;
+      if (count > 0) return;
+      return requestWelcome();
     }
+
+    const welcomeTabs: ActiveTab[] = ["brd", "ux-ui-guide", "benchmark"];
+    if (!welcomeTabs.includes(tab)) return;
+    if (phase0AssistedActive && tab === "benchmark") return;
+    if (!session?.id) return requestWelcome();
     const count = filterChatForWorkshopView(session.chatLog ?? [], tab, {
       stageId: activeStageIdForChat,
       scope: chatScope,
     }).length;
     if (count > 0) return;
-    // Evitar bucle infinito: si ya intentamos welcome para este tab sin éxito (sin mensaje agregado),
-    // no reintentar. Ocurre cuando el backend decide no generar burbuja (ej. benchmark sin contenido).
-    if (welcomedTabRef.current === tab) return;
-    welcomedTabRef.current = tab;
-    const t = window.setTimeout(() => {
-      void fetchWelcome(projectId, tab);
-    }, 120);
-    return () => window.clearTimeout(t);
-  }, [projectId, activeTab, session?.id, session?.chatLog, fetchWelcome, phase0AssistedActive, activeStageIdForChat, chatScope]);
+    return requestWelcome();
+  }, [
+    projectId,
+    activeTab,
+    session?.id,
+    session?.chatLog,
+    fetchWelcome,
+    phase0AssistedActive,
+    activeStageIdForChat,
+    chatScope,
+    dbgaContentForWelcome,
+    mddContentForWelcome,
+  ]);
 
   useEffect(() => {
     if (!multiStageChat || !activeStageIdForChat) {
