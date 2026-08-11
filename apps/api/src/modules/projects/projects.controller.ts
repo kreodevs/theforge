@@ -27,6 +27,7 @@ import {
   createProjectSchema,
   updateProjectSchema,
   phase0DeepResearchBodySchema,
+  phase0IngestPastedBodySchema,
   generateAemBodySchema,
   type AemMarketScope,
   convergeBodySchema,
@@ -471,6 +472,13 @@ export class ProjectsController {
       urls: parsed.urls,
       includeBenchmark: parsed.includeBenchmark,
     });
+  }
+
+  /** Ingesta determinística de Paso 0 definitivo pegado (solo source=paste). */
+  @Post(":id/phase0/ingest-pasted")
+  ingestPastedPaso0(@Param("id") id: string, @Body() body: unknown) {
+    const parsed = phase0IngestPastedBodySchema.parse(body ?? {});
+    return this.projects.ingestPastedPaso0(id, parsed);
   }
 
   /** Genera AEM (Análisis y Estudio de Mercado) desde Benchmark, Fase 0 y BRD. */

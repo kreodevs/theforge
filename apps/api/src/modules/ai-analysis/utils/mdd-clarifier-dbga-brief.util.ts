@@ -3,11 +3,16 @@
  * Never blind slice(0, N) as the only strategy: narrative head + structural signals.
  */
 
-import type { DomainInventory } from "@theforge/shared-types";
+import type { DomainInventory, Paso0DecisionCatalog } from "@theforge/shared-types";
+import { formatPaso0CatalogGuardBlock } from "@theforge/shared-types";
 import { formatDomainInventoryForPrompt } from "../../engine/domain-inventory.util.js";
+import { formatPaso0CatalogSummaryBlock } from "../phase0/paso0-pasted-definitive.util.js";
 
 /** Total DBGA brief budget (narrative + signals; inventory/stack are separate blocks). */
 export const DEFAULT_CLARIFIER_DBGA_BRIEF_MAX_CHARS = 8_000;
+
+/** Budget when Paso 0 definitivo pegado (catálogo D-ID) alimenta el pipeline. */
+export const DEFAULT_CLARIFIER_PASO0_PASTED_MAX_CHARS = 120_000;
 
 /** Narrative head budget for objective/scope/out-of-scope H2s. */
 const NARRATIVE_BUDGET_CHARS = 3_000;
@@ -26,6 +31,7 @@ export type BuildClarifierDbgaBriefParams = {
   /** When provided, included in returned meta (inventory is injected separately in the node). */
   inventory?: DomainInventory;
   maxChars?: number;
+  paso0Catalog?: Paso0DecisionCatalog | null;
 };
 
 export type ClarifierDbgaBriefResult = {
@@ -137,16 +143,78 @@ function buildStructuralSignals(
   return lines.length > 1 ? lines.join("\n") : "";
 }
 
+/** Resuelve presupuesto DBGA para Clarifier según catálogo Paso 0 pegado. */
+export function resolveClarifierDbgaBriefMaxChars(catalog?: Paso0DecisionCatalog | null): number {
+  if (!catalog) return DEFAULT_CLARIFIER_DBGA_BRIEF_MAX_CHARS;
+  const env = process.env.CLARIFIER_PASO0_PASTED_MAX_CHARS;
+  const parsed = env ? Number.parseInt(env, 10) : Number.NaN;
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  return DEFAULT_CLARIFIER_PASO0_PASTED_MAX_CHARS;
+}
+
+function buildPaso0PastedBrief(
+  dbga: string,
+  catalog: Paso0DecisionCatalog,
+  maxChars: number,
+): ClarifierDbgaBriefResult {
+  const sections = extractH2Sections(dbga);
+  const catalogBlock = formatPaso0CatalogSummaryBlock(catalog, Math.min(12_000, Math.floor(maxChars * 0.35)));
+  const guardBlock = formatPaso0CatalogGuardBlock(catalog, Math.min(6_000, Math.floor(maxChars * 0.25)));
+  const narrativeBudget = Math.min(NARRATIVE_BUDGET_CHARS * 3, Math.floor(maxChars * 0.45));
+  const signalsBudget = Math.min(SIGNALS_BUDGET_CHARS * 2, Math.floor(maxChars * 0.2));
+  const narrative = buildNarrativeHead(sections, narrativeBudget);
+  const signals = buildStructuralSignals(sections, extractH3Signals(dbga), signalsBudget);
+
+  const parts = [
+    catalogBlock,
+    guardBlock,
+    "**DBGA (narrativa y señales — Paso 0 definitivo pegado):**",
+    narrative,
+    signals,
+  ].filter(Boolean);
+
+  let brief = parts.join("\n\n").trim();
+  if (brief.length > maxChars) {
+    brief = brief.slice(0, maxChars) + "\n…[DBGA+catálogo truncado]";
+  }
+
+  return {
+    brief,
+    briefChars: brief.length,
+    usedFullDbga: false,
+    narrativeChars: narrative.length,
+    signalsChars: signals.length,
+  };
+}
+
 /**
  * Builds a compact DBGA brief for Clarifier input.
  * Returns full DBGA when already under budget.
  */
 export function buildClarifierDbgaBrief(params: BuildClarifierDbgaBriefParams): ClarifierDbgaBriefResult {
   const dbga = (params.dbgaContent ?? "").trim();
-  const maxChars = params.maxChars ?? DEFAULT_CLARIFIER_DBGA_BRIEF_MAX_CHARS;
+  const maxChars = params.maxChars ?? resolveClarifierDbgaBriefMaxChars(params.paso0Catalog);
 
   if (!dbga) {
     return { brief: "", briefChars: 0, usedFullDbga: true, narrativeChars: 0, signalsChars: 0 };
+  }
+
+  if (params.paso0Catalog) {
+    if (dbga.length <= maxChars) {
+      const catalogBlock = formatPaso0CatalogSummaryBlock(params.paso0Catalog, 8_000);
+      const guardBlock = formatPaso0CatalogGuardBlock(params.paso0Catalog, 4_000);
+      const combined = `${catalogBlock}\n\n---\n\n${guardBlock}\n\n---\n\n${dbga}`;
+      if (combined.length <= maxChars) {
+        return {
+          brief: combined,
+          briefChars: combined.length,
+          usedFullDbga: true,
+          narrativeChars: dbga.length,
+          signalsChars: 0,
+        };
+      }
+    }
+    return buildPaso0PastedBrief(dbga, params.paso0Catalog, maxChars);
   }
 
   if (dbga.length <= maxChars) {
@@ -185,8 +253,11 @@ export function buildClarifierDbgaBrief(params: BuildClarifierDbgaBriefParams): 
 }
 
 /** Inventory block sized for Clarifier (KMS-scale). */
-export function formatClarifierDomainInventory(inventory: DomainInventory): string {
-  return formatDomainInventoryForPrompt(inventory, 4_800);
+export function formatClarifierDomainInventory(
+  inventory: DomainInventory,
+  paso0Catalog?: Paso0DecisionCatalog | null,
+): string {
+  return formatDomainInventoryForPrompt(inventory, 4_800, paso0Catalog ?? null);
 }
 
 /**

@@ -22,6 +22,7 @@ import { ProjectBrdService } from "./project-brd.service.js";
 import { ProjectUpdateService } from "./project-update.service.js";
 import { ProjectComplexityService } from "./project-complexity.service.js";
 import { ProjectPhase0Service } from "./project-phase0.service.js";
+import { Phase0PasteIngestService } from "./phase0-paste-ingest.service.js";
 import { ProjectSddReconcileService } from "./project-sdd-reconcile.service.js";
 import { ProjectLifecycleService } from "./project-lifecycle.service.js";
 import { summarizePluginDataPresence, toApiProject } from "./project-api.util.js";
@@ -48,6 +49,7 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     private readonly projectComplexity: ProjectComplexityService,
     @Inject(forwardRef(() => ProjectPhase0Service))
     private readonly projectPhase0: ProjectPhase0Service,
+    private readonly phase0PasteIngest: Phase0PasteIngestService,
     private readonly projectSddReconcile: ProjectSddReconcileService,
     private readonly projectLifecycle: ProjectLifecycleService,
   ) {}
@@ -438,10 +440,17 @@ export class ProjectsService implements IOrchestratorProjectsPort {
     return this.projectPhase0.phase0DeepResearch(projectId, options);
   }
 
+  async ingestPastedPaso0(
+    projectId: string,
+    body: { dbgaContent: string; source: "paste" },
+  ) {
+    return this.phase0PasteIngest.ingestPasted(projectId, body);
+  }
+
   async persistMddFromBackgroundJob(
     projectId: string,
     rawMarkdown: string,
-    options?: { stageId?: string; finalize?: boolean; lockedPatternIds?: readonly string[] },
+    options?: Parameters<ProjectMddPersistService["persistMddFromBackgroundJob"]>[2],
   ): Promise<void> {
     return this.mddPersist.persistMddFromBackgroundJob(projectId, rawMarkdown, options);
   }

@@ -31,7 +31,7 @@ import {
   mergePhase0Borrador,
   normalizePhase0Document,
 } from "./phase0-normalize.util.js";
-import { formatDocumentMarkdown, shouldReplacePhase0SummaryWithBorrador } from "@theforge/shared-types";
+import { formatDocumentMarkdown, mergePhase0SummaryPreservePaso0Sidecar, shouldReplacePhase0SummaryWithBorrador } from "@theforge/shared-types";
 import { stampMarkdownIfBodyChanged } from "../../engine/document-date-header.util.js";
 import { phase0ToMarkdown } from "./phase0-to-markdown.js";
 import {
@@ -1400,7 +1400,10 @@ export class Phase0InterviewService {
         phase0Questions: state.preguntasRealizadas,
       };
       if (kind === "deep_research") {
-        data.phase0SummaryContent = stamped;
+        data.phase0SummaryContent = mergePhase0SummaryPreservePaso0Sidecar(
+          existing?.phase0SummaryContent,
+          stamped,
+        );
       } else {
         data.dbgaContent = stamped;
         if (shouldReplacePhase0SummaryWithBorrador(existing?.phase0SummaryContent)) {

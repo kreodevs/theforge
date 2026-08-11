@@ -185,6 +185,7 @@ export function createMddClarifierNode(llm: BaseChatModel) {
       const dbgaRaw = state.dbgaContent ?? "";
       const { brief: dbgaBrief, briefChars: dbgaBriefChars, usedFullDbga } = buildClarifierDbgaBrief({
         dbgaContent: dbgaRaw,
+        paso0Catalog: state.paso0DecisionCatalog,
       });
       const { inventory } = buildInventoryFromMddState(state);
       const hasSubstantialDraft =
@@ -208,6 +209,12 @@ export function createMddClarifierNode(llm: BaseChatModel) {
       const inventoryBlock = domainInventoryPromptBlock(state, { maxChars: 4_800 });
       if (inventoryBlock) {
         prompt += inventoryBlock;
+        if (state.paso0DecisionCatalog) {
+          prompt +=
+            "\n\n**Obligatorio (Paso 0 pegado):** no inventes entidades ni tablas fuera del catálogo D-ID. " +
+            "Prohibido `tenants`, `channels`, `conversations` como raíz de dominio; usa Application/Context/Topic/Membership. " +
+            "Identidad vía SSO Integral (D-003). Stack D-162 = propuestas, no requisitos.";
+        }
         prompt +=
           "\n\n**Obligatorio en §1 Contexto:** enumera las capacidades de negocio del inventario (no solo auth/RBAC). Las capacidades de autenticación van como complemento.";
       }

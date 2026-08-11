@@ -172,6 +172,15 @@ describe("stripClarifierAgentBriefFromSection1", () => {
     assert.doesNotMatch(out, /Resumen para agentes/i);
     assert.match(out, /## 2\. Arquitectura/);
   });
+
+  it("elimina # Clarified Scope para Agentes embebido en §1 y repara reacti", async () => {
+    const { stripClarifierAgentBriefFromSection1 } = await import("./mdd-clarifier-draft.util.js");
+    const draft = `# MDD\n\n## 1. Contexto y alcance\n\n### Propósito\n\nMensajería con reacti.\n\n# Clarified Scope para Agentes\n\n**Entidades:** contexts, messages\n\n### Actores\n\nUsuarios finales.\n\n## 2. Arquitectura\n\nStack.`;
+    const out = stripClarifierAgentBriefFromSection1(draft);
+    assert.match(out, /reactions/);
+    assert.doesNotMatch(out, /Clarified Scope para Agentes/i);
+    assert.match(out, /### Actores/);
+  });
 });
 
 describe("isSafeClarifierMergeBaseline", () => {

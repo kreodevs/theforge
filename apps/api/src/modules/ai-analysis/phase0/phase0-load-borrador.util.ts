@@ -8,6 +8,7 @@
 
 import { isPhase0StructuredMarkdown, markdownToPhase0Document } from "./phase0-from-markdown.js";
 import { mergePhase0Borrador, mergePhase0StringList, normalizePhase0Document } from "./phase0-normalize.util.js";
+import { paso0PasteSidecarSchema } from "@theforge/shared-types";
 import type { Phase0Document, Phase0Flow, Phase0Role } from "./phase0.types.js";
 
 export const MIN_DBGA_AUDIT_CHARS = 150;
@@ -46,6 +47,10 @@ function parseBorradorJson(raw: string | null | undefined): Phase0Document | nul
   if (!raw?.trim()) return null;
   try {
     const parsed = JSON.parse(raw) as unknown;
+    const sidecar = paso0PasteSidecarSchema.safeParse(parsed);
+    if (sidecar.success && sidecar.data.borrador) {
+      return normalizePhase0Document(sidecar.data.borrador);
+    }
     return normalizePhase0Document(parsed);
   } catch {
     return null;

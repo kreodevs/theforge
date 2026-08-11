@@ -38,6 +38,7 @@ import { ProjectComplexityService } from "./project-complexity.service.js";
 import { ProjectSddReconcileService } from "./project-sdd-reconcile.service.js";
 import { ProjectLifecycleService } from "./project-lifecycle.service.js";
 import { ProjectPhase0Service } from "./project-phase0.service.js";
+import { Phase0PasteIngestService } from "./phase0-paste-ingest.service.js";
 import { ProjectNotionPortabilityService } from "./project-notion-portability.service.js";
 import { UpstreamPropagateService } from "./upstream-propagate.service.js";
 import { PluginModule } from "../../plugins/plugin.module.js";
@@ -84,6 +85,7 @@ import { PluginModule } from "../../plugins/plugin.module.js";
     ProjectUpdateService,
     ProjectComplexityService,
     ProjectPhase0Service,
+    Phase0PasteIngestService,
     ProjectSddReconcileService,
     ProjectLifecycleService,
     UpstreamPropagateService,

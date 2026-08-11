@@ -27,31 +27,59 @@ import {
 
 /** Bloques de `clarifiedScope` / §1 que no deben volcar en el cuerpo de §1. */
 const CLARIFIER_AGENT_BRIEF_IN_SECTION1_RE =
-  /\n#{1,3}\s*Resumen para agentes(?:\s*\([^)]*\))?(?:\s+siguientes)?[\s\S]*?(?=\n#{1,3}\s|\n##\s*[2-7]\.\s|$)/gi;
+  /\n#{1,3}\s*(?:Resumen para agentes|Clarified Scope)(?:\s*\([^)]*\))?(?:\s+(?:para\s+)?[Aa]gentes)?[\s\S]*?(?=\n#{1,3}\s|\n##\s*[2-7]\.\s|$)/gi;
 
 const CLARIFIER_AGENT_BRIEF_HEADING_RE =
-  /\n##\s*Resumen para agentes(?:\s*\([^)]*\))?(?:\s+siguientes)?[\s\S]*?(?=\n##\s*[2-7]\.\s)/gi;
+  /\n##\s*(?:Resumen para agentes|Clarified Scope)(?:\s*\([^)]*\))?(?:\s+siguientes)?[\s\S]*?(?=\n##\s*[2-7]\.\s)/gi;
+
+const CLARIFIER_SCOPE_H1_IN_SECTION1_RE =
+  /\n#\s*Clarified Scope[\s\S]*?(?=\n###\s+(?:Actores|Glosario|Alcance|Propósito|Contexto|Fuera de alcance)\b|\n##\s*[2-7]\.\s|$)/gi;
 
 const CLARIFIER_DECISIONES_VALIDADAS_RE =
   /\n\*\*Decisiones validadas:\*\*[\s\S]*?(?=\n#{1,3}\s|\n##\s*[2-7]\.\s|$)/gi;
 
+const CLARIFIER_EMBEDDED_ENTITIES_LIST_RE =
+  /\n(?:\*\*Entidades:\*\*|\*\*Capacidades:\*\*)[\s\S]*?(?=\n###\s|\n##\s*[2-7]\.\s|$)/gi;
+
+const SECTION1_TRUNCATED_DOMAIN_TERMS: ReadonlyArray<[RegExp, string]> = [
+ [/\breacti\b(?!ons)/gi, "reactions"],
+];
+
 /** Quita metadatos de agentes (scope leak) del borrador — bloque entre §1 y §2. */
 export function stripClarifierAgentBriefFromSection1(draft: string): string {
   const trimmed = (draft ?? "").trim();
-  if (!/Resumen para agentes/i.test(trimmed)) return trimmed;
-  let out = trimmed.replace(CLARIFIER_AGENT_BRIEF_HEADING_RE, "\n");
+  if (!/(?:Resumen para agentes|Clarified Scope)/i.test(trimmed)) {
+    return repairSection1TruncatedTerms(trimmed);
+  }
+  let out = trimmed
+    .replace(CLARIFIER_AGENT_BRIEF_HEADING_RE, "\n")
+    .replace(CLARIFIER_SCOPE_H1_IN_SECTION1_RE, "\n");
   const body = extractContextSectionBody(out);
   if (body?.trim()) {
     const cleanedBody = body
       .replace(CLARIFIER_AGENT_BRIEF_IN_SECTION1_RE, "")
+      .replace(CLARIFIER_SCOPE_H1_IN_SECTION1_RE, "")
       .replace(CLARIFIER_DECISIONES_VALIDADAS_RE, "")
+      .replace(CLARIFIER_EMBEDDED_ENTITIES_LIST_RE, (block, offset, full) => {
+        const before = full.slice(0, offset);
+        const entidadCount = (before.match(/\*\*Entidades:\*\*/gi) ?? []).length;
+        return entidadCount >= 1 ? "" : block;
+      })
       .replace(/\n{3,}/g, "\n\n")
       .trim();
     if (cleanedBody !== body.trim()) {
       out = replaceSection1BodyFromAnyHeading(out, cleanedBody);
     }
   }
-  return out.replace(/\n{3,}/g, "\n\n").trim();
+  return repairSection1TruncatedTerms(out.replace(/\n{3,}/g, "\n\n").trim());
+}
+
+function repairSection1TruncatedTerms(text: string): string {
+  let out = text ?? "";
+  for (const [re, replacement] of SECTION1_TRUNCATED_DOMAIN_TERMS) {
+    out = out.replace(re, replacement);
+  }
+  return out;
 }
 
 /** Evita usar `clarifiedScope` crudo como fallback de §1 (sólo primer párrafo útil). */
