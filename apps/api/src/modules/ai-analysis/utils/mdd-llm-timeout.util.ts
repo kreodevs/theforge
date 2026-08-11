@@ -25,12 +25,20 @@ export function resolveLlmHardTimeoutMs(): number {
  * Evita quemar ~5 min en una sola invocación cuando el proveedor emite lentamente (job 100).
  */
 export function resolveMddTailNodeHardTimeoutMs(): number {
-  return readPositiveIntEnv("LANGGRAPH_MDD_TAIL_HARD_TIMEOUT_MS", 180_000);
+  return readPositiveIntEnv("LANGGRAPH_MDD_TAIL_HARD_TIMEOUT_MS", 240_000);
 }
 
 /** Tope duro para el borrador del Clarifier (streaming). Fail-fast + retry, sin truncar mid-stream. */
 export function resolveMddClarifierHardTimeoutMs(): number {
-  return readPositiveIntEnv("LANGGRAPH_MDD_CLARIFIER_HARD_TIMEOUT_MS", 150_000);
+  return readPositiveIntEnv("LANGGRAPH_MDD_CLARIFIER_HARD_TIMEOUT_MS", 300_000);
+}
+
+/**
+ * Tope duro por invocación en pasadas scoped del Arquitecto (stack / data_model / api_contracts).
+ * Evita cuelgues silenciosos cuando el proveedor no cierra el stream (p. ej. deepseek-v4-flash, job 129).
+ */
+export function resolveMddScopedArchitectHardTimeoutMs(): number {
+  return readPositiveIntEnv("LANGGRAPH_MDD_SCOPED_ARCHITECT_HARD_TIMEOUT_MS", 300_000);
 }
 
 /** Tope duro wall-clock para el nodo Auditor (LLM + tool loops). */

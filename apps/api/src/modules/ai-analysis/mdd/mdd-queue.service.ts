@@ -813,6 +813,7 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
           documentField: "mddContent",
           context: data.mddContent || data.initialMessage ? "regenerate" : "initial",
           jobId,
+          abortSignal: abortController.signal,
         },
         () =>
           this.aiAnalysis.runMddGenerationJob(data, onProgress, {
@@ -881,7 +882,8 @@ export class MddQueueService implements OnModuleInit, OnModuleDestroy {
     let status: MddJobStatus["status"];
     if (state === "completed") status = "completed";
     else if (state === "failed") {
-      status = job.attemptsMade < (job.opts?.attempts ?? 1) ? "retrying" : "failed";
+      // BullMQ state "failed" es terminal (UnrecoverableError no reintenta aunque attemptsMade < max).
+      status = "failed";
     } else if (state === "active") status = "active";
     else if (state === "delayed") status = "retrying";
     else if (state === "waiting" || state === "waiting-children") status = "queued";

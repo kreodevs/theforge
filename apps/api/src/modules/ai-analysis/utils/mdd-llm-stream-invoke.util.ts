@@ -31,6 +31,8 @@ export type StreamInvokeOptions = {
   idleTimeoutMs?: number;
   /** Tope absoluto por invocación. Default `LANGGRAPH_LLM_HARD_TIMEOUT_MS` (10 min). */
   hardTimeoutMs?: number;
+  /** Señal externa (cancelación job). Se combina con timeouts idle/hard. */
+  signal?: AbortSignal;
 };
 
 export type StreamInvokeResult = {
@@ -79,6 +81,12 @@ export async function invokeLlmStreamingWithIdleTimeout(
   const startedAt = Date.now();
 
   const abortController = new AbortController();
+  const externalSignal = options.signal;
+  const onExternalAbort = (): void => abortController.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) abortController.abort();
+    else externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+  }
   let idleTimedOut = false;
   let hardTimedOut = false;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -129,6 +137,7 @@ export async function invokeLlmStreamingWithIdleTimeout(
   } finally {
     if (idleTimer) clearTimeout(idleTimer);
     clearTimeout(hardTimer);
+    if (externalSignal) externalSignal.removeEventListener("abort", onExternalAbort);
   }
 
   return {

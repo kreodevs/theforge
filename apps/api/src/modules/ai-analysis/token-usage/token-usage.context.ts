@@ -18,6 +18,8 @@ export interface TokenUsageContextPayload {
   context: string;
   node?: string | null;
   jobId?: string | null;
+  /** Abort cooperativo de jobs MDD cancelados/preempt (propaga a invokeLlmWithRetry). */
+  abortSignal?: AbortSignal | null;
 }
 
 export interface TokenUsageContextValue {
@@ -35,6 +37,12 @@ export function runWithTokenUsageContext<T>(
 
 export function getActiveTokenUsageContext(): TokenUsageContextPayload | null {
   return storage.getStore()?.payload ?? null;
+}
+
+/** Señal de cancelación del job MDD activo (null fuera de cola background). */
+export function getActiveMddJobAbortSignal(): AbortSignal | undefined {
+  const signal = storage.getStore()?.payload.abortSignal;
+  return signal ?? undefined;
 }
 
 /**

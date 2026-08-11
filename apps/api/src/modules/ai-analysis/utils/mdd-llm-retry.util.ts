@@ -26,6 +26,8 @@ import type { Runnable } from "@langchain/core/runnables";
 import type { BaseMessage } from "@langchain/core/messages";
 import { recordTokenUsageFromContext } from "../../ai/utils/token-usage-recorder.js";
 import { isLlmStreamingEnabled, resolveLlmTimeoutMs } from "./mdd-llm-timeout.util.js";
+import { getActiveMddJobAbortSignal } from "../token-usage/token-usage.context.js";
+import { isMddLlmQuotaError } from "../mdd/mdd-job-error.util.js";
 import {
   invokeLlmStreamingWithIdleTimeout,
   supportsStreaming,
@@ -145,9 +147,47 @@ export type InvokeWithRetryOptions = {
   idleTimeoutMs?: number;
   /** Tope duro por invocación en streaming. Default `LANGGRAPH_LLM_HARD_TIMEOUT_MS`. */
   hardTimeoutMs?: number;
+  /** Señal externa (cancelación job MDD). Si aborta, no reintenta salvo timeout propio. */
+  signal?: AbortSignal;
 };
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+function resolveCombinedAbortSignal(
+  external: AbortSignal | undefined,
+  timeoutMs: number,
+): { signal: AbortSignal; cleanup: () => void } {
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs);
+  if (!external) {
+    return {
+      signal: timeoutController.signal,
+      cleanup: () => clearTimeout(timeoutId),
+    };
+  }
+  if (external.aborted) {
+    clearTimeout(timeoutId);
+    return { signal: external, cleanup: () => undefined };
+  }
+  const combined = new AbortController();
+  const onAbort = () => combined.abort();
+  external.addEventListener("abort", onAbort, { once: true });
+  timeoutController.signal.addEventListener("abort", onAbort, { once: true });
+  return {
+    signal: combined.signal,
+    cleanup: () => {
+      clearTimeout(timeoutId);
+      external.removeEventListener("abort", onAbort);
+    },
+  };
+}
+
+function isExternalAbortError(err: unknown, external?: AbortSignal): boolean {
+  if (!external?.aborted) return false;
+  if (err instanceof Error && err.name === "AbortError") return true;
+  const msg = err instanceof Error ? err.message : String(err);
+  return /\b(aborted|abort)\b/i.test(msg);
+}
 
 /**
  * Tipo del objeto invocable: BaseChatModel directo o Runnable.bindTools(...).
@@ -171,6 +211,7 @@ export async function invokeLlmWithRetry(
   const isValid = options.isResponseValid ?? ((t) => t.trim().length > 0);
   const acceptTools = options.acceptToolCallsWithoutContent === true;
   const tag = options.tag || "LLM";
+  const externalSignal = options.signal ?? getActiveMddJobAbortSignal();
   const promptChars = messages.reduce((acc, m) => {
     const c = (m as { content?: unknown }).content;
     if (typeof c === "string") return acc + c.length;
@@ -188,6 +229,9 @@ export async function invokeLlmWithRetry(
   let degradeRefundUsed = false;
 
   for (let attempt = 1; attempt <= max; attempt += 1) {
+    if (externalSignal?.aborted) {
+      throw new Error("Cancelado por el usuario");
+    }
     const wait = backoff[Math.min(attempt - 1, backoff.length - 1)] ?? 0;
     if (wait > 0) await sleep(wait);
     try {
@@ -205,6 +249,7 @@ export async function invokeLlmWithRetry(
             tag,
             ...(options.idleTimeoutMs != null ? { idleTimeoutMs: options.idleTimeoutMs } : {}),
             ...(options.hardTimeoutMs != null ? { hardTimeoutMs: options.hardTimeoutMs } : {}),
+            ...(externalSignal ? { signal: externalSignal } : {}),
           });
         } catch (streamErr) {
           const streamMsg = streamErr instanceof Error ? streamErr.message : String(streamErr);
@@ -225,12 +270,11 @@ export async function invokeLlmWithRetry(
         );
       } else {
         const timeoutMs = options?.timeoutMs ?? DEFAULT_INVOKE_TIMEOUT_MS;
-        const abortController = new AbortController();
-        const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
+        const { signal, cleanup } = resolveCombinedAbortSignal(externalSignal, timeoutMs);
         try {
-          response = await (llm as { invoke: (m: BaseMessage[], opts?: { signal?: AbortSignal }) => Promise<unknown> }).invoke(messages, { signal: abortController.signal });
+          response = await (llm as { invoke: (m: BaseMessage[], opts?: { signal?: AbortSignal }) => Promise<unknown> }).invoke(messages, { signal });
         } finally {
-          clearTimeout(timeoutId);
+          cleanup();
         }
       }
       recordLlmUsageFromMessage(llm, response, tag);
@@ -253,6 +297,12 @@ export async function invokeLlmWithRetry(
         `[${tag}] respuesta vacía/inválida (attempt ${attempt}/${max}, promptChars=${promptChars}, outLen=${text.length}, tools=${toolCalls.length}), reintentando...`,
       );
     } catch (err) {
+      if (isExternalAbortError(err, externalSignal)) {
+        throw new Error("Cancelado por el usuario");
+      }
+      if (isMddLlmQuotaError(err)) {
+        throw err instanceof Error ? err : new Error(String(err));
+      }
       const msg = err instanceof Error ? err.message : String(err);
       if (streamingDegraded && !degradeRefundUsed) {
         degradeRefundUsed = true;
