@@ -1,0 +1,102 @@
+{
+  "startedAt": "2026-08-11T17:41:59.684Z",
+  "sources": {
+    "catalog": "/Users/oscarrubio/Documents/GitHub/theforge/packages/cursor-sdd-workspace/paso0/decisions.catalog.json",
+    "mdd": "/Users/oscarrubio/Documents/GitHub/theforge/packages/cursor-sdd-workspace/docs/sdd/mdd.md",
+    "report": "/Users/oscarrubio/Documents/GitHub/theforge/packages/cursor-sdd-workspace/deliverables/paso0-coverage-report.json"
+  },
+  "maxIterations": 3,
+  "iterations": [
+    {
+      "iteration": 1,
+      "blockersBefore": 46,
+      "blockersAfter": 0,
+      "patches": [
+        {
+          "category": "glossary",
+          "action": "insert_block",
+          "count": 6,
+          "terms": [
+            "Cliente embebido",
+            "Aplicación central",
+            "Tema administrado por aplicación",
+            "Evento de negocio",
+            "Eliminación lógica",
+            "Membresía técnica de agente"
+          ]
+        },
+        {
+          "category": "risks",
+          "action": "insert_section_1_7",
+          "count": 17,
+          "ids": [
+            "R-001",
+            "R-003",
+            "R-004",
+            "R-005",
+            "R-006",
+            "R-007",
+            "R-009",
+            "R-010",
+            "R-011",
+            "R-012",
+            "R-013",
+            "R-014",
+            "R-015",
+            "R-016",
+            "R-017",
+            "R-018",
+            "R-019"
+          ]
+        },
+        {
+          "category": "api",
+          "action": "append_table_rows",
+          "pathPattern": "/mcp",
+          "familyId": "agents-mcp"
+        },
+        {
+          "category": "api",
+          "action": "insert_mcp_contract",
+          "pathPattern": "/mcp",
+          "familyId": "agents-mcp"
+        },
+        {
+          "category": "decisions",
+          "action": "insert_section_1_8",
+          "count": 18,
+          "ids": [
+            "D-007",
+            "D-008",
+            "D-021",
+            "D-049",
+            "D-062",
+            "D-063",
+            "D-064",
+            "D-065",
+            "D-090",
+            "D-094",
+            "D-096",
+            "D-101",
+            "D-102",
+            "D-110",
+            "D-114",
+            "D-116",
+            "D-117",
+            "D-146"
+          ]
+        },
+        {
+          "category": "section9",
+          "action": "regenerate_from_catalog",
+          "count": 1
+        }
+      ],
+      "remainingBlockers": []
+    }
+  ],
+  "passed": true,
+  "blockersBefore": 46,
+  "blockersAfter": 0,
+  "finishedAt": "2026-08-11T17:41:59.739Z"
+}

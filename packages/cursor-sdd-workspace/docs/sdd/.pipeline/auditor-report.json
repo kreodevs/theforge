@@ -1,0 +1,18 @@
+{
+  "score": 94,
+  "auditorDecision": "done",
+  "critical_gaps": [],
+  "sections": {
+    "s1": true,
+    "s2": true,
+    "s3": true,
+    "s4": true,
+    "s5": true,
+    "s6": true,
+    "s7": true
+  },
+  "endpointCount": 78,
+  "tableCount": 38,
+  "businessRules": 25,
+  "checkedAt": "2026-08-11T17:41:58.167Z"
+}

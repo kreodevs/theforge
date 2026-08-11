@@ -6,6 +6,9 @@
 - Max 10 items per category.
 - Each item includes date + "Do instead".
 
+11. **[2026-08-11] Forge SDD Cursor plugin — repo externo, demo en monorepo**
+    Do instead: plugin en `github.com/OscarRubioSevilla/theforge-plugin-cursor`; symlink `~/.cursor/plugins/local/forge-sdd` → clone del plugin; `packages/cursor-sdd-workspace` solo demo + `npm run sync:plugin`; no duplicar `commands/`/`skills/` en `.cursor/` del monorepo.
+
 ## Domain Behavior Guardrails
 1. **[2026-08-03] API conformance — extras §4 → repair determinista antes de retry LLM**
    Do instead: `repairApiProgrammaticGaps` antes del quality gate en `generateApiContracts`; `MAX_API_QUALITY_RETRIES=1` + persist fallback; log `[API] Contratos API completados`; no segundo LLM ~7min solo por `extraInApi`.
@@ -16,8 +19,8 @@
 2. **[2026-07-28] KMS jobs 73/74 — corrupción MDD = bugs código pipeline (no sanitizers markdown)**
    Do instead: `shouldContinueDeliveryGateQualityLoop` false si `gate.ok && blockers===0` (quality loop truncaba §4); gate dupe/§6/§7→`integration` no `data_model`; `preserveValidatedSectionsIfSubstantial` no aborta en §1 (sigue §2–§7); snapshots `securityArchitectMddDraftSnapshot`/`integrationSectionMd` + `preserveTailSectionsFromSnapshots`; merge §4/§5 regression ratio ≥0.75; Clarifier `isSafeClarifierMergeBaseline` (no bloat/dupes); stack dedupe→`preserveSection2FromStackSnapshot`; `deduplicateAndReorderMddSections` trunca §2 embebida (no placeholder); `getSection6Or7Range` `(?!#)`; gate loop `deliveryGateLoopActive`→short-circuit `prepare_output`; `data_model_patch` stopwords ES + `isUsableDataModelPatchSql`. **No** reparar JSON fences/glue/BRD inline — regen/modelo.
 
-3. **[2026-07-27] MDD perf F0–F6 — métricas, scoped context, grafo paralelo**
-   Do instead: `logMddLlmMetrics` en nodos LLM; `buildArchitectScopedContext` + `softwareArchitectMddPrompt(scope)`; tras critic OK → `post_critic_parallel` (§4∥§6∥§7) + `mergePostCriticParallelResults`; §4 chunks (`mdd-api-contracts-chunk`); gap tablas → `data_model_patch`; `invokeScopedArchitectLlmWithHeadingCap`; `resolveMddArchitectScopeMaxTokens` por scope; skip `tail_parallel` si `postCriticParallelDone`.
+3. **[2026-08-05] MDD perf F0–F6 — métricas, scoped context, grafo paralelo**
+   Do instead: `logMddLlmMetrics` en nodos LLM; `buildArchitectScopedContext` + `softwareArchitectMddPrompt(scope)`; tras critic OK → `post_critic_parallel` (§4∥§6∥§7) + `mergePostCriticParallelResults`; §4 chunks (`mdd-api-contracts-chunk`); gap tablas → `data_model_patch`; **`invokeScopedArchitectLlmWithHeadingCap` + tool-loop SIEMPRE vía `invokeLlmWithRetry` (idle 90s / hard `LANGGRAPH_MDD_SCOPED_ARCHITECT_HARD_TIMEOUT_MS` 300s); fallback scoped `disableStreaming: true`**; log `entry scope=` + `invoke scope=`; `[MddCoherence] state=stale` = poll UI, no pipeline; **persist §4 JSON** → `sanitizeSection4JsonBlocksForDelivery` en `repairPaso0Section4Content` + loop autofix persist (≤2); **job MDD failed** → `getJobStatus` state `failed` siempre `failed` (no `retrying` por `attemptsMade<max`).
 
 4. **[2026-07-27] F5 off-graph memo — gate + coherencia por fingerprint**
    Do instead: `validateMddForDeliveryMemo` + `MddCoherenceService` memo TTL (`mddGraphFingerprint`); poll job MDD 5s (`pollMddJob` default); throttle log `[MddCoherence] state=stale` 60s.
