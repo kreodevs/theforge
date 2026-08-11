@@ -6,8 +6,8 @@
 - Max 10 items per category.
 - Each item includes date + "Do instead".
 
-11. **[2026-08-11] Forge SDD Cursor plugin — repo externo, demo en monorepo**
-    Do instead: plugin en `github.com/OscarRubioSevilla/theforge-plugin-cursor`; symlink `~/.cursor/plugins/local/forge-sdd` → clone del plugin; `packages/cursor-sdd-workspace` solo demo + `npm run sync:plugin`; no duplicar `commands/`/`skills/` en `.cursor/` del monorepo.
+11. **[2026-08-11] Forge SDD Cursor plugin — solo repo externo**
+    Do instead: instalar desde `github.com/OscarRubioSevilla/theforge-plugin-cursor`; symlink `~/.cursor/plugins/local/forge-sdd` → clone del plugin; prompts MDD viven en `apps/api/.../prompts/mdd` (monorepo) y se sincronizan con `npm run vendor-prompts` en el plugin (`FORGE_PROMPTS_SOURCE` o clone hermano `../theforge`); **no** duplicar commands/skills del plugin en `.cursor/` del monorepo.
 
 ## Domain Behavior Guardrails
 1. **[2026-08-03] API conformance — extras §4 → repair determinista antes de retry LLM**
