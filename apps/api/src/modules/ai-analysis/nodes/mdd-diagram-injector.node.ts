@@ -48,8 +48,10 @@ export function createMddDiagramInjectorNode(): (state: MDDStateType) => Promise
       return {};
     }
 
+    const paso0Catalog = state.paso0DecisionCatalog ?? null;
+    const erOptions = paso0Catalog ? { paso0Catalog } : undefined;
     let workingDraft = draft;
-    const suggestions = suggestMddDiagrams(workingDraft);
+    const suggestions = suggestMddDiagrams(workingDraft, erOptions);
     if (suggestions.length > 0) {
       try {
         workingDraft = injectMddDiagrams(workingDraft, suggestions);
@@ -59,7 +61,7 @@ export function createMddDiagramInjectorNode(): (state: MDDStateType) => Promise
     }
 
     try {
-      const regenerated = regenerateErDiagramFromSql(workingDraft);
+      const regenerated = regenerateErDiagramFromSql(workingDraft, erOptions);
       if (regenerated) workingDraft = regenerated;
     } catch (err) {
       LOG("error regenerando ER desde SQL: %s", err instanceof Error ? err.message : String(err));
@@ -69,7 +71,7 @@ export function createMddDiagramInjectorNode(): (state: MDDStateType) => Promise
     const md = state.mddStructured?.modeloDatos;
     if (md?.sql?.trim() && /CREATE\s+TABLE/i.test(md.sql)) {
       try {
-        const diagramaEr = sqlToErDiagramContent(md.sql);
+        const diagramaEr = sqlToErDiagramContent(md.sql, erOptions);
         if (diagramaEr) {
           const mermaidBlock = wrapErDiagramAsMermaidFence(diagramaEr);
           workingDraft = injectErDiagramBlockIntoDraft(workingDraft, mermaidBlock);

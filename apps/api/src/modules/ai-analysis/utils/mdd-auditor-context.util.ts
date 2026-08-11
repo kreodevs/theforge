@@ -11,10 +11,13 @@ import type { MDDStateType } from "../state/index.js";
 import { collectDomainInventoryConformanceGaps } from "../../engine/domain-inventory-conformance.util.js";
 import { listUnjustifiedPlatformTables } from "../../engine/platform-table-justify.util.js";
 import { buildInventoryFromMddState } from "./mdd-domain-prompt.util.js";
+import { formatPaso0CatalogSummaryBlock } from "../phase0/paso0-pasted-definitive.util.js";
+import { collectMissingPaso0CanonicalTables, enforcePaso0CatalogOnMdd } from "../../engine/mdd-paso0-enforcement.util.js";
 import { PLATFORM_ORPHAN_TABLES } from "@theforge/shared-types";
 
 const BRD_EXCERPT_MAX = 6_000;
 const DBGA_EXCERPT_MAX = 4_000;
+const PASO0_CATALOG_EXCERPT_MAX = 8_000;
 
 function excerpt(text: string | undefined | null, max: number): string {
   const t = (text ?? "").trim();
@@ -44,7 +47,15 @@ export function buildMddAuditorDeepContext(state: MDDStateType): string {
     dbgaMarkdown: dbga || null,
     mddMarkdown: mdd,
     inventory,
+    paso0Catalog: state.paso0DecisionCatalog ?? null,
   });
+
+  const paso0Preview = state.paso0DecisionCatalog
+    ? enforcePaso0CatalogOnMdd(mdd, state.paso0DecisionCatalog)
+    : null;
+  const paso0Missing = state.paso0DecisionCatalog
+    ? collectMissingPaso0CanonicalTables(mdd, state.paso0DecisionCatalog)
+    : [];
 
   const parts: string[] = [
     "\n---\n## Contexto de auditoría profunda (verificar con criterio de agente)\n",
@@ -70,6 +81,27 @@ export function buildMddAuditorDeepContext(state: MDDStateType): string {
     parts.push("\n### Extracto DBGA\n", excerpt(dbga, DBGA_EXCERPT_MAX));
   }
 
+  if (state.paso0DecisionCatalog) {
+    parts.push(
+      "\n### Catálogo decisiones Paso 0 (D-ID)\n",
+      formatPaso0CatalogSummaryBlock(state.paso0DecisionCatalog, PASO0_CATALOG_EXCERPT_MAX),
+      "\n**Verificar:** el MDD no debe introducir tenants/channels/conversations como raíz ni auth local (D-003). Stack D-162 = propuestas.\n",
+    );
+    if (paso0Missing.length > 0) {
+      parts.push(
+        "**Entidades canónicas ausentes en §3 (post-enforcement):**",
+        paso0Missing.slice(0, 12).map((t) => `- \`${t}\``).join("\n"),
+        "",
+      );
+    }
+    if (paso0Preview && paso0Preview.localAuthWarnings.length > 0) {
+      parts.push("**Auth local detectada (incompatible D-003):**", ...paso0Preview.localAuthWarnings.map((w) => `- ${w}`), "");
+    }
+    if (paso0Preview && paso0Preview.retentionWarnings.length > 0) {
+      parts.push("**Retención posiblemente no alineada D-098:**", ...paso0Preview.retentionWarnings.map((w) => `- ${w}`), "");
+    }
+  }
+
   parts.push(
     "\n### Tablas plataforma (alucinaciones frecuentes)\n",
     `Familia a cuestionar si no hay ancla BRD/DBGA de mensajería, RAG o canal real: ${[...PLATFORM_ORPHAN_TABLES].join(", ")}.`,
@@ -86,7 +118,11 @@ export function buildMddAuditorDeepContext(state: MDDStateType): string {
   }
 
   const hintGaps = inventoryGaps.gaps.filter(
-    (g) => g.includes("Tabla plataforma") || g.includes("DBGA faltantes") || g.includes("[Inventario]"),
+    (g) =>
+      g.includes("Tabla plataforma") ||
+      g.includes("DBGA faltantes") ||
+      g.includes("[Inventario]") ||
+      g.includes("[Paso 0"),
   );
   if (hintGaps.length > 0) {
     parts.push(

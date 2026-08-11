@@ -12,6 +12,16 @@ import {
   repairErDiagramPkFkCommas,
   stripErDiagramSqlDefaultArtifacts,
 } from "@theforge/shared-types/mermaid";
+import type { Paso0DecisionCatalog } from "@theforge/shared-types";
+import {
+  filterErDiagramContentToCanonicalEntities,
+  filterSqlForPaso0ErDiagram,
+  listPaso0AllowedErEntityNames,
+} from "../../engine/mdd-paso0-enforcement.util.js";
+
+export type Paso0ErDiagramOptions = {
+  paso0Catalog?: Paso0DecisionCatalog | null;
+};
 
 export interface DiagramSuggestion {
   /** Sección donde insertar (ej. "2. Modelo de datos") */
@@ -201,11 +211,21 @@ function getRelationLabel(fromTable: string, toTable: string, fkColumn: string):
 function buildErDiagram(
   tables: TableColumns[],
   relations: Array<{ from: string; to: string; fkColumn?: string }>,
+  paso0Catalog?: Paso0DecisionCatalog | null,
 ): string {
+  let filteredTables = tables;
+  let filteredRelations = relations;
+  if (paso0Catalog) {
+    const allowed = listPaso0AllowedErEntityNames(paso0Catalog);
+    filteredTables = tables.filter((t) => allowed.has(t.name.toLowerCase()));
+    filteredRelations = relations.filter(
+      (r) => allowed.has(r.from.toLowerCase()) && allowed.has(r.to.toLowerCase()),
+    );
+  }
   const lines: string[] = ["erDiagram", ""];
   const indentEntity = "  "; // 2 espacios ASCII (0x20)
   const indentAttr = "    "; // 4 espacios ASCII (0x20)
-  for (const t of tables) {
+  for (const t of filteredTables) {
     const entityName = ER_RESERVED.has(t.name.toLowerCase()) ? `${t.name}_entity` : t.name;
     if (t.columns.length === 0) {
       lines.push(`${indentEntity}${entityName} {`);
@@ -215,7 +235,7 @@ function buildErDiagram(
     }
     lines.push(`${indentEntity}${entityName} {`);
     for (const c of t.columns) {
-      const isFk = relations.some((r) => r.from === t.name && r.fkColumn === c.name);
+      const isFk = filteredRelations.some((r) => r.from === t.name && r.fkColumn === c.name);
       const keySuffix = c.pk ? " PK" : isFk ? " FK" : "";
       lines.push(`${indentAttr}${c.type} ${c.name}${keySuffix}`);
     }
@@ -223,7 +243,7 @@ function buildErDiagram(
   }
   lines.push("");
   const seen = new Set<string>();
-  for (const r of relations) {
+  for (const r of filteredRelations) {
     const key = `${r.from}-${r.to}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -382,12 +402,31 @@ export function erDiagramToSql(diagramContent: string): string | null {
   return sqlLines.join("\n").trim();
 }
 
+/** Concatena todos los bloques ```sql de un fragmento markdown (o devuelve el texto tal cual). */
+function extractSqlCorpusFromMarkdownOrSql(text: string): string {
+  const raw = text ?? "";
+  const blocks = [...raw.matchAll(/```sql\s*\n([\s\S]*?)```/gi)].map((m) => m[1] ?? "");
+  if (blocks.length > 0) return blocks.join("\n\n");
+  return raw;
+}
+
 /** Genera contenido erDiagram (sin fences) desde SQL. Exportado para Diagram Injector cuando opera sobre mddStructured.modeloDatos. */
-export function sqlToErDiagramContent(sql: string): string | null {
-  if (!sql?.trim() || !/CREATE\s+TABLE/i.test(sql)) return null;
-  const { tables, relations } = extractTablesAndRelations(sql);
+export function sqlToErDiagramContent(
+  sql: string,
+  options?: Paso0ErDiagramOptions,
+): string | null {
+  if (!sql?.trim()) return null;
+  const corpus = extractSqlCorpusFromMarkdownOrSql(sql);
+  if (!/CREATE\s+TABLE/i.test(corpus)) return null;
+  const catalog = options?.paso0Catalog ?? null;
+  const sourceSql = catalog ? filterSqlForPaso0ErDiagram(corpus, catalog) : corpus;
+  const { tables, relations } = extractTablesAndRelations(sourceSql);
   if (tables.length === 0) return null;
-  return normalizeErDiagramForMermaid(buildErDiagram(tables, relations));
+  let content = normalizeErDiagramForMermaid(buildErDiagram(tables, relations, catalog));
+  if (catalog) {
+    content = filterErDiagramContentToCanonicalEntities(content, catalog);
+  }
+  return content || null;
 }
 
 /** Bloque ```mermaid con un solo encabezado erDiagram (sin ###). */
@@ -403,8 +442,11 @@ export function wrapErDiagramAsMermaidFence(diagramContent: string): string {
 }
 
 /** Bloque completo §3: heading + fence mermaid derivado del SQL. */
-export function buildErDiagramSectionBlockFromSql(sql: string): string | null {
-  const diagram = sqlToErDiagramContent(sql);
+export function buildErDiagramSectionBlockFromSql(
+  sql: string,
+  options?: Paso0ErDiagramOptions,
+): string | null {
+  const diagram = sqlToErDiagramContent(sql, options);
   if (!diagram) return null;
   return `\n\n### Diagrama entidad-relación\n\n${wrapErDiagramAsMermaidFence(diagram)}\n\n`;
 }
@@ -413,8 +455,9 @@ export function buildErDiagramSectionBlockFromSql(sql: string): string | null {
 function suggestErDiagram(
   sectionBody: string,
   insertAfterMarker: string = "## 3. Modelo de Datos",
+  paso0Catalog?: Paso0DecisionCatalog | null,
 ): DiagramSuggestion | null {
-  const block = buildErDiagramSectionBlockFromSql(sectionBody);
+  const block = buildErDiagramSectionBlockFromSql(sectionBody, { paso0Catalog });
   if (!block) return null;
   return {
     section: "3. Modelo de Datos",
@@ -452,15 +495,19 @@ function suggestFrontendFlowchart(section4Body: string, draft: string): DiagramS
  * Analiza el MDD y devuelve sugerencias de diagramas Mermaid a insertar (ER, estados, flujo).
  * Determinístico: basado en reglas sobre el contenido de cada sección.
  */
-export function suggestMddDiagrams(draft: string): DiagramSuggestion[] {
+export function suggestMddDiagrams(
+  draft: string,
+  options?: Paso0ErDiagramOptions,
+): DiagramSuggestion[] {
   const trimmed = (draft || "").trim();
   if (trimmed.length < 200) return [];
+  const paso0Catalog = options?.paso0Catalog ?? null;
 
   const suggestions: DiagramSuggestion[] = [];
 
   const sectionModelo = getSectionBody(trimmed, /##\s*(2|3)\.\s*Modelo\s+(?:de\s+)?datos/i);
   if (sectionModelo) {
-    const er = suggestErDiagram(sectionModelo.body, sectionModelo.matchedHeading);
+    const er = suggestErDiagram(sectionModelo.body, sectionModelo.matchedHeading, paso0Catalog);
     if (er) suggestions.push(er);
   }
 
@@ -514,11 +561,18 @@ export function injectErDiagramBlockIntoDraft(draft: string, mermaidBlock: strin
  * Regenera el diagrama ER de la sección Modelo de datos (## 2 o ## 3) a partir del SQL (CREATE TABLE).
  * Reemplaza el bloque existente si hay uno, o lo inserta al final. Devuelve el draft actualizado o null si no hay SQL.
  */
-export function regenerateErDiagramFromSql(draft: string): string | null {
+export function regenerateErDiagramFromSql(
+  draft: string,
+  options?: Paso0ErDiagramOptions,
+): string | null {
   const trimmed = (draft || "").trim();
   const sectionModelo = getSectionBody(trimmed, /##\s*(2|3)\.\s*Modelo\s+(?:de\s+)?datos/i);
   if (!sectionModelo) return null;
-  const suggestion = suggestErDiagram(sectionModelo.body, sectionModelo.matchedHeading);
+  const suggestion = suggestErDiagram(
+    sectionModelo.body,
+    sectionModelo.matchedHeading,
+    options?.paso0Catalog ?? null,
+  );
   if (!suggestion) return null;
   let newBody: string;
   if (/```mermaid\s*[\s\S]*?erDiagram/i.test(sectionModelo.body)) {

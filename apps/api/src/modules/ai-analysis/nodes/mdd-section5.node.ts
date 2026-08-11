@@ -22,6 +22,7 @@ import {
   preflightSanitizeDraftForSection5,
 } from "../utils/mdd-tail-parallel.util.js";
 import { SECTION5_MDD_PROMPT } from "../prompts/load-prompts.js";
+import { formatPaso0BusinessRulesForSection5 } from "@theforge/shared-types";
 import type { MDDStateType } from "../state/index.js";
 import { getUserBrief } from "../utils/mdd-user-brief.js";
 import { getInternalDirectivesContext } from "../utils/mdd-mesh-topology.js";
@@ -73,6 +74,10 @@ export function createMddSection5Node(llm: BaseChatModel) {
       const dbgaCore = (state.dbgaContent ?? "").trim();
       const dbgaBlock = dbgaCore ? `**Capacidades de negocio (DBGA):**\n${dbgaCore.slice(0, 3000)}\n\n` : "";
 
+      const paso0RulesBlock = state.paso0DecisionCatalog
+        ? `${formatPaso0BusinessRulesForSection5(state.paso0DecisionCatalog)}\n\n`
+        : "";
+
       const draftForLlm = buildSection5LlmContext(currentDraft);
       const draftBlock =
         "**Borrador de referencia (solo §1–§4 + DBGA + alcance; regenera EXCLUSIVAMENTE ## 5):**\n" +
@@ -80,7 +85,7 @@ export function createMddSection5Node(llm: BaseChatModel) {
 
       const directivesBlock = getInternalDirectivesContext(state, "section5");
 
-      const prompt = `${SECTION5_MDD_PROMPT}\n\n---\n${briefBlock}${scopeBlock}${dbgaBlock}${draftBlock}${directivesBlock ? `---\n${directivesBlock}\n\n` : ""}`;
+      const prompt = `${SECTION5_MDD_PROMPT}\n\n---\n${briefBlock}${scopeBlock}${dbgaBlock}${paso0RulesBlock}${draftBlock}${directivesBlock ? `---\n${directivesBlock}\n\n` : ""}`;
       const startedAt = Date.now();
 
       const response = await invokeLlmWithRetry(llm, [new HumanMessage(prompt)], { tag: "Section5" });

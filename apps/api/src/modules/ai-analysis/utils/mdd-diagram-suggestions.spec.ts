@@ -1,5 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   injectMddDiagrams,
   regenerateErDiagramFromSql,
@@ -7,6 +10,10 @@ import {
   suggestMddDiagrams,
   wrapErDiagramAsMermaidFence,
 } from "./mdd-diagram-suggestions.js";
+import { extractPaso0DecisionCatalog } from "../phase0/paso0-pasted-definitive.util.js";
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../../../../../");
+const paso0Catalog = extractPaso0DecisionCatalog(readFileSync(join(repoRoot, "STEP_0-review.md"), "utf8"));
 
 const sampleSql = `CREATE TABLE tenants (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -91,5 +98,45 @@ ${sampleSql}
     const out = regenerateErDiagramFromSql(draft);
     assert.ok(out);
     assert.match(out!, /```mermaid[\s\S]*erDiagram[\s\S]*```/);
+  });
+});
+
+describe("sqlToErDiagramContent con catálogo Paso 0", () => {
+  it("excluye entidades prohibidas/inventadas del erDiagram", () => {
+    assert.ok(paso0Catalog);
+    const sql = `
+CREATE TABLE channels (id UUID PRIMARY KEY);
+CREATE TABLE contexts (id UUID PRIMARY KEY);
+CREATE TABLE messages (id UUID PRIMARY KEY);
+CREATE TABLE llm_configs (id UUID PRIMARY KEY);
+CREATE TABLE users (id UUID PRIMARY KEY);
+`;
+    const out = sqlToErDiagramContent(sql, { paso0Catalog: paso0Catalog! });
+    assert.ok(out);
+    assert.doesNotMatch(out!, /\bchannels\b/i);
+    assert.doesNotMatch(out!, /\bllm_configs\b/i);
+    assert.match(out!, /\bcontexts\b/i);
+    assert.match(out!, /\bmessages\b/i);
+    assert.match(out!, /\busers\b/i);
+  });
+
+  it("regenerateErDiagramFromSql respeta catálogo Paso 0", () => {
+    assert.ok(paso0Catalog);
+    const draft = `## 3. Modelo de Datos
+
+\`\`\`sql
+CREATE TABLE channels (id UUID PRIMARY KEY);
+CREATE TABLE contexts (id UUID PRIMARY KEY);
+CREATE TABLE agent_runs (id UUID PRIMARY KEY);
+\`\`\`
+
+## 4. Contratos de API`;
+    const out = regenerateErDiagramFromSql(draft, { paso0Catalog: paso0Catalog! });
+    assert.ok(out);
+    const erBlock = out!.match(/```mermaid[\s\S]*?```/)?.[0] ?? "";
+    assert.ok(erBlock.length > 0);
+    assert.doesNotMatch(erBlock, /\bchannels\b/i);
+    assert.doesNotMatch(erBlock, /\bagent_runs\b/i);
+    assert.match(erBlock, /\bcontexts\b/i);
   });
 });

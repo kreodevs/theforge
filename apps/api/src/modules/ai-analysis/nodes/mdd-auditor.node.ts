@@ -73,9 +73,20 @@ const MAX_TOOL_LOOPS = 3;
 function resolveAuditorDecisionForSubstantialDraft(
   draft: string,
   baseDecision: "done" | "clarifier" | "blackboard",
-  _options?: { hasBrdTraceGaps?: boolean },
+  options?: { hasBrdTraceGaps?: boolean; deliveryGateActive?: boolean },
 ): "done" | "clarifier" | "blackboard" {
   if (baseDecision === "blackboard") return "blackboard";
+  if (
+    draftIsSubstantialForScopedRepair(draft) &&
+    (options?.deliveryGateActive === true || draft.length > 12_000)
+  ) {
+    LOG(
+      "draft sustancial (%s chars) → score-only (delivery=%s; gate en prepare_output)",
+      draft.length,
+      options?.deliveryGateActive === true,
+    );
+    return "done";
+  }
   if (draftIsSubstantialForScopedRepair(draft)) {
     LOG(
       "draft sustancial (%s chars) → score-only (gaps informativos; gate en prepare_output)",
@@ -348,6 +359,9 @@ export function createMddAuditorNode(
           : ("clarifier" as const);
       const decision = resolveAuditorDecisionForSubstantialDraft(draft, rawDecision, {
         hasBrdTraceGaps: hasBrdToMddTraceabilityBlockers(state.brdContent, draft),
+        deliveryGateActive:
+          state.deliveryGateLoopActive === true ||
+          (state.deliveryGate?.ok === false && (state.deliveryGateAttempt ?? 0) > 0),
       });
       const currentIteration = state.mddIteration ?? 0;
       const iteration = currentIteration + (decision === "clarifier" ? 1 : 0);

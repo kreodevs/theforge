@@ -3,6 +3,7 @@
  */
 
 import type { MDDStateType } from "../state/index.js";
+import { isWorkspaceChatPaso0Catalog } from "@theforge/shared-types";
 import { mergeMddStructured } from "./mdd-merge-structured.js";
 import {
   apiContractsChunkPromptBlock,
@@ -51,14 +52,25 @@ export async function runApiContractsArchitectWithChunks(
     if (index === 0 || !opts?.chunkFn) return baseFn;
     return (chunkState) => opts.chunkFn!(index, chunkState);
   };
-  const chunkResults = await Promise.all(
-    chunks.map((chunk, index) => {
-      const chunkGoal = apiContractsChunkPromptBlock(chunk, chunks.length);
-      const priorGoal = state.currentStepGoal?.trim();
-      const mergedGoal = priorGoal ? `${priorGoal}\n\n${chunkGoal}` : chunkGoal;
-      return resolveChunkFn(index)({ ...state, mddDraft: draft, currentStepGoal: mergedGoal });
-    }),
-  );
+  const runChunk = (chunk: (typeof chunks)[number], index: number) => {
+    const chunkGoal = apiContractsChunkPromptBlock(chunk, chunks.length);
+    const priorGoal = state.currentStepGoal?.trim();
+    const mergedGoal = priorGoal ? `${priorGoal}\n\n${chunkGoal}` : chunkGoal;
+    return resolveChunkFn(index)({ ...state, mddDraft: draft, currentStepGoal: mergedGoal });
+  };
+
+  const useSequentialChunks =
+    state.paso0DecisionCatalog != null &&
+    isWorkspaceChatPaso0Catalog(state.paso0DecisionCatalog);
+
+  const chunkResults: Partial<MDDStateType>[] = [];
+  if (useSequentialChunks) {
+    for (let index = 0; index < chunks.length; index++) {
+      chunkResults.push(await runChunk(chunks[index]!, index));
+    }
+  } else {
+    chunkResults.push(...(await Promise.all(chunks.map((chunk, index) => runChunk(chunk, index)))));
+  }
 
   const bodies: string[] = [];
   let mergedStructured = state.mddStructured;

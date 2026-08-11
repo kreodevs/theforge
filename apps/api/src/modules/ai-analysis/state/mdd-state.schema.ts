@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { paso0DecisionCatalogSchema } from "@theforge/shared-types";
 import { mddStructuredSchema } from "./mdd-structured.schema.js";
 
 /** Alineado con `Project.complexity` (Prisma): gobierna apéndices de rigor en Clarifier / Arquitecto / Auditor y el desglose del estimador en vivo. */
@@ -49,6 +50,8 @@ export const mddStateSchema = z.object({
   dbgaContent: z.string(),
   /** BRD stage content (business capabilities) for domain inventory / delivery gate. */
   brdContent: z.string().optional(),
+  /** Catálogo D-ID de Paso 0 definitivo pegado (desde phase0SummaryContent). */
+  paso0DecisionCatalog: paso0DecisionCatalogSchema.optional(),
   /** Clarified scope/requirements from Clarifier (feeds Security & Integration). */
   clarifiedScope: z.string(),
   /** Structured MDD (source of truth when present); markdown is derived from this. */
@@ -182,6 +185,8 @@ export const mddStateSchema = z.object({
       "data_model",
       "api_contracts",
       "integration",
+      "security",
+      "security_integration",
       "clarifier",
       "section5",
     ])
@@ -203,6 +208,7 @@ export type MDDState = z.infer<typeof mddStateSchema>;
 export const defaultMDDState: MDDState = {
   dbgaContent: "",
   brdContent: undefined,
+  paso0DecisionCatalog: undefined,
   clarifiedScope: "",
   mddStructured: undefined,
   mddDraft: "",

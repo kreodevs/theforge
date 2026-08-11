@@ -83,16 +83,24 @@ function buildMddDraftWithSection6(state: MDDStateType, seguridad: MddSeguridadI
 }
 
 /** Creates the MDD Security Architect node. Outputs structured seguridad; merge into mddStructured and derive mddDraft. */
+/** Umbral de borrador (chars) para acotar contexto §6 en reintentos del gate. */
+const TRIMMED_TAIL_CONTEXT_DRAFT_LEN = 60_000;
+
 export function createMddSecurityNode(llm: BaseChatModel, opts?: MddSecurityNodeOptions) {
   return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {
     const sliceOnly = opts?.sliceOnly === true;
-    LOG("entry mddDraftLen=%s sliceOnly=%s", (state.mddDraft ?? "").length, sliceOnly);
+    const draftLen = (state.mddDraft ?? "").length;
+    const useTrimmedContext =
+      opts?.trimmedTailContext === true ||
+      state.deliveryGateLoopActive === true ||
+      draftLen > TRIMMED_TAIL_CONTEXT_DRAFT_LEN;
+    LOG("entry mddDraftLen=%s sliceOnly=%s trimmedContext=%s", draftLen, sliceOnly, useTrimmedContext);
     try {
       const brief = getUserBrief(state);
       const briefBlock = brief
         ? `**Objetivo del documento (lo que el usuario pide):** ${brief}\n\n**Tu tarea:** Elaborar la sección 6. Seguridad para una aplicación que cumple este objetivo.\n\n---\n\n`
         : "";
-      const draftBlock = opts?.trimmedTailContext
+      const draftBlock = useTrimmedContext
         ? buildTrimmedTailAgentContext(state.mddDraft ?? "")
         : (state.mddDraft ?? "(vacío)");
       const contextParts = [
@@ -100,7 +108,7 @@ export function createMddSecurityNode(llm: BaseChatModel, opts?: MddSecurityNode
         "**Alcance clarificado:**",
         state.clarifiedScope || "(vacío)",
         "",
-        opts?.trimmedTailContext
+        useTrimmedContext
           ? "**Contexto MDD (referencia acotada):**"
           : "**Borrador actual del MDD:**",
         draftBlock,
@@ -135,7 +143,7 @@ export function createMddSecurityNode(llm: BaseChatModel, opts?: MddSecurityNode
       const response = await invokeLlmWithRetry(llm, [new HumanMessage(prompt)], {
         tag: "Security",
         hardTimeoutMs: resolveMddTailNodeHardTimeoutMs(),
-        maxAttempts: 2,
+        maxAttempts: state.deliveryGateLoopActive === true ? 3 : 2,
       });
       const rawText = response ? extractLlmText(response) : "";
       const text = stripThinkingTags(rawText);

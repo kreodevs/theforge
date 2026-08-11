@@ -400,6 +400,8 @@ export async function createMddGraph(
 
   function routeAfterPrepareOutput(state: MDDStateType): string {
     if (state.deliveryGateLoopActive === true) {
+      if (state.deliveryGateFixTarget === "security_integration") return "security_integration";
+      if (state.deliveryGateFixTarget === "security") return "security_integration";
       if (state.deliveryGateFixTarget === "integration") return "integration";
       if (state.deliveryGateFixTarget === "clarifier") return "clarifier";
       if (state.deliveryGateFixTarget === "section5") return "section5";
@@ -600,6 +602,7 @@ export async function createMddGraph(
       data_model: "data_model",
       api_contracts: "api_contracts",
       integration: "integration",
+      security_integration: "security_integration",
       clarifier: "clarifier",
       section5: "section5",
       structured_hydrator: "structured_hydrator",
@@ -803,6 +806,8 @@ export async function createMddGraphWithManager(
   function routeAfterPrepareOutput(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
     if (state.deliveryGateLoopActive === true) {
+      if (state.deliveryGateFixTarget === "security_integration") return "security_integration";
+      if (state.deliveryGateFixTarget === "security") return "security";
       if (state.deliveryGateFixTarget === "integration") return "integration";
       if (state.deliveryGateFixTarget === "clarifier") return "clarifier";
       if (state.deliveryGateFixTarget === "section5") return "section5";
@@ -918,10 +923,12 @@ export async function createMddGraphWithManager(
   }
   function routeAfterSecurityIntegration(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
+    if (shouldShortCircuitGateLoopFix(state)) return "prepare_output";
     return "format_after_redactor";
   }
   function routeAfterSecurity(state: MDDStateType): string {
     if (state.executorControlled === true) return "executor";
+    if (shouldShortCircuitGateLoopFix(state)) return "prepare_output";
     return nextInSections(state, "security") ?? "integration";
   }
   function routeAfterIntegration(state: MDDStateType): string {
@@ -1188,6 +1195,8 @@ export async function createMddGraphWithManager(
       data_model: "data_model",
       api_contracts: "api_contracts",
       integration: "integration",
+      security: "security",
+      security_integration: "security_integration",
       clarifier: "clarifier",
       section5: "section5",
       structured_hydrator: "structured_hydrator",

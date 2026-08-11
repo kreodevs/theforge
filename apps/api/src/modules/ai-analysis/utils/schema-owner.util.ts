@@ -3,6 +3,7 @@
  */
 
 import type { MddStructured } from "../state/mdd-structured.schema.js";
+import type { Paso0DecisionCatalog } from "@theforge/shared-types";
 import { regenerateErDiagramFromSql } from "./mdd-diagram-suggestions.js";
 import {
   applyDeterministicCrossConsistencyFixes,
@@ -29,11 +30,12 @@ export function detectSection3CompositionBlockers(draft: string): string[] {
 export function composeSection3FromStructured(
   draft: string,
   _mddStructured?: MddStructured | null,
+  options?: { paso0Catalog?: Paso0DecisionCatalog | null },
 ): string {
   if (!draft?.trim()) return draft;
   let out = sanitizeAllSqlBlocksInDraft(draft);
   out = applyDeterministicCrossConsistencyFixes(out);
-  out = ensureSecurityTableStubsFromSection6(out);
+  out = ensureSecurityTableStubsFromSection6(out, { paso0Catalog: options?.paso0Catalog ?? null });
   out = ensureCredentialStorageInSection6(out);
   out = fixSection7OutboxNarrative(out);
   out = fixJwtAlgorithmCoherence(out);

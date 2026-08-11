@@ -48,6 +48,7 @@ export function buildInventoryFromMddState(state: MDDStateType) {
       dbgaMarkdown: dbga || null,
       mddMarkdown: draft || null,
       mddEntities,
+      paso0Catalog: state.paso0DecisionCatalog ?? null,
     }),
     mddEntities,
   };
@@ -62,7 +63,7 @@ export function domainInventoryPromptBlock(
   if (!brd && !dbga) return "";
   if (inventory.capabilities.length === 0 && inventory.suggestedEntities.length === 0) return "";
   const maxChars = options?.maxChars ?? 3_500;
-  return "\n\n" + formatDomainInventoryForPrompt(inventory, maxChars);
+  return "\n\n" + formatDomainInventoryForPrompt(inventory, maxChars, state.paso0DecisionCatalog ?? null);
 }
 
 /** True when §3 is auth-only while BRD has substantial domain capabilities. */

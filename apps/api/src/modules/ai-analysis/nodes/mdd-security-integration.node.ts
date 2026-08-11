@@ -19,8 +19,9 @@ const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:SecurityInteg
  * Ahorra ~60s vs ejecución secuencial (Integration se solapa con Security).
  */
 export function createMddSecurityIntegrationNode(llm: BaseChatModel) {
-  const securityFn = createMddSecurityNode(llm);
-  const integrationFn = createMddIntegrationNode(llm);
+  const tailOpts = { trimmedTailContext: true } as const;
+  const securityFn = createMddSecurityNode(llm, tailOpts);
+  const integrationFn = createMddIntegrationNode(llm, tailOpts);
 
   return async (state: MDDStateType): Promise<Partial<MDDStateType>> => {
     LOG("entry parallel mddDraftLen=%s", (state.mddDraft ?? "").length);

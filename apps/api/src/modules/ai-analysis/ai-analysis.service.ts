@@ -41,7 +41,11 @@ import { pickPrimaryStage } from "../projects/stage-helpers.js";
 import { TheForgeService } from "../theforge/theforge.service.js";
 import { AgentSupervisorService } from "../agent-supervisor/agent-supervisor.service.js";
 import { EpisodicMemoryKind, type ComplexityLevel } from "@theforge/database";
-import { contentIncludesVisionBlock, peelDocumentBodyForPersist, type ChatImagePart, type MddDeliveryGateResult, expandMddSectionsForSync, MDD_SECTION_TITLES } from "@theforge/shared-types";
+import { contentIncludesVisionBlock, peelDocumentBodyForPersist, type ChatImagePart, type MddDeliveryGateResult, type Paso0DecisionCatalog, expandMddSectionsForSync, MDD_SECTION_TITLES } from "@theforge/shared-types";
+import {
+  isExternalPastedPaso0ForMddSeed,
+  resolvePaso0DecisionCatalogForMdd,
+} from "./phase0/paso0-pasted-definitive.util.js";
 import { formatVisionContextBlock, mergeUserTextWithVisionBlock } from "../ai/utils/vision-context.util.js";
 import { markdownToMddStructured } from "./utils/mdd-markdown-to-structured.js";
 import { HumanMessage } from "@langchain/core/messages";
@@ -103,7 +107,7 @@ import {
   formatGovernancePatternCorrectionsNotice,
   resolveGovernancePatternIncompatibilities,
 } from "@theforge/shared-types/mdd-governance-pattern-compat";
-import { mddStreamDeliveryGateFields } from "./utils/mdd-delivery-gate.util.js";
+import { isStreamPrevalidatedDeliveryGate, mddStreamDeliveryGateFields } from "./utils/mdd-delivery-gate.util.js";
 import { cleanDocumentContent } from "../sessions/document-content.util.js";
 import type { MddJobData, MddJobProgress, MddJobResult } from "./mdd/mdd-queue.service.js";
 import { isMddUserCancellationError } from "./mdd/mdd-job-error.util.js";
@@ -665,14 +669,18 @@ export class AiAnalysisService {
   ): AsyncGenerator<StreamProgressEvent> {
     let estimationStage: string | undefined;
     let brdContent: string | null = null;
+    let paso0Catalog: Paso0DecisionCatalog | undefined;
     let preservedGovernance: string | null = null;
     let existingStageMdd = "";
+    let externalPastedPaso0 = false;
     if (projectId?.trim()) {
       const p = await this.prisma.project.findUnique({
         where: { id: projectId.trim() },
         include: { stages: { orderBy: { ordinal: "asc" } } },
     });
       if (p) {
+        externalPastedPaso0 = isExternalPastedPaso0ForMddSeed(p.phase0SummaryContent, p.dbgaContent);
+        paso0Catalog = resolvePaso0DecisionCatalogForMdd(p.phase0SummaryContent, p.dbgaContent) ?? undefined;
         const route = await this.agentSupervisor.resolveRouteFromProject(p, stageId);
         estimationStage = route.stageId;
         this.estimationService.cacheProjectComplexity(
@@ -694,7 +702,12 @@ export class AiAnalysisService {
         }
       }
     }
-    const { opts: prepareOpts, gateRef: prepareGateRef } = createPrepareOptsWithGate({ preservedGovernance });
+    const { opts: prepareOpts, gateRef: prepareGateRef } = createPrepareOptsWithGate({
+      preservedGovernance,
+      paso0Catalog,
+      brdMarkdown: brdContent,
+      dbgaMarkdown: dbgaContent,
+    });
     const uiMcpFrontendLibraryLabel = await this.getUiMcpLibraryLabel();
     const nodeStart = createMddNodeStartTracker();
     let graph: Awaited<ReturnType<typeof createMddGraph>>;
@@ -718,17 +731,25 @@ export class AiAnalysisService {
     let dbgaEffective =
       dbgaContent.trim() ||
       "(Sin Benchmark. El usuario no tiene un documento de Benchmark; genera un MDD base con contexto, alcance y requisitos que el usuario podrá refinar.)";
-    const brdPreamble = composeBrdPreamble(brdContent);
+    const brdPreamble = composeBrdPreamble(brdContent, paso0Catalog);
     if (brdPreamble) dbgaEffective = brdPreamble + dbgaEffective;
+    const seedMddFromExistingStage =
+      !externalPastedPaso0 && mddHasSubstantialBody(existingStageMdd);
+    if (externalPastedPaso0 && mddHasSubstantialBody(existingStageMdd) && projectId?.trim()) {
+      this.logger.log(
+        `MDD pipeline: Paso 0 pegado externo — borrador stage ignorado projectId=${projectId.trim()}`,
+      );
+    }
     const initialState: MDDState = {
       ...defaultMDDState,
       dbgaContent: dbgaEffective,
       brdContent: (brdContent ?? "").trim() || undefined,
+      paso0DecisionCatalog: paso0Catalog,
       projectId: projectId?.trim(),
       ...agentCtx,
       ...(preservedGovernance
         ? {
-            mddDraft: mddHasSubstantialBody(existingStageMdd)
+            mddDraft: seedMddFromExistingStage
               ? ensureMddGovernanceSection(existingStageMdd, preservedGovernance)
               : buildMddWithGovernanceSkeleton("Master Design Document", preservedGovernance),
           }
@@ -948,8 +969,12 @@ export class AiAnalysisService {
     }
     const agentCtx = await this.buildMddAgentContext(projectId, stageIdFromClient);
     const existingMdd = (initialMddDraft ?? "").trim();
+    const managerPaso0Catalog =
+      resolvePaso0DecisionCatalogForMdd(projRow?.phase0SummaryContent, projRow?.dbgaContent) ?? undefined;
     const { opts: managerPrepareOpts, gateRef: managerGateRef } = createPrepareOptsWithGate({
       preservedGovernance: extractGovernanceSection(existingMdd),
+      paso0Catalog: managerPaso0Catalog,
+      brdMarkdown: brdContent,
     });
     const rawInitial = (initialMessage ?? "").trim();
     const looksLikeMddDocument =
@@ -977,12 +1002,14 @@ export class AiAnalysisService {
     }
     let dbgaEffective = (dbgaContent || projRow?.dbgaContent || projRow?.phase0SummaryContent || "").trim()
       || "(Sin Benchmark. El usuario no tiene un documento de Benchmark; genera un MDD base.)";
-    const brdPreamble = composeBrdPreamble(brdContent);
+    const paso0Catalog = managerPaso0Catalog;
+    const brdPreamble = composeBrdPreamble(brdContent, paso0Catalog);
     if (brdPreamble) dbgaEffective = brdPreamble + dbgaEffective;
     const initialState: MDDState = {
       ...defaultMDDState,
       dbgaContent: dbgaEffective,
       brdContent: (brdContent ?? "").trim() || undefined,
+      paso0DecisionCatalog: paso0Catalog,
       lastUserMessage,
       mddDraft: existingMdd || defaultMDDState.mddDraft,
       projectId: projectId?.trim(),
@@ -2377,6 +2404,8 @@ export class AiAnalysisService {
     // intento, así que sin este baseline el esqueleto del Clarificador del intento 2 pisa
     // el MDD bueno del intento 1 (job 92: 70k → 3084).
     const storedBaselineLen = peelDocumentBodyForPersist(resolvedPatterns.stageMddContent).trim().length;
+    let lastStreamDeliveryGate: import("@theforge/shared-types").MddDeliveryGateResult | undefined;
+    let lastStreamValidatedMarkdown = "";
 
     const persistMarkdown = async (markdown: string, finalize: boolean): Promise<void> => {
       const cleaned = cleanDocumentContent(markdown);
@@ -2392,11 +2421,47 @@ export class AiAnalysisService {
         return;
       }
       lastPersistedLen = cleaned.length;
-      await this.projects.persistMddFromBackgroundJob(projectId, markdown, {
-        stageId: stageId?.trim() || undefined,
-        finalize,
-        lockedPatternIds: [...lockedPatternIds],
-      });
+      const persistOnce = async (body: string, gate?: typeof lastStreamDeliveryGate) =>
+        this.projects.persistMddFromBackgroundJob(projectId, body, {
+          stageId: stageId?.trim() || undefined,
+          finalize,
+          lockedPatternIds: [...lockedPatternIds],
+          ...(finalize && gate
+            ? { streamValidatedMarkdown: body, streamDeliveryGate: gate }
+            : {}),
+        });
+
+      try {
+        await persistOnce(
+          markdown,
+          finalize ? lastStreamDeliveryGate : undefined,
+        );
+      } catch (err) {
+        const gateOk = isStreamPrevalidatedDeliveryGate(lastStreamDeliveryGate);
+        const streamMd = (lastStreamValidatedMarkdown || markdown).trim();
+        if (finalize && gateOk && streamMd.length >= 48) {
+          this.logger.warn(
+            `MDD job ${mode} (${projectId}): persist gate falló tras stream ok — reintento con artefacto stream (${streamMd.length} chars)`,
+          );
+          try {
+            await persistOnce(streamMd, lastStreamDeliveryGate);
+          } catch (retryErr) {
+            onProgress({
+              phase: "failed",
+              message: retryErr instanceof Error ? retryErr.message : String(retryErr),
+            });
+            throw retryErr;
+          }
+        } else {
+          if (finalize) {
+            onProgress({
+              phase: "failed",
+              message: err instanceof Error ? err.message : String(err),
+            });
+          }
+          throw err;
+        }
+      }
       onProgress({ phase: finalize ? "persisted" : "draft", mddLength: cleaned.length });
     };
 
@@ -2436,6 +2501,8 @@ export class AiAnalysisService {
           };
         } else if (event.type === "done" && event.markdown) {
           finalMarkdown = event.markdown;
+          lastStreamValidatedMarkdown = event.markdown;
+          if (event.deliveryGate) lastStreamDeliveryGate = event.deliveryGate;
           // Section regen: persist without hard delivery gate. The gate is designed for
           // full pipeline runs; a single-section regen shouldn't be blocked because other
           // sections are missing/corrupt (that's exactly what the user is trying to fix

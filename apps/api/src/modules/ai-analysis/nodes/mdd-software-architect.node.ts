@@ -74,6 +74,7 @@ import { getInternalDirectivesContext, extractInternalDirectives } from "../util
 import { softwareArchitectComplexityAppendix } from "../utils/mdd-complexity-rigor.js";
 import { buildUiMcpFrontendArchitectHint } from "../utils/mdd-inject-ui-mcp-frontend.util.js";
 import { extractLlmText, invokeLlmWithRetry } from "../utils/mdd-llm-retry.util.js";
+import { resolveMddScopedArchitectHardTimeoutMs } from "../utils/mdd-llm-timeout.util.js";
 import { invokeScopedArchitectLlmWithHeadingCap } from "../utils/mdd-scoped-stream.util.js";
 import { buildArchitectScopedContext } from "../utils/build-architect-scoped-context.util.js";
 import { logMddLlmMetrics, measureMddLlmCall } from "../utils/mdd-llm-metrics.util.js";
@@ -513,7 +514,7 @@ export function createMddSoftwareArchitectNode(
     const llmWithTools = llm.bindTools && toolsToUse.length > 0 ? llm.bindTools(toolsToUse) : llm;
     const maxToolLoops = forgeTools.length > 0 ? MAX_ARCHITECT_TOOL_LOOPS_FORGE : MAX_ARCHITECT_TOOL_LOOPS;
 
-    LOG("entry mddDraftLen=%s tools=%s (allowed=%s)", (state.mddDraft ?? "").length, toolsToUse.length, allowed?.length ?? "all");
+    LOG("entry scope=%s mddDraftLen=%s tools=%s (allowed=%s)", scope, (state.mddDraft ?? "").length, toolsToUse.length, allowed?.length ?? "all");
     if (state.clarifiedScope) LOG("Context/Scope received: %s...", state.clarifiedScope.slice(0, 100));
     LOG("Draft Preview (Section 2 search): %s", (state.mddDraft ?? "").match(/##\s*2\.[^#]*/)?.[0]?.slice(0, 100) ?? "Not found");
     const startedAt = Date.now();
@@ -599,7 +600,11 @@ export function createMddSoftwareArchitectNode(
             "../../engine/compose-section3-from-inventory.util.js"
           );
           const { inventory } = buildInventoryFromMddState(state);
-          const schemaBlock = domainSchemaCompositionPromptBlock(inventory, draftTrimmed);
+          const schemaBlock = domainSchemaCompositionPromptBlock(
+            inventory,
+            draftTrimmed,
+            state.paso0DecisionCatalog ?? null,
+          );
           if (schemaBlock) contextParts.unshift(schemaBlock, "");
         } catch {
           /* optional */
@@ -757,6 +762,8 @@ export function createMddSoftwareArchitectNode(
       const architectPrompt = softwareArchitectMddPrompt(scope);
       const prompt = `${scopePrefix ? `${scopePrefix}\n\n---\n\n` : ""}${architectPrompt}${softwareArchitectComplexityAppendix(state.mddComplexity)}\n\n---\n${context}`;
       const messages = [new HumanMessage(prompt)];
+      const scopedHardTimeoutMs = resolveMddScopedArchitectHardTimeoutMs();
+      LOG("invoke scope=%s promptChars=%s tools=%s hardTimeoutMs=%s", scope, prompt.length, toolsToUse.length, scopedHardTimeoutMs);
 
       let text = "";
       if (toolsToUse.length > 0) {
@@ -768,10 +775,19 @@ export function createMddSoftwareArchitectNode(
           // tools hasta que termina. Ver CHANGELOG [Unreleased] → Fixed →
           // "SoftwareArchitect devuelve LLM vacío".
           const isFinalIteration = loopCount === maxToolLoops - 1;
-          const response = isFinalIteration
-            ? await invokeLlmWithRetry(llmWithTools, messages, { tag: "SoftwareArchitect:tools" })
-            : await llmWithTools.invoke(messages);
+          const toolTag = `SoftwareArchitect:${scope}:tools-loop-${loopCount}`;
+          const response = await invokeLlmWithRetry(llmWithTools, messages, {
+            tag: isFinalIteration ? "SoftwareArchitect:tools" : toolTag,
+            acceptToolCallsWithoutContent: !isFinalIteration,
+            hardTimeoutMs: scopedHardTimeoutMs,
+            maxAttempts: isFinalIteration ? 3 : 2,
+          });
           if (!response) {
+            if (scope !== "full") {
+              throw new Error(
+                `[MDD:SoftwareArchitect] scope=${scope} LLM sin respuesta tras timeout/reintentos (tools loop iter=${loopCount})`,
+              );
+            }
             LOG("tool-loop LLM sin respuesta tras reintentos (iter=%s); saliendo del loop", loopCount);
             break;
           }
@@ -806,8 +822,17 @@ export function createMddSoftwareArchitectNode(
           scope !== "full"
             ? await invokeScopedArchitectLlmWithHeadingCap(llm, messages, {
                 tag: `SoftwareArchitect:scoped-${scope}`,
+                hardTimeoutMs: scopedHardTimeoutMs,
               })
-            : await invokeLlmWithRetry(llm, messages, { tag: "SoftwareArchitect:no-tools" });
+            : await invokeLlmWithRetry(llm, messages, {
+                tag: "SoftwareArchitect:no-tools",
+                hardTimeoutMs: scopedHardTimeoutMs,
+              });
+        if (!response && scope !== "full") {
+          throw new Error(
+            `[MDD:SoftwareArchitect] scope=${scope} LLM sin respuesta tras timeout/reintentos`,
+          );
+        }
         text = response ? extractLlmText(response) : "";
       }
       text = stripThinkingTags(text);

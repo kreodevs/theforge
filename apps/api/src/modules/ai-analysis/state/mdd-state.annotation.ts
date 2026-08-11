@@ -1,5 +1,5 @@
 import { Annotation } from "@langchain/langgraph";
-import type { MddDeliveryGateResult } from "@theforge/shared-types";
+import type { MddDeliveryGateResult, Paso0DecisionCatalog } from "@theforge/shared-types";
 import type { MddStructured } from "./mdd-structured.schema.js";
 import type { AuditorGapsState, MDDAuditorDecision, MddPlanStep } from "./mdd-state.schema.js";
 import type { DeliveryGateFixTarget } from "../utils/mdd-delivery-gate-loop.util.js";
@@ -40,6 +40,8 @@ export const MDDStateAnnotation = Annotation.Root({
   dbgaContent: Annotation<string>(),
   /** BRD stage markdown (capacidades de negocio) — domain fidelity / auth-skew gates. */
   brdContent: Annotation<string | undefined>({ reducer: reducePreferDefined }),
+  /** Catálogo D-ID extraído de Paso 0 definitivo pegado (phase0SummaryContent). */
+  paso0DecisionCatalog: Annotation<Paso0DecisionCatalog | undefined>({ reducer: reducePreferDefined }),
   clarifiedScope: Annotation<string>(),
   mddStructured: Annotation<MddStructured | undefined>({
     reducer: (old, newVal) => newVal !== undefined ? { ...(old ?? {}), ...newVal } : old,
