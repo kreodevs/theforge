@@ -6,6 +6,7 @@ import type { MddDeliveryGateResult } from "@theforge/shared-types";
 import { isAutoRepairableDeliveryGateWarning } from "../../engine/mdd-quality-audit.util.js";
 import type { AuditorGapsState } from "../state/mdd-state.schema.js";
 import type { MDDStateType } from "../state/index.js";
+import { isDeterministicDeliveryGateBlocker } from "./mdd-delivery-gate-autofix.util.js";
 import {
   draftHasPersistableSection4,
   draftHasSubstantialSection2,
@@ -34,6 +35,8 @@ export type DeliveryGateFixTarget =
   | "data_model"
   | "api_contracts"
   | "integration"
+  | "security"
+  | "security_integration"
   | "clarifier"
   | "section5";
 
@@ -87,8 +90,11 @@ const CLARIFIER_BLOCKER_RE =
 
 const DUPLICATE_SECTION_BLOCKER_RE =
   /repite headings canónicos §1–§7|secciones duplicadas por acumulación del pipeline/i;
+const STRANGLER_FIG_BLOCKER_RE = /Strangler Fig documentado/i;
 const SECTION4_TRUNCATED_BLOCKER_RE =
   /§4 Contratos.*truncado|catálogo API insuficiente/i;
+const MISSING_SECTION6_BLOCKER_RE =
+  /secciones obligatorias faltantes:[^.\n]*\b6\.\s*seguridad\b/i;
 const MISSING_SECTION7_BLOCKER_RE =
   /secciones obligatorias faltantes:\s*7\.\s*infraestructura\b/i;
 const MISSING_SECTIONS_67_BLOCKER_RE =
@@ -156,6 +162,42 @@ export function gateHasSection5SubstanceBlocker(blockers: string[]): boolean {
   return blockers.some(
     (b) => SECTION5_BLOCKER_RE.test(b) && !MISSING_SECTIONS_BLOCKER_RE.test(b),
   );
+}
+
+/** True si algún blocker apunta a §6 ausente o insuficiente. */
+export function gateHasSection6SubstanceBlocker(blockers: string[]): boolean {
+  return blockers.some((b) => {
+    if (MISSING_SECTION6_BLOCKER_RE.test(b)) return true;
+    return SECTION6_BLOCKER_RE.test(b) && !MISSING_SECTIONS_BLOCKER_RE.test(b);
+  });
+}
+
+/** Números de sección ausentes en mensajes «Secciones obligatorias faltantes: …». */
+export function extractMissingSectionNumbersFromBlockers(blockers: string[]): Set<number> {
+  const nums = new Set<number>();
+  for (const b of blockers) {
+    if (!MISSING_SECTIONS_BLOCKER_RE.test(b)) continue;
+    for (const m of b.matchAll(/\b([1-7])\.\s/gi)) {
+      nums.add(parseInt(m[1]!, 10));
+    }
+  }
+  return nums;
+}
+
+/** Enruta reparación tail §6/§7: security (solo §6), integration (solo §7) o ambos en paralelo. */
+export function resolveTailSectionFixTarget(items: string[]): DeliveryGateFixTarget {
+  const missing = extractMissingSectionNumbersFromBlockers(items);
+  const needsS6 =
+    missing.has(6) ||
+    items.some((b) => SECTION6_BLOCKER_RE.test(b) && !SECTION3_BLOCKER_RE.test(b));
+  const needsS7 =
+    missing.has(7) ||
+    items.some((b) => INTEGRATION_BLOCKER_RE.test(b) || MISSING_SECTION7_BLOCKER_RE.test(b));
+
+  if (needsS6 && needsS7) return "security_integration";
+  if (needsS6) return "security";
+  if (needsS7) return "integration";
+  return "security_integration";
 }
 
 /**
@@ -269,6 +311,11 @@ export function resolveDeliveryGateFixTarget(
     return resolveSplitArchitectFixTarget(items);
   }
 
+  // Strangler Fig (D-121): sanitize mecánico — no gastar Clarifier ni arquitecto.
+  if (blockersAreOnlyStranglerFig(items)) {
+    return "integration";
+  }
+
   // Prioridad alta: si TODOS los blockers son sólo sobre §5 → section5
   // (más eficiente que regenerar §2-§5 vía software_architect).
   if (items.length > 0 && items.every((b) => SECTION5_BLOCKER_RE.test(b))) {
@@ -280,17 +327,22 @@ export function resolveDeliveryGateFixTarget(
     return "software_architect";
   }
 
+  // Tail §6/§7 antes que Clarifier: §6 faltante no se arregla con cache HIT del Clarifier.
+  if (
+    items.some(
+      (b) =>
+        MISSING_SECTIONS_67_BLOCKER_RE.test(b) ||
+        MISSING_SECTION6_BLOCKER_RE.test(b) ||
+        MISSING_SECTION7_BLOCKER_RE.test(b) ||
+        (SECTION6_BLOCKER_RE.test(b) && !SECTION3_BLOCKER_RE.test(b) && !SECTION4_BLOCKER_RE.test(b)),
+    )
+  ) {
+    return resolveTailSectionFixTarget(items);
+  }
+
   // Clarifier: §1/§2 destruidos pero el resto del doc aún tiene masa (reparación de alcance).
   if (items.some((b) => CLARIFIER_BLOCKER_RE.test(b))) {
     return "clarifier";
-  }
-
-  if (items.some((b) => MISSING_SECTIONS_67_BLOCKER_RE.test(b))) {
-    return "integration";
-  }
-
-  if (items.some((b) => MISSING_SECTION7_BLOCKER_RE.test(b))) {
-    return "integration";
   }
 
   if (items.some((b) => DUPLICATE_SECTION_BLOCKER_RE.test(b))) {
@@ -301,7 +353,7 @@ export function resolveDeliveryGateFixTarget(
     items.some((b) => SECTION6_BLOCKER_RE.test(b) && !SECTION3_BLOCKER_RE.test(b) && !SECTION4_BLOCKER_RE.test(b)) &&
     items.some((b) => INTEGRATION_BLOCKER_RE.test(b) || MISSING_SECTIONS_67_BLOCKER_RE.test(b))
   ) {
-    return "integration";
+    return resolveTailSectionFixTarget(items);
   }
   if (items.some((b) => SECTION4_TRUNCATED_BLOCKER_RE.test(b))) {
     return options?.splitArchitectPipeline ? "api_contracts" : "software_architect";
@@ -315,7 +367,11 @@ export function resolveDeliveryGateFixTarget(
       architectScore++;
     }
   }
-  if (integrationScore > architectScore) return "integration";
+  if (integrationScore > architectScore) {
+    return gateHasSection6SubstanceBlocker(items)
+      ? resolveTailSectionFixTarget(items)
+      : "integration";
+  }
   if (architectScore > integrationScore) {
     return options?.splitArchitectPipeline
       ? resolveSplitArchitectFixTarget(items)
@@ -336,7 +392,12 @@ export function resolveDeliveryGateFixTarget(
   ) {
     return resolveSplitArchitectFixTarget(items);
   }
-  return INTEGRATION_BLOCKER_RE.test(text) ? "integration" : "software_architect";
+  if (INTEGRATION_BLOCKER_RE.test(text)) {
+    return gateHasSection6SubstanceBlocker(items)
+      ? resolveTailSectionFixTarget(items)
+      : "integration";
+  }
+  return "software_architect";
 }
 
 /** Issues del gate que siguen tras auto-reparación — disparan loop de agentes, no bloquean al usuario. */
@@ -377,7 +438,15 @@ export function draftHasSubstantialSections6And7(draft: string): boolean {
 }
 
 /**
- * True si TODOS los blockers son headings duplicados.
+ * Blockers Strangler Fig (D-121): reparables con sanitize determinista — no re-enrutar a Clarifier.
+ */
+export function blockersAreOnlyStranglerFig(blockers: string[]): boolean {
+  const items = blockers.filter((b) => b.trim().length > 0);
+  if (items.length === 0) return false;
+  return items.every((b) => STRANGLER_FIG_BLOCKER_RE.test(b));
+}
+
+/** True si TODOS los blockers son headings duplicados.
  *
  * Duplicar headings es un defecto mecánico de string: `prepareMddForOutput` ya intenta
  * `deduplicateAndReorderMddSections` dos veces (pre-preserve y post-guard) y el persist
@@ -409,12 +478,21 @@ export function shouldClarifierRevisionSkipArchitectPipeline(state: MDDStateType
   );
 }
 
+/** True si TODOS los blockers son reparables sin LLM (Paso 0 / deterministas). */
+export function blockersAreOnlyDeterministicOrPaso0(blockers: string[]): boolean {
+  const items = blockers.filter((b) => b.trim().length > 0);
+  if (items.length === 0) return false;
+  return items.every((b) => isDeterministicDeliveryGateBlocker(b));
+}
+
 export function shouldContinueDeliveryGateLoop(
   gate: MddDeliveryGateResult | undefined,
   attempt: number,
 ): boolean {
   if (!gate || gate.ok) return false;
   if (blockersAreOnlyDuplicateHeadings(gate.blockers)) return false;
+  if (blockersAreOnlyStranglerFig(gate.blockers)) return false;
+  if (blockersAreOnlyDeterministicOrPaso0(gate.blockers)) return false;
   return attempt < MAX_MDD_DELIVERY_GATE_ATTEMPTS;
 }
 

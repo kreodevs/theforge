@@ -1,11 +1,25 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   validateMddForDelivery,
   mddDeliveryGateHasBlockers,
   applyDeliveryGateToSemaphoreStatus,
   mddStreamDeliveryGateFields,
+  isStreamPrevalidatedDeliveryGate,
+  isNearPassMddDeliveryGate,
+  areRecoverablePersistDeliveryGateBlockers,
+  isHardContentDeliveryGateBlocker,
 } from "./mdd-delivery-gate.util.js";
+import { isDeterministicDeliveryGateBlocker } from "./mdd-delivery-gate-autofix.util.js";
+import { repairAndInjectPaso0Section3ForGate, collectMissingPaso0CanonicalTables } from "../../engine/mdd-paso0-enforcement.util.js";
+import { prepareMddMarkdownForPersist } from "./mdd-sanitize/persist-pipeline.js";
+import { preserveValidatedSectionsIfSubstantial } from "./mdd-section-preserve.util.js";
+import { extractPaso0DecisionCatalog } from "../phase0/paso0-pasted-definitive.util.js";
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../../../../../");
 
 const VALID_MDD = `# Master Design Document
 
@@ -123,6 +137,55 @@ Hashing de contraseñas con **Argon2id** (memCost ≥ 64 MiB, timeCost ≥ 3, pa
 `;
 
 describe("validateMddForDelivery", () => {
+  it("isNearPassMddDeliveryGate acepta near-pass con blocker Strangler Fig D-121", () => {
+    const blocker =
+      "[Paso 0 §2] Strangler Fig documentado — incompatible con D-121 (corte por campaña, sin convivencia operativa permanente).";
+    assert.equal(isDeterministicDeliveryGateBlocker(blocker), true);
+    assert.equal(areRecoverablePersistDeliveryGateBlockers([blocker]), true);
+    assert.equal(isHardContentDeliveryGateBlocker(blocker), false);
+    const gate = { ok: false, score: 92, blockers: [blocker], warnings: [] };
+    assert.equal(isNearPassMddDeliveryGate(gate), true);
+    assert.equal(isStreamPrevalidatedDeliveryGate(gate), true);
+  });
+
+  it("isStreamPrevalidatedDeliveryGate acepta near-pass con blocker auth D-003", () => {
+    const blocker =
+      "[Paso 0 §6] Patrones de auth local incompatibles con D-003 (SSO Integral).";
+    assert.equal(isDeterministicDeliveryGateBlocker(blocker), true);
+    assert.equal(areRecoverablePersistDeliveryGateBlockers([blocker]), true);
+    assert.equal(isHardContentDeliveryGateBlocker(blocker), false);
+    const gate = { ok: false, score: 92, blockers: [blocker], warnings: [] };
+    assert.equal(isNearPassMddDeliveryGate(gate), true);
+    assert.equal(isStreamPrevalidatedDeliveryGate(gate), true);
+  });
+
+  it("isNearPassMddDeliveryGate rechaza score=92 con SQL corrupto sin autofix", () => {
+    const blocker =
+      "[Paso 0 §3] SQL con error de sintaxis o CREATE INDEX embebido — reparar §3 antes de persistir.";
+    assert.equal(isHardContentDeliveryGateBlocker(blocker), true);
+    const gate = { ok: false, score: 92, blockers: [blocker], warnings: [] };
+    assert.equal(isNearPassMddDeliveryGate(gate), false);
+    assert.equal(isStreamPrevalidatedDeliveryGate(gate), false);
+  });
+
+  it("§4 JSON corrupto es blocker duro pero reparable vía Paso 0 enforcement", () => {
+    const blocker =
+      "[Paso 0 §4] Bloque ```json inválido en contratos — reparar request/response antes de persistir.";
+    assert.equal(isHardContentDeliveryGateBlocker(blocker), true);
+    assert.equal(isDeterministicDeliveryGateBlocker(blocker), true);
+    assert.equal(areRecoverablePersistDeliveryGateBlockers([blocker]), true);
+  });
+
+  it("isNearPassMddDeliveryGate rechaza secciones duplicadas aunque score>=90", () => {
+    const blocker =
+      "MDD repite headings canónicos §1–§7 (secciones duplicadas por acumulación del pipeline).";
+    assert.equal(isHardContentDeliveryGateBlocker(blocker), true);
+    assert.equal(isDeterministicDeliveryGateBlocker(blocker), true);
+    assert.equal(areRecoverablePersistDeliveryGateBlockers([blocker]), true);
+    const gate = { ok: false, score: 92, blockers: [blocker], warnings: [] };
+    assert.equal(isNearPassMddDeliveryGate(gate), false);
+  });
+
   it("aprueba MDD canónico mínimo (score >= 90, sin blockers)", () => {
     const result = validateMddForDelivery(VALID_MDD);
     assert.equal(result.blockers.length, 0, result.blockers.join("; "));
@@ -623,6 +686,369 @@ describe("validateMddForDelivery — substance check (CHANGELOG [Unreleased])", 
         skipDeterministicRepair: true,
       });
       assert.ok(!result.warnings.some((w) => /scheduled_tasks/.test(w)));
+    });
+  });
+
+  describe("Paso 0 delivery gate blockers", () => {
+    it("bloquea CREATE TABLE inventada en §3 con catálogo", () => {
+      const catalog = extractPaso0DecisionCatalog(readFileSync(join(repoRoot, "STEP_0-review.md"), "utf8"));
+      assert.ok(catalog);
+      const draft = `
+## 1. Contexto
+Workspace Chat corporativo.
+
+## 2. Arquitectura y Stack
+NestJS + React.
+
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE contexts (id UUID PRIMARY KEY);
+CREATE TABLE llm_configs (id UUID PRIMARY KEY);
+CREATE TABLE users (id UUID PRIMARY KEY);
+\`\`\`
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\`
+
+## 4. Contratos de API
+| GET | \`/api/v1/contexts\` | listar |
+
+## 5. Lógica y Edge Cases
+Reglas de negocio sustanciales para validar el gate con contenido mínimo en todas las secciones obligatorias del documento de diseño maestro.
+
+## 6. Seguridad
+SSO Integral corporativo.
+
+## 7. Infraestructura
+Despliegue containerizado.
+`;
+      const result = validateMddForDelivery(draft, {
+        paso0Catalog: catalog,
+        skipDeterministicRepair: true,
+      });
+      assert.ok(result.blockers.some((b) => b.includes("llm_configs")));
+    });
+
+    it("bloquea rutas coherence auto prohibidas en §4", () => {
+      const catalog = extractPaso0DecisionCatalog(readFileSync(join(repoRoot, "STEP_0-review.md"), "utf8"));
+      assert.ok(catalog);
+      const draft = `
+## 1. Contexto
+Contexto sustancial para el gate.
+
+## 2. Arquitectura y Stack
+Stack técnico descrito con suficiente detalle para superar umbrales mínimos de longitud en la sección dos del documento.
+
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE contexts (id UUID PRIMARY KEY);
+CREATE TABLE users (id UUID PRIMARY KEY);
+\`\`\`
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\`
+
+## 4. Contratos de API
+| GET | \`/api/v1/contexts\` | listar |
+| GET | \`/api/v1/channels\` | channels (coherence auto) |
+
+## 5. Lógica y Edge Cases
+Contenido sustancial de reglas y casos borde para cumplir validación de entrega del MDD.
+
+## 6. Seguridad
+Políticas de seguridad corporativas.
+
+## 7. Infraestructura
+Infraestructura de despliegue.
+`;
+      const result = validateMddForDelivery(draft, {
+        paso0Catalog: catalog,
+        skipDeterministicRepair: true,
+      });
+      assert.ok(result.blockers.some((b) => b.includes("coherence auto")));
+    });
+
+    it("bloquea business_events ausente en §3 obligatorio", () => {
+      const catalog = extractPaso0DecisionCatalog(readFileSync(join(repoRoot, "STEP_0-review.md"), "utf8"));
+      assert.ok(catalog);
+      const draft = `
+## 1. Contexto
+Workspace Chat corporativo con ingesta de eventos.
+
+## 2. Arquitectura y Stack
+Stack técnico descrito con suficiente detalle para superar umbrales mínimos de longitud en la sección dos del documento.
+
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE applications (id UUID PRIMARY KEY);
+CREATE TABLE contexts (id UUID PRIMARY KEY);
+CREATE TABLE messages (id UUID PRIMARY KEY);
+\`\`\`
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\`
+
+## 4. Contratos de API
+| POST | \`/ingest/events\` | ingest |
+| POST | \`/attachments\` | upload |
+| GET | \`/ws\` | realtime |
+| POST | \`/break-glass-requests\` | bg |
+| POST | \`/applications/:appId/migration/jobs\` | mig |
+
+## 5. Lógica y Edge Cases
+Contenido sustancial de reglas y casos borde para cumplir validación de entrega del MDD.
+
+## 6. Seguridad
+Políticas de seguridad corporativas.
+
+## 7. Infraestructura
+Infraestructura de despliegue.
+`;
+      const result = validateMddForDelivery(draft, {
+        paso0Catalog: catalog,
+        skipDeterministicRepair: true,
+      });
+      assert.ok(result.blockers.some((b) => b.includes("business_events")));
+    });
+
+    it("bloquea SQL §3 corrupto (CREATE TABLE anidado)", () => {
+      const catalog = extractPaso0DecisionCatalog(readFileSync(join(repoRoot, "STEP_0-review.md"), "utf8"));
+      assert.ok(catalog);
+      const draft = `
+## 1. Contexto
+Contexto sustancial para el gate.
+
+## 2. Arquitectura y Stack
+Stack técnico descrito con suficiente detalle para superar umbrales mínimos de longitud en la sección dos del documento.
+
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE contexts (
+  id UUID PRIMARY KEY,
+  CREATE TABLE messages (id UUID PRIMARY KEY)
+);
+\`\`\`
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\`
+
+## 4. Contratos de API
+| GET | \`/api/v1/contexts\` | listar |
+
+## 5. Lógica y Edge Cases
+Contenido sustancial de reglas y casos borde para cumplir validación de entrega del MDD.
+
+## 6. Seguridad
+Políticas de seguridad corporativas.
+
+## 7. Infraestructura
+Infraestructura de despliegue.
+`;
+      const result = validateMddForDelivery(draft, {
+        paso0Catalog: catalog,
+        skipDeterministicRepair: true,
+      });
+      assert.ok(result.blockers.some((b) => b.includes("anidado")));
+    });
+
+    it("bloquea SQL §3 corrupto (security_events duplicada)", () => {
+      const catalog = extractPaso0DecisionCatalog(readFileSync(join(repoRoot, "STEP_0-review.md"), "utf8"));
+      assert.ok(catalog);
+      const draft = `
+## 1. Contexto
+Contexto sustancial para el gate.
+
+## 2. Arquitectura y Stack
+Stack técnico descrito con suficiente detalle para superar umbrales mínimos de longitud en la sección dos del documento.
+
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE security_events (id UUID PRIMARY KEY);
+CREATE TABLE contexts (id UUID PRIMARY KEY);
+CREATE TABLE security_events (id UUID PRIMARY KEY, event_type TEXT);
+\`\`\`
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\`
+
+## 4. Contratos de API
+| GET | \`/api/v1/contexts\` | listar |
+
+## 5. Lógica y Edge Cases
+Contenido sustancial de reglas y casos borde para cumplir validación de entrega del MDD.
+
+## 6. Seguridad
+Políticas de seguridad corporativas.
+
+## 7. Infraestructura
+Infraestructura de despliegue.
+`;
+      const result = validateMddForDelivery(draft, {
+        paso0Catalog: catalog,
+        skipDeterministicRepair: true,
+      });
+      assert.ok(result.blockers.some((b) => b.includes("security_events") && b.includes("duplicada")));
+    });
+
+    it("acepta alias /applications/:appId/migration/jobs para familia migration-jobs", () => {
+      const catalog = extractPaso0DecisionCatalog(readFileSync(join(repoRoot, "STEP_0-review.md"), "utf8"));
+      assert.ok(catalog);
+      const draft = `
+## 1. Contexto
+Workspace Chat corporativo.
+
+## 2. Arquitectura y Stack
+Stack técnico descrito con suficiente detalle para superar umbrales mínimos de longitud en la sección dos del documento.
+
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE applications (id UUID PRIMARY KEY);
+CREATE TABLE contexts (id UUID PRIMARY KEY);
+CREATE TABLE messages (id UUID PRIMARY KEY);
+CREATE TABLE business_events (id UUID PRIMARY KEY);
+CREATE TABLE attachments (id UUID PRIMARY KEY);
+CREATE TABLE migration_jobs (id UUID PRIMARY KEY);
+\`\`\`
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\`
+
+## 4. Contratos de API
+| POST | \`/ingest/events\` | ingest |
+| POST | \`/attachments\` | upload |
+| GET | \`/ws\` | realtime |
+| POST | \`/break-glass-requests\` | bg |
+| POST | \`/applications/:appId/migration/jobs\` | mig |
+
+## 5. Lógica y Edge Cases
+Contenido sustancial de reglas y casos borde para cumplir validación de entrega del MDD.
+
+## 6. Seguridad
+Políticas de seguridad corporativas.
+
+## 7. Infraestructura
+Infraestructura de despliegue.
+`;
+      const result = validateMddForDelivery(draft, {
+        paso0Catalog: catalog,
+        skipDeterministicRepair: true,
+      });
+      assert.ok(
+        !result.blockers.some((b) => b.includes("migration-jobs") && b.includes("Familia de rutas")),
+        result.blockers.join("; "),
+      );
+    });
+
+    it("bloquea coherence auto con ruta prohibida aunque la etiqueta no nombre la entidad", () => {
+      const catalog = extractPaso0DecisionCatalog(readFileSync(join(repoRoot, "STEP_0-review.md"), "utf8"));
+      assert.ok(catalog);
+      const draft = `
+## 1. Contexto
+Contexto sustancial para el gate.
+
+## 2. Arquitectura y Stack
+Stack técnico descrito con suficiente detalle para superar umbrales mínimos de longitud en la sección dos del documento.
+
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE contexts (id UUID PRIMARY KEY);
+CREATE TABLE users (id UUID PRIMARY KEY);
+\`\`\`
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\`
+
+## 4. Contratos de API
+| GET | \`/api/v1/contexts\` | listar |
+| GET | \`/api/v1/llm-configs\` | auto (coherence auto) |
+
+## 5. Lógica y Edge Cases
+Contenido sustancial de reglas y casos borde para cumplir validación de entrega del MDD.
+
+## 6. Seguridad
+Políticas de seguridad corporativas.
+
+## 7. Infraestructura
+Infraestructura de despliegue.
+`;
+      const result = validateMddForDelivery(draft, {
+        paso0Catalog: catalog,
+        skipDeterministicRepair: true,
+      });
+      assert.ok(result.blockers.some((b) => b.includes("coherence auto") && b.includes("llm-configs")));
+    });
+
+    it("skipDeterministicRepair conserva outbox tras repairAndInjectPaso0Section3ForGate", () => {
+      const catalog = extractPaso0DecisionCatalog(readFileSync(join(repoRoot, "STEP_0-review.md"), "utf8"));
+      assert.ok(catalog);
+      const draft = `
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE applications (id UUID PRIMARY KEY);
+CREATE TABLE contexts (id UUID PRIMARY KEY);
+CREATE TABLE business_events (id UUID PRIMARY KEY);
+CREATE TABLE migration_jobs (id UUID PRIMARY KEY);
+\`\`\`
+\`\`\`TechnicalMetadata
+[high_security]
+\`\`\`
+`;
+      assert.ok(collectMissingPaso0CanonicalTables(draft, catalog).includes("outbox"));
+      const repaired = repairAndInjectPaso0Section3ForGate(draft, catalog);
+      assert.ok(repaired.applied.some((a) => a.includes("outbox")));
+      assert.ok(!collectMissingPaso0CanonicalTables(repaired.markdown, catalog).includes("outbox"));
+      const gate = validateMddForDelivery(repaired.markdown, {
+        paso0Catalog: catalog,
+        skipDeterministicRepair: true,
+      });
+      assert.ok(
+        !gate.blockers.some((b) => b.includes("outbox")),
+        gate.blockers.join("; "),
+      );
+    });
+
+    it("prepareMddMarkdownForPersist + preserve evita regresión score=0 en gate persist", () => {
+      const formatted = prepareMddMarkdownForPersist(VALID_MDD);
+      const gateBare = validateMddForDelivery(formatted, { skipDeterministicRepair: true });
+      const preserved = preserveValidatedSectionsIfSubstantial(VALID_MDD, formatted);
+      const gatePreserved = validateMddForDelivery(preserved, { skipDeterministicRepair: true });
+      assert.ok(
+        gatePreserved.score >= gateBare.score,
+        `score bare=${gateBare.score} preserved=${gatePreserved.score} blockers=${gatePreserved.blockers.length}`,
+      );
+      assert.ok(
+        gatePreserved.blockers.filter((b) => b.includes("contenido insuficiente")).length <=
+          gateBare.blockers.filter((b) => b.includes("contenido insuficiente")).length,
+      );
+    });
+
+    it("skipDeterministicRepair no elimina business_events tras repairAndInject", () => {
+      const catalog = extractPaso0DecisionCatalog(readFileSync(join(repoRoot, "STEP_0-review.md"), "utf8"));
+      assert.ok(catalog);
+      const draft = `
+## 3. Modelo de Datos
+\`\`\`sql
+CREATE TABLE applications (id UUID PRIMARY KEY);
+CREATE TABLE contexts (id UUID PRIMARY KEY);
+CREATE TABLE messages (id UUID PRIMARY KEY);
+CREATE TABLE attachments (id UUID PRIMARY KEY);
+CREATE TABLE migration_jobs (id UUID PRIMARY KEY);
+\`\`\`
+
+## 4. Contratos de API
+| POST | \`/ingest/events\` | ingest |
+| POST | \`/attachments\` | upload |
+| GET | \`/ws\` | realtime |
+| POST | \`/break-glass-requests\` | bg |
+| POST | \`/migration-jobs\` | mig |
+`;
+      const repaired = repairAndInjectPaso0Section3ForGate(draft, catalog);
+      const gate = validateMddForDelivery(repaired.markdown, {
+        paso0Catalog: catalog,
+        skipDeterministicRepair: true,
+      });
+      assert.ok(!gate.blockers.some((b) => b.includes("business_events")), gate.blockers.join("; "));
+      assert.match(repaired.markdown, /CREATE TABLE business_events/i);
     });
   });
 });

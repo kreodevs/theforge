@@ -16,7 +16,12 @@ import {
   shouldContinueDeliveryGateQualityLoop,
 } from "../utils/mdd-delivery-gate-loop.util.js";
 import { isHighSplitArchitectPipeline } from "../utils/mdd-architect-pipeline.util.js";
-import { resolveBrdFromMddState } from "../utils/mdd-domain-prompt.util.js";
+import { resolveBrdFromMddState, buildInventoryFromMddState } from "../utils/mdd-domain-prompt.util.js";
+import {
+  applyDeterministicDeliveryGateAutofixes,
+  fingerprintDeterministicBlockers,
+  shouldCapDeterministicGateLoop,
+} from "../utils/mdd-delivery-gate-autofix.util.js";
 
 const LOG = (msg: string, ...args: unknown[]) => console.log(`[MDD:PrepareOutput] ${msg}`, ...args);
 
@@ -39,6 +44,7 @@ export function createMddPrepareOutputNode(options?: { uiMcpLibraryLabel?: strin
         dbgaMarkdown,
         baselineDraft,
         mddComplexity: state.mddComplexity,
+        paso0Catalog: state.paso0DecisionCatalog ?? null,
         formatForPersist: false,
         tailSnapshotSource: state,
       },
@@ -49,68 +55,111 @@ export function createMddPrepareOutputNode(options?: { uiMcpLibraryLabel?: strin
         brdMarkdown,
         dbgaMarkdown,
         mddComplexity: state.mddComplexity,
+        paso0Catalog: state.paso0DecisionCatalog ?? null,
       });
+    let workingMarkdown = prepared;
+    let workingGate = gate;
+    const prevDetFp = state.deliveryGatePlaceholderFingerprint;
     const attempt = state.deliveryGateAttempt ?? 0;
-    const qualityPending = hasUnresolvedAutoRepairableGateWarnings(gate.warnings);
+
+    if (!workingGate.ok && workingGate.blockers.some((b) => b.trim().length > 0)) {
+      const { inventory } = buildInventoryFromMddState(state);
+      const autofix = applyDeterministicDeliveryGateAutofixes(workingMarkdown, {
+        paso0Catalog: state.paso0DecisionCatalog ?? null,
+        inventory,
+      });
+      if (autofix.applied.length > 0) {
+        workingMarkdown = autofix.markdown;
+        workingGate = validateMddForDelivery(workingMarkdown, {
+          brdMarkdown,
+          dbgaMarkdown,
+          mddComplexity: state.mddComplexity,
+          paso0Catalog: state.paso0DecisionCatalog ?? null,
+          skipDeterministicRepair: true,
+        });
+        LOG(
+          "deterministic autofix applied=%s gate ok=%s score=%s blockers=%d",
+          autofix.applied.join(","),
+          workingGate.ok,
+          workingGate.score,
+          workingGate.blockers.length,
+        );
+      }
+    }
+
+    const qualityPending = hasUnresolvedAutoRepairableGateWarnings(workingGate.warnings);
+    const capDeterministicLoop = shouldCapDeterministicGateLoop(
+      workingGate.blockers,
+      attempt + 1,
+      2,
+      prevDetFp?.includes("||") ? prevDetFp : fingerprintDeterministicBlockers(workingGate.blockers),
+    );
     const loop =
-      shouldContinueDeliveryGateLoop(gate, attempt) ||
-      shouldContinueDeliveryGateQualityLoop(gate, attempt);
+      !capDeterministicLoop &&
+      (shouldContinueDeliveryGateLoop(workingGate, attempt) ||
+        shouldContinueDeliveryGateQualityLoop(workingGate, attempt));
 
     LOG(
-      "gate ok=%s score=%s blockers=%d warnings=%d attempt=%d loop=%s qualityPending=%s",
-      gate.ok,
-      gate.score,
-      gate.blockers.length,
-      gate.warnings.length,
+      "gate ok=%s score=%s blockers=%d warnings=%d attempt=%d loop=%s qualityPending=%s capDet=%s",
+      workingGate.ok,
+      workingGate.score,
+      workingGate.blockers.length,
+      workingGate.warnings.length,
       attempt,
       loop,
       qualityPending,
+      capDeterministicLoop,
     );
 
     if (loop) {
-      const fixTarget = resolveDeliveryGateFixTargetFromGate(gate.blockers, gate.warnings, {
+      const fixTarget = resolveDeliveryGateFixTargetFromGate(workingGate.blockers, workingGate.warnings, {
         splitArchitectPipeline: isHighSplitArchitectPipeline(state),
         previousPlaceholderFingerprint: state.deliveryGatePlaceholderFingerprint,
         deliveryGateAttempt: attempt + 1,
         sealedSections: {
-          mddDraft: prepared,
+          mddDraft: workingMarkdown,
           stackArchitectMddDraftSnapshot: state.stackArchitectMddDraftSnapshot,
           dataModelArchitectMddDraftSnapshot: state.dataModelArchitectMddDraftSnapshot,
           apiContractsArchitectMddDraftSnapshot: state.apiContractsArchitectMddDraftSnapshot,
         },
       });
       const agentFeedback = [
-        formatDeliveryGateBlockersFeedback(gate.blockers),
-        formatDeliveryGateQualityWarningsFeedback(gate.warnings),
+        formatDeliveryGateBlockersFeedback(workingGate.blockers),
+        formatDeliveryGateQualityWarningsFeedback(workingGate.warnings),
       ]
         .filter(Boolean)
         .join("\n\n");
-      const safeDraft = preserveValidatedSectionsIfSubstantial(baselineDraft ?? "", prepared);
+      const safeDraft = preserveValidatedSectionsIfSubstantial(baselineDraft ?? "", workingMarkdown);
       return {
         mddDraft: safeDraft,
         previousMddDraftForMerge: baselineDraft ?? state.mddDraft,
-        deliveryGate: gate,
+        deliveryGate: workingGate,
         deliveryGateAttempt: attempt + 1,
         deliveryGateLoopActive: true,
         deliveryGateFixTarget: fixTarget,
-        deliveryGatePlaceholderFingerprint: fingerprintPlaceholderBlockers(gate.blockers),
+        deliveryGatePlaceholderFingerprint: [
+          fingerprintPlaceholderBlockers(workingGate.blockers),
+          fingerprintDeterministicBlockers(workingGate.blockers),
+        ]
+          .filter(Boolean)
+          .join("||"),
         auditorFeedback: agentFeedback || state.auditorFeedback,
       };
     }
 
     return {
-      mddDraft: prepared,
-      deliveryGate: gate,
+      mddDraft: workingMarkdown,
+      deliveryGate: workingGate,
       deliveryGateLoopActive: false,
       deliveryGateFixTarget: undefined,
       deliveryGatePlaceholderFingerprint: undefined,
       auditorFeedback:
-        gate.ok
+        workingGate.ok
           ? state.auditorFeedback
-          : gate.blockers.length > 0
-            ? formatDeliveryGateBlockersFeedback(gate.blockers)
+          : workingGate.blockers.length > 0
+            ? formatDeliveryGateBlockersFeedback(workingGate.blockers)
             : state.auditorFeedback,
-      auditorDecision: gate.ok ? "done" : state.auditorDecision,
+      auditorDecision: workingGate.ok ? "done" : state.auditorDecision,
     };
   };
 }

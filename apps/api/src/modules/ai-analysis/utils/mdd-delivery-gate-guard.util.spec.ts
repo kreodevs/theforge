@@ -44,7 +44,10 @@ CREATE TABLE security_events (
 
 ## 4. Contratos de API
 
-| POST | /auth/login | Inicio de sesión |
+| POST | /auth/login | Inicio de sesión con email y contraseña |
+| GET | /export-requests | Lista paginada de solicitudes del tenant |
+| POST | /export-requests | Crea solicitud de exportación con metadatos obligatorios |
+| POST | /export-requests/:id/approve | Aprueba o rechaza con comentario auditado |
 
 \`\`\`json
 { "email": "user@example.com", "password": "secret" }

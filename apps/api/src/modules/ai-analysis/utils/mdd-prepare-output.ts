@@ -302,6 +302,8 @@ export type PrepareMddForOutputOptions = {
   formatForPersist?: boolean;
   /** Snapshots §6/§7 (securitySectionMd, post_critic snapshots) para preserve. */
   tailSnapshotSource?: import("./mdd-section-preserve.util.js").TailSectionSnapshotSource | null;
+  /** Catálogo Paso 0 D-ID (pegado definitivo) — activa enforcement post-gen en SSOT repair. */
+  paso0Catalog?: import("@theforge/shared-types").Paso0DecisionCatalog | null;
   /** Secciones a omitir en preserve/guard (p. ej. §5 objetivo + §6/§7 en regen section-pipeline). */
   preserveExcludeSections?: readonly number[];
   /**
@@ -360,15 +362,18 @@ export async function prepareMddForOutput(
   );
   const structuredForSection3 =
     typeof input === "string" ? undefined : input.mddStructured;
-  const withSection3 = composeSection3FromStructured(normalized, structuredForSection3);
+  const withSection3 = composeSection3FromStructured(normalized, structuredForSection3, {
+    paso0Catalog: options?.paso0Catalog ?? null,
+  });
   const consistencyIssues = detectCrossConsistencyIssues(withSection3);
   const hasInvalidSqlProse = consistencyIssues.some((i) =>
     i.includes("prosa inválida"),
   );
-  const withDiagrams = injectMddDiagrams(withSection3, suggestMddDiagrams(withSection3));
+  const erOptions = options?.paso0Catalog ? { paso0Catalog: options.paso0Catalog } : undefined;
+  const withDiagrams = injectMddDiagrams(withSection3, suggestMddDiagrams(withSection3, erOptions));
   const withErFromSql = hasInvalidSqlProse
     ? withDiagrams
-    : (regenerateErDiagramFromSql(withDiagrams) ?? withDiagrams);
+    : (regenerateErDiagramFromSql(withDiagrams, erOptions) ?? withDiagrams);
   const withComponentDiagram = injectProposedComponentDiagramIntoSection2(withErFromSql);
   const uiMcpLabel = options?.uiMcpLibraryLabel?.trim();
   const withUiMcpFrontend =
@@ -398,11 +403,12 @@ export async function prepareMddForOutput(
         "../../engine/domain-inventory-persist.util.js"
       );
       const inventory =
-        options?.brdMarkdown?.trim() || options?.dbgaMarkdown?.trim()
+        options?.brdMarkdown?.trim() || options?.dbgaMarkdown?.trim() || options?.paso0Catalog
           ? rebuildDomainInventoryPreferringBrd({
               brdMarkdown: options.brdMarkdown,
               dbgaMarkdown: options.dbgaMarkdown,
               mddMarkdown: markdown,
+              paso0Catalog: options.paso0Catalog,
             })
           : undefined;
       if (formatForPersist) {
@@ -417,6 +423,7 @@ export async function prepareMddForOutput(
         dbgaMarkdown: options?.dbgaMarkdown,
         specMarkdown: options?.specMarkdown,
         inventory,
+        paso0Catalog: options?.paso0Catalog,
       });
       const ssotChanged =
         repaired.section3Injected.length > 0 ||
@@ -424,13 +431,17 @@ export async function prepareMddForOutput(
         repaired.section4Injected.length > 0 ||
         repaired.platformAnnotated.length > 0 ||
         repaired.platformStripped.length > 0 ||
+        repaired.paso0Stripped.length > 0 ||
+        repaired.paso0StrippedRoutes.length > 0 ||
+        repaired.paso0MissingCanonical.length > 0 ||
+        repaired.paso0Gaps.length > 0 ||
         repaired.markdown !== finalMarkdown;
       if (ssotChanged) {
         finalMarkdown = formatForPersist
           ? prepareMddMarkdownForPersist(repaired.markdown)
           : applyPreDeliveryGateFixes(repaired.markdown);
         console.log(
-          `[MDD:DeliveryGate] SSOT repair — §3:${repaired.section3Injected.length} UAT:${repaired.uatInjected.length} §4:${repaired.section4Injected.length} platform:${repaired.platformAnnotated.length} stripped:${repaired.platformStripped.length}`,
+          `[MDD:DeliveryGate] SSOT repair — §3:${repaired.section3Injected.length} UAT:${repaired.uatInjected.length} §4:${repaired.section4Injected.length} platform:${repaired.platformAnnotated.length} stripped:${repaired.platformStripped.length} paso0:${repaired.paso0Stripped.length} paso0Routes:${repaired.paso0StrippedRoutes.length} paso0Missing:${repaired.paso0MissingCanonical.length} paso0Gaps:${repaired.paso0Gaps.length}`,
         );
       }
       const contratosAfterSsot = extractContratosSectionBody(finalMarkdown);
@@ -521,6 +532,29 @@ export async function prepareMddForOutput(
     }
   }
   gatedMarkdown = ensureDocumentFenceParity(gatedMarkdown);
+
+  if (options?.paso0Catalog && !streamPreview) {
+    const { enforcePaso0CatalogOnMdd, repairAndInjectPaso0Section3ForGate } = await import(
+      "../../engine/mdd-paso0-enforcement.util.js"
+    );
+    const section3Repair = repairAndInjectPaso0Section3ForGate(gatedMarkdown, options.paso0Catalog);
+    if (section3Repair.applied.length > 0) {
+      gatedMarkdown = section3Repair.markdown;
+      console.log(
+        `[MDD:PrepareOutput] paso0 §3 repair pre-gate — ${section3Repair.applied.join(",")}`,
+      );
+    }
+    const paso0Final = enforcePaso0CatalogOnMdd(gatedMarkdown, options.paso0Catalog);
+    if (paso0Final.markdown !== gatedMarkdown) {
+      gatedMarkdown = formatForPersist
+        ? prepareMddMarkdownForPersist(paso0Final.markdown)
+        : applyPreDeliveryGateFixes(paso0Final.markdown);
+      console.log(
+        `[MDD:PrepareOutput] paso0Final tras diagramas/preserve — stripped:${paso0Final.strippedTables.length} §4routes:${paso0Final.section4StrippedRoutes.length}`,
+      );
+    }
+  }
+
   console.log(
     `[MDD:PrepareOutput:diag] pre-gate §4=${extractSection4Body(gatedMarkdown)?.length ?? 0} §5=${extractSection5Body(gatedMarkdown)?.length ?? 0} §5best=${extractBestSection5Body(gatedMarkdown)?.length ?? 0}`,
   );
@@ -530,6 +564,9 @@ export async function prepareMddForOutput(
     dbgaMarkdown: options?.dbgaMarkdown,
     specMarkdown: options?.specMarkdown,
     mddComplexity: options?.mddComplexity,
+    paso0Catalog: options?.paso0Catalog,
+    // SSOT + paso0 §3 ya corrieron arriba; re-ejecutar reparaciones borra stubs (outbox).
+    skipDeterministicRepair: !streamPreview,
   });
   if (options?.deliveryGateRef) {
     options.deliveryGateRef.current = deliveryGate;

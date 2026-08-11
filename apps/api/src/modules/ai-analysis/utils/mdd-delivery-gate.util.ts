@@ -23,10 +23,63 @@ import { evaluateBrdToMddTraceability } from "../estimation/brd-mdd-traceability
 import { prepareMddForDeliveryGateValidation } from "../../projects/mdd-deterministic-repair.util.js";
 import { evaluateSection1BodyQuality } from "./mdd-section1-quality.util.js";
 import { evaluateMddContentQuality } from "./mdd-content-quality.util.js";
+import {
+  areOnlyRecoverablePaso0Section3GateBlockers,
+  collectPaso0DeliveryGateBlockers,
+  areOnlyStranglerFigPaso0Blockers,
+} from "../../engine/mdd-paso0-enforcement.util.js";
+import { isDeterministicDeliveryGateBlocker } from "./mdd-delivery-gate-autofix.util.js";
+import type { Paso0DecisionCatalog } from "@theforge/shared-types";
 
 export type { MddDeliveryGateResult };
 
 const DELIVERY_SCORE_THRESHOLD = CASCADE_ACCURACY_THRESHOLD;
+
+/** Blockers de contenido que impiden near-pass aunque sean reparables (requieren autofix aplicado). */
+export function isHardContentDeliveryGateBlocker(blocker: string): boolean {
+  const text = (blocker ?? "").trim();
+  if (!text) return false;
+  if (/^\[Paso 0/i.test(text)) return true;
+  return (
+    /secciones duplicadas/i.test(text) ||
+    /JSON corrupto|```json inválido/i.test(text) ||
+    /SQL con error de sintaxis|CREATE INDEX embebido|CREATE INDEX duplicados/i.test(text) ||
+    /placeholder del pipeline.*§4|§4 Contratos de API no tiene endpoints reales/i.test(text)
+  );
+}
+
+/** Stream/prepare_output near-pass: score≥90, ≤2 blockers recuperables y sin blockers duros de contenido. */
+export function isNearPassMddDeliveryGate(gate: MddDeliveryGateResult): boolean {
+  if (gate.ok) return true;
+  if (gate.score >= 100 && gate.blockers.length === 0) return true;
+  if (gate.score < DELIVERY_SCORE_THRESHOLD || gate.blockers.length > 2) return false;
+  if (gate.blockers.some(isHardContentDeliveryGateBlocker)) return false;
+  return areRecoverablePersistDeliveryGateBlockers(gate.blockers);
+}
+
+/** Blockers que el autofix Paso 0 / persist pueden resolver sin LLM. */
+export function areRecoverablePersistDeliveryGateBlockers(blockers: string[]): boolean {
+  const items = blockers.filter((b) => b.trim().length > 0);
+  if (items.length === 0) return true;
+  if (areOnlyStranglerFigPaso0Blockers(items)) return true;
+  return items.every(
+    (b) =>
+      isDeterministicDeliveryGateBlocker(b) ||
+      areOnlyRecoverablePaso0Section3GateBlockers([b]),
+  );
+}
+
+/**
+ * Artefacto del stream aprobado para persistencia: ok=true o near-pass recuperable.
+ * Evita re-ejecutar SSOT destructivo y aplica parity cuando persist re-gate empeora.
+ */
+export function isStreamPrevalidatedDeliveryGate(
+  gate: MddDeliveryGateResult | null | undefined,
+): boolean {
+  if (!gate) return false;
+  if (gate.ok) return true;
+  return isNearPassMddDeliveryGate(gate) && areRecoverablePersistDeliveryGateBlockers(gate.blockers);
+}
 
 /** Mínimo de chars que una sección canónica debe tener para no ser considerada
  *  placeholder. 200 chars = ~3-4 líneas de prosa o un bloque SQL/JSON de
@@ -46,6 +99,8 @@ export type ValidateMddForDeliveryOptions = {
   mddComplexity?: "LOW" | "MEDIUM" | "HIGH";
   /** Omite reparaciones deterministas (tests del gate sobre markdown crudo). */
   skipDeterministicRepair?: boolean;
+  /** Catálogo Paso 0 D-ID — blockers adicionales §2/§3/§4. */
+  paso0Catalog?: Paso0DecisionCatalog | null;
 };
 
 /** Blockers que requieren intervención humana (BRD / decision log), no reparación automática. */
@@ -143,16 +198,21 @@ export function validateMddForDelivery(
   const hasDomainContext =
     Boolean(options?.brdMarkdown?.trim()) ||
     Boolean(options?.dbgaMarkdown?.trim()) ||
-    Boolean(options?.inventory);
+    Boolean(options?.inventory) ||
+    Boolean(options?.paso0Catalog);
 
-  const prepared = hasDomainContext && !options?.skipDeterministicRepair
-    ? prepareMddForDeliveryGateValidation(raw, {
-        brdMarkdown: options?.brdMarkdown,
-        dbgaMarkdown: options?.dbgaMarkdown,
-        specMarkdown: options?.specMarkdown,
-        inventory: options?.inventory,
-      })
-    : { markdown: applyPreDeliveryGateFixes(raw), changed: false, notes: [] as string[] };
+  const prepared =
+    hasDomainContext && !options?.skipDeterministicRepair
+      ? prepareMddForDeliveryGateValidation(raw, {
+          brdMarkdown: options?.brdMarkdown,
+          dbgaMarkdown: options?.dbgaMarkdown,
+          specMarkdown: options?.specMarkdown,
+          inventory: options?.inventory,
+          paso0Catalog: options?.paso0Catalog,
+        })
+      : options?.skipDeterministicRepair
+        ? { markdown: raw, changed: false, notes: [] as string[] }
+        : { markdown: applyPreDeliveryGateFixes(raw), changed: false, notes: [] as string[] };
 
   const trimmed = prepared.markdown;
   const blockers: string[] = [];
@@ -356,6 +416,10 @@ export function validateMddForDelivery(
         `${trace.missingGaps.length} ítem(s) BRD sin traza completa en §1/§4/§5 (semáforo alineado).`,
       );
     }
+  }
+
+  if (options?.paso0Catalog) {
+    blockers.push(...collectPaso0DeliveryGateBlockers(trimmed, options.paso0Catalog));
   }
 
   score -= blockers.length * 8;

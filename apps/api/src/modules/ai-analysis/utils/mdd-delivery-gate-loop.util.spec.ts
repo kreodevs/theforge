@@ -12,6 +12,7 @@ import {
   shouldClarifierRevisionSkipArchitectPipeline,
   shouldContinueDeliveryGateLoop,
   shouldContinueDeliveryGateQualityLoop,
+  blockersAreOnlyStranglerFig,
 } from "./mdd-delivery-gate-loop.util.js";
 
 describe("resolveDeliveryGateFixTarget (CHANGELOG [Unreleased] → Added → \"Dedicated §5 pass\")", () => {
@@ -207,12 +208,21 @@ describe("resolveDeliveryGateFixTarget (CHANGELOG [Unreleased] → Added → \"D
     );
   });
 
-  it("faltantes §6+§7 → integration (nunca data_model)", () => {
+  it("faltantes §6+§7 → security_integration (nunca data_model)", () => {
     const blockers = ["Secciones obligatorias faltantes: 6. Seguridad, 7. Infraestructura"];
-    assert.equal(resolveDeliveryGateFixTarget(blockers), "integration");
+    assert.equal(resolveDeliveryGateFixTarget(blockers), "security_integration");
     assert.equal(
       resolveDeliveryGateFixTarget(blockers, { splitArchitectPipeline: true }),
-      "integration",
+      "security_integration",
+    );
+  });
+
+  it("solo §6 faltante → security (no clarifier ni integration)", () => {
+    const blockers = ["Secciones obligatorias faltantes: 6. Seguridad"];
+    assert.equal(resolveDeliveryGateFixTarget(blockers), "security");
+    assert.equal(
+      resolveDeliveryGateFixTarget(blockers, { splitArchitectPipeline: true }),
+      "security",
     );
   });
 
@@ -226,14 +236,34 @@ describe("resolveDeliveryGateFixTarget (CHANGELOG [Unreleased] → Added → \"D
     );
   });
 
-  it("§6 placeholder + faltantes §6/§7 → integration (no data_model)", () => {
+  it("§6 placeholder + faltantes §6/§7 → security_integration (no data_model)", () => {
     const blockers = [
       "Secciones obligatorias faltantes: 6. Seguridad, 7. Infraestructura",
       'Sección 6. Seguridad es un placeholder del pipeline (ej. "Pendiente: Arquitecto"). Regenera antes de persistir.',
     ];
     assert.equal(
       resolveDeliveryGateFixTarget(blockers, { splitArchitectPipeline: true }),
+      "security_integration",
+    );
+  });
+});
+
+describe("blockersAreOnlyStranglerFig", () => {
+  it("no continúa loop ni enruta a clarifier cuando solo queda Strangler Fig", () => {
+    const blockers = [
+      "[Paso 0 §2] Strangler Fig documentado — incompatible con D-121 (corte por campaña, sin convivencia operativa permanente).",
+    ];
+    assert.equal(blockersAreOnlyStranglerFig(blockers), true);
+    assert.equal(
+      resolveDeliveryGateFixTarget(blockers, { splitArchitectPipeline: true }),
       "integration",
+    );
+    assert.equal(
+      shouldContinueDeliveryGateLoop(
+        { ok: false, score: 92, blockers, warnings: [] },
+        0,
+      ),
+      false,
     );
   });
 });
@@ -248,6 +278,19 @@ describe("shouldContinueDeliveryGateLoop / shouldContinueDeliveryGateQualityLoop
     };
     assert.equal(shouldContinueDeliveryGateLoop(gate, 0), true);
     assert.equal(shouldContinueDeliveryGateLoop(gate, 3), false);
+  });
+
+  it("gate con blockers Paso 0 deterministas → no re-enruta LLM", () => {
+    const gate = {
+      ok: false,
+      score: 85,
+      blockers: [
+        "[Paso 0 §3] SQL con error de sintaxis o CREATE INDEX embebido — reparar §3 antes de persistir.",
+        "[Paso 0 §6] Patrones de auth local incompatibles con D-003 (SSO Integral).",
+      ],
+      warnings: [],
+    };
+    assert.equal(shouldContinueDeliveryGateLoop(gate, 0), false);
   });
 
   it("gate ok + 0 blockers + warnings auto-reparables → no quality loop (KMS)", () => {
